@@ -1,0 +1,22 @@
+{
+  "name": "ybnote",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^8.0.12"
+  },
+  "dependencies": {
+    "@pixi/react": "^8.0.5",
+    "lucide-react": "^1.18.0",
+    "phaser": "^4.1.0",
+    "pixi.js": "^8.19.0",
+    "tone": "^15.1.22",
+    "zustand": "^5.0.14"
+  }
+}
