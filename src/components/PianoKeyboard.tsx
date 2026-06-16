@@ -7,7 +7,7 @@ import { getPitchColorHex } from '../utils/colors';
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 export const PianoKeyboard: React.FC = () => {
-  const { isPianoOpen, togglePiano, addBlock, camera, pianoKeysCount } = useStore();
+  const { isPianoOpen, togglePiano, pianoKeysCount } = useStore();
   const keyboardRef = useRef<HTMLDivElement>(null);
   
   // Draggable piano state
@@ -17,6 +17,8 @@ export const PianoKeyboard: React.FC = () => {
 
   // Drag block from piano state
   const [draggedPitch, setDraggedPitch] = useState<{pitch: string, x: number, y: number} | null>(null);
+
+  const [instrument, setInstrument] = useState('piano');
 
   useEffect(() => {
     if (!isDraggingPiano) return;
@@ -41,10 +43,10 @@ export const PianoKeyboard: React.FC = () => {
     e.stopPropagation();
     
     if (e.button === 2) {
-      playNote(pitch);
+      playNote(pitch, 1, instrument);
       try { e.currentTarget.releasePointerCapture(e.pointerId); } catch(err) {}
     } else if (e.button === 0) {
-      playNote(pitch);
+      playNote(pitch, 1, instrument);
       setDraggedPitch({ pitch, x: e.clientX, y: e.clientY });
 
       const handlePointerMove = (moveEv: PointerEvent) => {
@@ -76,7 +78,7 @@ export const PianoKeyboard: React.FC = () => {
             pitch,
             x: newX,
             y: newY,
-            instrument: 'piano'
+            instrument: instrument
           });
         }
       };
@@ -88,7 +90,7 @@ export const PianoKeyboard: React.FC = () => {
 
   const handleKeyPointerEnter = (e: React.PointerEvent, pitch: string) => {
     if (e.buttons === 2) {
-      playNote(pitch);
+      playNote(pitch, 1, instrument);
     }
   };
 
@@ -133,11 +135,22 @@ export const PianoKeyboard: React.FC = () => {
         className="piano-container glass-panel" 
         style={{ position: 'fixed', left: pianoPos.x, top: pianoPos.y, transform: 'none', bottom: 'auto' }}
       >
-        <div className="piano-header" onPointerDown={handlePianoHeaderDown} style={{ cursor: 'move' }}>
-          <span className="piano-title">Virtual Piano (Drag header to move, keys to Canvas)</span>
-          <button onClick={togglePiano} className="icon-btn" onPointerDown={e => e.stopPropagation()}>
-            <X size={18} />
-          </button>
+        <div className="piano-header" onPointerDown={handlePianoHeaderDown} style={{ cursor: 'move', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="piano-title">Virtual Piano (Drag keys to Canvas)</span>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }} onPointerDown={e => e.stopPropagation()}>
+            <select 
+              value={instrument} 
+              onChange={(e) => setInstrument(e.target.value)}
+              style={{ background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '2px 4px', fontSize: '12px' }}
+            >
+              <option value="piano">Piano</option>
+              <option value="synth">Synth</option>
+              <option value="bass">Bass</option>
+            </select>
+            <button onClick={togglePiano} className="icon-btn">
+              <X size={18} />
+            </button>
+          </div>
         </div>
         
         <div ref={keyboardRef} className="keyboard-keys" style={{ flexWrap: 'wrap', maxWidth: '80vw' }}>

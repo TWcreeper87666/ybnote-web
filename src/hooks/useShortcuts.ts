@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { useStore } from '../store/useStore';
-import { playNote } from '../utils/audio';
 
 export const useShortcuts = () => {
   useEffect(() => {
@@ -26,9 +25,6 @@ export const useShortcuts = () => {
       // Hotkey Note Triggering
       const blocksWithKey = state.blocks.filter(b => b.keyBinding && b.keyBinding.toLowerCase() === e.key.toLowerCase());
       if (blocksWithKey.length > 0 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        blocksWithKey.forEach(block => {
-          playNote(block.pitch);
-        });
         state.updateBlocks(blocksWithKey.map(b => ({ id: b.id, updates: { playedAt: Date.now() } })));
       }
 
@@ -49,7 +45,11 @@ export const useShortcuts = () => {
             break;
           case 'a':
             e.preventDefault();
-            state.selectAllBlocks();
+            if (e.shiftKey) {
+              state.selectAllBlocks();
+            } else {
+              state.selectAll();
+            }
             break;
           case 'g':
             e.preventDefault();
@@ -84,7 +84,13 @@ export const useShortcuts = () => {
         }
       } else {
         if (e.key === 'Delete' || e.key === 'Backspace') {
-          state.deleteSelectedBlocks();
+          if (state.activeTrackId) {
+            state.deleteTrack(state.activeTrackId);
+            state.setActiveTrackId(null);
+          }
+          if (state.selectedBlockIds.length > 0 || state.selectedTrackIds.length > 0) {
+            state.deleteSelected();
+          }
         }
       }
     };

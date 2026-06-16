@@ -1,95 +1,91 @@
-# YBNote-inspired Music Game Implementation Plan
+# YBNote-inspired Music Game: Phase 5 實作計畫 (動態軌道系統)
 
-這是一份參考 YBNote 概念並擴展的沙盒音樂遊戲計畫。遊戲核心在於一個無限的 2D 畫布，玩家可以自由放置音符方塊、連接軌道，並建立自己的音樂機關與演奏譜面。
+這個階段將實作遊戲的「動態軌道 (Tracks) 與播放系統」。玩家將能夠在畫面上繪製軌道，並讓觸發球 (Runner Ball) 沿著軌道移動，當碰到音符方塊時就會發出聲音。
 
-## 目標與概念
-建立一個具有高度自由度的 2D 音樂沙盒/節奏遊戲編輯器。玩家可以將「音符方塊」放置在無邊際的畫布上，透過滑鼠互動、設定快捷鍵，或是建立「軌道路線（讓球在上面跑）」來觸發音符發聲。最終目標是支援 MIDI 匯入與類似 osu! 的遊玩模式。
+## 決定的設計方向
 
-## 建議技術棧 (Tech Stack)
-為了能在網頁上順暢渲染大量方塊、處理音訊與複雜的 UI 互動，建議使用以下技術：
-*   **前端框架:** React (搭配 Vite) - 處理複雜的 UI（工具列、階層面板、搜尋功能）。
-*   **2D 渲染引擎:** PixiJS 或 Phaser - 處理無邊際畫布、縮放、平移與大量音符方塊的高效能渲染。
-*   **音訊處理:** Tone.js - 用於高品質的合成器聲音（鋼琴音效）、精準的音訊排程（MIDI 播放）。
-*   **狀態管理:** Zustand 或 Redux - 管理畫布狀態、Undo/Redo 歷史紀錄、節點資料。
+感謝您的確認，以下是 Phase 5 的最終設計方向：
 
-## 系統架構與功能規劃
+1. **軌道建立 UI:**
+   - 在右下角工具列新增「✏️ 繪製軌道」按鈕。
+   - 支援**貝茲曲線 (Bezier Curves)**：畫出的軌道節點會有控制點 (Control Points)，讓玩家可以拖曳控制點來調整曲線弧度。
+2. **播放與暫停控制:**
+   - 畫面上方正中央增加一組全域的「▶️ 播放 / ⏸️ 暫停 / ⏹️ 停止」按鈕。
+3. **軌道屬性面板:**
+   - **滑鼠雙擊 (Double Click)** 軌道線條後，會在旁邊彈出一個浮動設定視窗 (Popup)。
+   - 軌道的速度設定將採用 **BPM (Beats Per Minute)** 作為單位。
+4. **碰撞發聲規則:**
+   - 球體在軌道上移動時，只要碰到方塊的範圍 (Rect) 就會觸發。
+   - **不需要冷卻時間 (Cooldown)**。
 
-### 1. 核心畫布與基礎互動 (Core Canvas)
-*   **無邊際 2D 平面:**
-    *   `Ctrl + 滑鼠滾輪`: 縮放畫布 (Zoom in/out)。
-    *   `滑鼠中鍵按住`: 拖曳平移畫布 (Pan)。
-    *   **網格系統 (Grid):** 支援顯示網格，並可設定方塊是否「吸附對齊 (Snap to grid)」。
-*   **音符方塊互動:**
-    *   `滑鼠左鍵點擊`: 觸發音符發聲。
-    *   `滑鼠中鍵按住方塊`: 拖曳移動方塊位置。
-    *   `滑鼠左鍵拖曳 (Hover)`: 游標經過的方塊即時發聲 (滑音效果)。
-*   **視覺設計:**
-    *   預設為簡約明亮模式 (Light mode)，方塊顏色根據音高變化呈現從低音到高音的彩色漸層。
-    *   未來可支援多種樂器，方塊左下角會顯示對應的樂器圖示。
+## Proposed Changes
 
-### 2. 工具列與編輯功能 (Toolbar & Editing)
-*   **右下角垂直工具列:**
-    *   **新增 (Add):** 點開顯示虛擬鋼琴鍵盤。
-        *   鍵盤上標示英文音名 (如 C4, D#4, C5)。
-        *   點擊琴鍵發出對應聲音。
-        *   從琴鍵拖曳至畫布即可建立對應音高的「音符方塊」。
-    *   **刪除 (Delete):** 刪除選取的方塊。
-    *   **復原/重做 (Undo / Redo):** 支援多步歷史紀錄。
+### 1. Store (狀態管理)
 
-### 3. 進階編輯與介面 (Advanced UI & Management)
-*   **設定面板 (Settings):** 
-    *   切換亮色/暗色主題 (Light/Dark mode)。
-    *   切換網格顯示與吸附對齊開關。
-*   **存檔機制 (Save/Load):**
-    *   定期自動儲存目前進度至瀏覽器 (LocalStorage)，下次開啟時自動載入。
-    *   支援手動下載與載入專案檔 (.json)。
-*   **鍵盤綁定 (Hotkey Binding):** 可以為畫布上的任意方塊設定特定的鍵盤按鍵，按下該鍵即觸發發聲。
-*   **搜尋功能 (Search - `Ctrl + F`):** 快速尋找畫布上的特定音符或自訂名稱的方塊，搜尋到後視角自動居中並高亮顯示。
-*   **階層面板 (Hierarchy / Outliner):**
-    *   列出畫布上所有的方塊與物件。
-    *   支援多選、建立群組 (Group)，方便整塊移動或複製。
-    *   可以為方塊或群組重新命名。
+#### [MODIFY] src/store/useStore.ts
+- **新增 Track 與 Runner 資料結構:**
+  ```typescript
+  interface BezierHandle { x: number; y: number; } // Absolute coordinates
+  interface TrackNode {
+    id: string;
+    x: number;
+    y: number;
+    controlIn?: BezierHandle;
+    controlOut?: BezierHandle;
+  }
+  interface Track {
+    id: string;
+    nodes: TrackNode[];
+    bpm: number; // 速度單位 (例如預設 120)
+    loop: boolean;
+  }
+  interface Runner {
+    id: string;
+    trackId: string;
+    progress: number; // 0 到軌道總長度，或 0~1
+  }
+  ```
+- **新增全域播放與編輯狀態:**
+  - `isPlaying: boolean`
+  - `mode: 'select' | 'draw_track'`
+  - `editingTrackId: string | null` (雙擊時開啟屬性視窗用)
+- **新增 Actions:** `addTrack`, `updateTrack`, `deleteTrack`, `addTrackNode`, `updateTrackNode`, `togglePlay`, `stopPlay` 等。
 
-### 4. 動態軌道與播放系統 (Tracks & Playback)
-*   **軌道線條 (Path/Splines):** 玩家可以畫出貝茲曲線或直線軌道。
-*   **觸發球 (Runner Ball):** 一個（或多個）球體沿著軌道移動。當球體碰撞或經過音符方塊時觸發發聲。
-*   **軌道參數控制:**
-    *   **速度 (Speed):** 球的移動速度。
-    *   **循環 (Loop):** 到達終點後是否重頭開始或來回反彈。
-    *   **左右擺動 (Sway/Sine wave):** 球在軌道上前進時附加正弦波的位移。
-    *   **曲線形狀調整:** 編輯軌道的控制點。
+### 2. Components (元件與 UI)
 
-### 5. 外部匯入與遊戲模式 (Integration & Game Mode)
-*   **MIDI 匯入:** 讀取 MIDI 檔案，自動在畫布上生成對應的音符方塊排列（例如由左至右、或依特定形狀排列）。
-*   **遊玩模式 (Play Mode):** 進入類似 osu! 的模式，根據時間軸動態顯示需要點擊或按下的方塊，並計算分數與精準度。
+#### [NEW] src/components/TrackRenderer.tsx
+- 繪製軌道的主元件。
+- 使用 `@pixi/react` 的 `Graphics` 繪製三次貝茲曲線 (Cubic Bezier Curve) `bezierCurveTo`。
+- 如果目前在 `select` 或 `draw_track` 模式下選取了軌道，則顯示 Node 與 Control Points 的操作點 (圓圈)，讓玩家可以拖曳。
+- 監聽雙擊事件 (`pointerdown` 判斷點擊次數或間隔) 來觸發開啟浮動屬性視窗。
 
----
+#### [NEW] src/components/RunnerRenderer.tsx
+- 繪製正在軌道上移動的觸發球。
 
-## 推薦的快捷鍵設定 (Shortcuts)
+#### [MODIFY] src/components/Canvas.tsx
+- 切換模式邏輯：如果是 `draw_track`，點擊畫布背景會新增 Track Node。
+- 處理滑鼠拖曳 Node 或 Control Point 的邏輯。
 
-為了提升編輯效率，建議加入以下快捷鍵：
-*   **基本編輯:**
-    *   `Ctrl + Z` / `Ctrl + Y`: 復原 / 重做
-    *   `Delete` 或 `Backspace`: 刪除選取的物件
-    *   `Ctrl + C` / `Ctrl + V`: 複製 / 貼上選取的方塊
-    *   `Shift + 左鍵點擊`: 多選方塊
-    *   `Alt + 左鍵拖曳`: 快速複製並拖曳出新方塊
-    *   `Ctrl + A`: 全選
-*   **群組操作:**
-    *   `Ctrl + G`: 將選取的方塊建立群組
-    *   `Ctrl + Shift + G`: 解除群組
-*   **播放控制:**
-    *   `Space (空白鍵)`: 播放 / 暫停軌道上的球 (Global Play)
-*   **介面切換:**
-    *   `H`: 顯示/隱藏階層面板 (Hierarchy)
-    *   `T`: 顯示/隱藏工具列 (Toolbar)
+#### [NEW] src/components/PlaybackControls.tsx
+- 置頂置中的 HTML Overlay，包含 Play, Pause, Stop 按鈕。
 
----
+#### [NEW] src/components/TrackPropertiesPopup.tsx
+- HTML 浮動視窗，當 `editingTrackId` 有值時顯示。
+- 包含 BPM 數字輸入框 (或 Slider) 與 Loop 開關。
 
-## 🎯 User Review Required (等待您的確認)
-請確認以上的計畫是否符合您的期待：
-1.  **技術選擇：** 推薦使用 React + PixiJS/Phaser 來製作網頁版，這樣最容易分享與實作 UI。您是否有偏好其他語言或引擎（例如 Unity、Godot）？
-2.  **功能補充：** 這些補充的快捷鍵與細節是否符合您的想像？如果有其他特別想要的功能，我們可以再加入。
-3.  **第一步方向：** 我們會從「2D 畫布與滑鼠控制」以及「建立基礎音符發聲」開始著手。
+### 3. Logic (遊戲迴圈與物理邏輯)
 
-確認後，我們就會接著生成 `task.md` 來記錄待辦事項，並開始進行開發！
+#### [NEW] src/hooks/useGameLoop.ts
+- 統整 Pixi 的 `useTick`。
+- 當 `isPlaying` 為 true，根據 BPM 計算每幀 Runner 應該前進的距離。
+- 使用貝茲曲線數學公式 (Bezier Interpolation) 計算 Runner 確切的 X/Y 座標。
+- **碰撞偵測 (AABB):** 檢查 Runner (圓形或點) 與 NoteBlock (矩形) 是否相交。如果是新進入交集區域，觸發 Tone.js 音效。
+
+## 執行計畫
+
+我們將進入執行階段，並透過 `task.md` 追蹤以下進度：
+1. 更新 `useStore.ts`。
+2. 實作 Playback 控制列 UI 與全域狀態。
+3. 實作 `TrackRenderer` 與軌道繪製/編輯邏輯 (包含貝茲曲線拖曳)。
+4. 實作雙擊開啟 `TrackPropertiesPopup`。
+5. 實作 `useGameLoop`：Runner 沿著曲線移動以及碰撞判定發聲。

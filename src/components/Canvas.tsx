@@ -4,13 +4,18 @@ import * as PIXI from 'pixi.js';
 import { useStore } from '../store/useStore';
 import { NoteBlock } from './NoteBlock';
 import { playNote } from '../utils/audio';
+import { shiftPitch } from '../utils/pitchUtils';
+import { TrackRenderer } from './TrackRenderer';
 
 export type TrailStroke = {
   id: number;
   points: { x: number, y: number, time: number }[];
 };
 
-const TrailRenderer: React.FC<{ activeStrokesRef: React.MutableRefObject<TrailStroke[]> }> = ({ activeStrokesRef }) => {
+const TrailRenderer: React.FC<{ 
+  activeStrokesRef: React.MutableRefObject<TrailStroke[]>;
+  currentStrokeId: React.MutableRefObject<number | null>;
+}> = ({ activeStrokesRef, currentStrokeId }) => {
   const gRef = useRef<PIXI.Graphics>(null);
 
   useTick(() => {
@@ -20,6 +25,10 @@ const TrailRenderer: React.FC<{ activeStrokesRef: React.MutableRefObject<TrailSt
       
       // Remove old points and empty strokes
       activeStrokesRef.current.forEach(stroke => {
+        if (stroke.id === currentStrokeId.current && stroke.points.length > 0) {
+          // Keep the tip fresh while still dragging
+          stroke.points[stroke.points.length - 1].time = now;
+        }
         stroke.points = stroke.points.filter(p => now - p.time < FADE_TIME);
       });
       activeStrokesRef.current = activeStrokesRef.current.filter(s => s.points.length > 0);
@@ -80,6 +89,9 @@ export const Canvas: React.FC = () => {
   const nextStrokeId = useRef(0);
   const currentStrokeId = useRef<number | null>(null);
 
+  const lastClickTimeRef = useRef<number>(0);
+  const lastClickPosRef = useRef<{x: number, y: number} | null>(null);
+
   const intersectedBlocksRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -122,6 +134,28 @@ export const Canvas: React.FC = () => {
         const newCameraY = globalY - localY * newZoom;
 
         state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+      } else {
+        const state = useStore.getState();
+        if (state.hoveredBlockId) {
+          e.preventDefault();
+          const isVolume = e.shiftKey;
+          const delta = e.deltaY > 0 ? -1 : 1;
+          
+          const state = useStore.getState();
+          state.mutateBlocks(
+            [state.hoveredBlockId],
+            (b) => {
+              if (isVolume) {
+                const newVolume = Math.max(0, Math.min(1, (b.volume ?? 1) + delta * 0.1));
+                return { volume: newVolume, playedAt: Date.now() };
+              } else {
+                const newPitch = shiftPitch(b.pitch, delta);
+                return { pitch: newPitch, playedAt: Date.now() };
+              }
+            },
+            { continuous: true }
+          );
+        }
       }
     };
     document.addEventListener('wheel', handler, { passive: false });
@@ -158,7 +192,7 @@ export const Canvas: React.FC = () => {
       if (lineIntersectsRect(x1, y1, x2, y2, b.x, b.y, 60, 60)) {
         currentFrameIntersected.add(b.id);
         if (!intersectedBlocksRef.current.has(b.id)) {
-          playNote(b.pitch);
+          playNote(b.pitch, b.volume ?? 1, b.instrument ?? 'piano');
           state.updateBlock(b.id, { playedAt: Date.now() });
         }
       }
@@ -168,15 +202,58 @@ export const Canvas: React.FC = () => {
   };
 
   const handlePointerDown = (e: any) => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     const button = e.button;
     if (button === 1) { // Middle click to pan
       setIsPanning(true);
       const pos = e.global;
       setPanStart({ x: pos.x - camera.x, y: pos.y - camera.y });
     } else if (button === 0) {
+      const state = useStore.getState();
+
+      if (state.mode === 'draw_track') {
+        if (e.target && e.target.label === 'background') {
+          const pos = e.currentTarget.toLocal(e.global);
+          let trackId = state.activeTrackId;
+          if (!trackId) {
+            trackId = state.addTrack({ nodes: [], bpm: 120, loop: false });
+            state.setActiveTrackId(trackId);
+          }
+          const nodeId = state.addTrackNode(trackId, { x: pos.x, y: pos.y });
+          state.setActiveNodeDrag({ trackId, nodeId });
+          if (e.pointerId !== undefined && e.target.setPointerCapture) {
+            e.target.setPointerCapture(e.pointerId);
+          }
+        }
+        return;
+      }
+
       if (e.target && e.target.label === 'background') {
+        const now = Date.now();
+        const posLocal = e.currentTarget.toLocal(e.global);
+        const timeDiff = now - lastClickTimeRef.current;
+        
+        // Double click to spawn a noteblock (ignore < 50ms as it's likely a duplicate event)
+        if (timeDiff > 50 && timeDiff < 350 && lastClickPosRef.current) {
+          const dx = posLocal.x - lastClickPosRef.current.x;
+          const dy = posLocal.y - lastClickPosRef.current.y;
+          if (Math.hypot(dx, dy) < 20) {
+            if (state.mode === 'drum') {
+              state.addBlock({ pitch: 'kick', x: posLocal.x - 30, y: posLocal.y - 30, instrument: 'percussion', volume: 1, name: 'Kick' });
+            } else {
+              state.addBlock({ pitch: 'C4', x: posLocal.x - 30, y: posLocal.y - 30, instrument: 'piano', volume: 1, name: 'Note' });
+            }
+            lastClickTimeRef.current = 0; // reset
+            return;
+          }
+        }
+        lastClickTimeRef.current = now;
+        lastClickPosRef.current = { x: posLocal.x, y: posLocal.y };
+
         if (!e.ctrlKey && !e.shiftKey) {
-          useStore.getState().clearSelection();
+          state.clearSelection();
         }
         // Start marquee selection on left click
         const pos = e.currentTarget.toLocal(e.global);
@@ -224,7 +301,12 @@ export const Canvas: React.FC = () => {
         return b.x < x + w && b.x + 60 > x && b.y < y + h && b.y + 60 > y;
       }).map(b => b.id);
       
-      useStore.setState({ selectedBlockIds: selectedIds });
+      const tracks = useStore.getState().tracks;
+      const selectedTIds = tracks.filter(t => {
+        return t.nodes.some(n => n.x >= x && n.x <= x + w && n.y >= y && n.y <= y + h);
+      }).map(t => t.id);
+      
+      useStore.setState({ selectedBlockIds: selectedIds, selectedTrackIds: selectedTIds });
     } else if (e.buttons === 2) {
       const pos = e.currentTarget.toLocal(e.global);
       if (currentStrokeId.current !== null) {
@@ -326,7 +408,8 @@ export const Canvas: React.FC = () => {
             />
           ))}
 
-          <TrailRenderer activeStrokesRef={activeStrokesRef} />
+          <TrackRenderer />
+          <TrailRenderer activeStrokesRef={activeStrokesRef} currentStrokeId={currentStrokeId} />
         </pixiContainer>
       </Application>
     </div>

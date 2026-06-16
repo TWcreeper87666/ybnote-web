@@ -83,6 +83,42 @@ export const SettingsPanel: React.FC = () => {
           </label>
         </div>
 
+        <div className="settings-section">
+          <h3>Block Display</h3>
+          <label className="switch-row">
+            <span>Show Name</span>
+            <input 
+              type="checkbox" 
+              checked={useStore.getState().showBlockName} 
+              onChange={(e) => useStore.getState().setDisplaySettings({ showBlockName: e.target.checked })} 
+            />
+          </label>
+          <label className="switch-row">
+            <span>Show Pitch</span>
+            <input 
+              type="checkbox" 
+              checked={useStore.getState().showBlockPitch} 
+              onChange={(e) => useStore.getState().setDisplaySettings({ showBlockPitch: e.target.checked })} 
+            />
+          </label>
+          <label className="switch-row">
+            <span>Show Volume</span>
+            <input 
+              type="checkbox" 
+              checked={useStore.getState().showBlockVolume} 
+              onChange={(e) => useStore.getState().setDisplaySettings({ showBlockVolume: e.target.checked })} 
+            />
+          </label>
+          <label className="switch-row">
+            <span>Show Instrument</span>
+            <input 
+              type="checkbox" 
+              checked={useStore.getState().showBlockInstrument} 
+              onChange={(e) => useStore.getState().setDisplaySettings({ showBlockInstrument: e.target.checked })} 
+            />
+          </label>
+        </div>
+
         {/* Actions */}
         <div className="settings-actions">
           <button 

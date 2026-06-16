@@ -1,8 +1,8 @@
 import React, { useCallback, useState } from 'react';
 import '@pixi/react';
 import * as PIXI from 'pixi.js';
-import { playNote } from '../utils/audio';
 import { useStore } from '../store/useStore';
+import { playNote } from '../utils/audio';
 import { getPitchColorNumber } from '../utils/colors';
 
 interface NoteBlockProps {
@@ -14,10 +14,18 @@ interface NoteBlockProps {
 
 export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
   const { selectedBlockIds, selectBlock } = useStore();
-  const snapToGrid = useStore(state => state.snapToGrid);
   const blockOpacity = useStore(state => state.blockOpacity);
   const isSelected = selectedBlockIds.includes(id);
-  const isMultiSelect = selectedBlockIds.length > 1;
+
+  const block = useStore(state => state.blocks.find(b => b.id === id));
+  const name = block?.name;
+  const volume = block?.volume ?? 1;
+  const instrument = block?.instrument ?? 'piano';
+
+  const showBlockName = useStore(state => state.showBlockName);
+  const showBlockPitch = useStore(state => state.showBlockPitch);
+  const showBlockVolume = useStore(state => state.showBlockVolume);
+  const showBlockInstrument = useStore(state => state.showBlockInstrument);
 
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -38,8 +46,9 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
     if (playedAt && playedAt !== lastPlayedRef.current) {
       lastPlayedRef.current = playedAt;
       ripplesRef.current.push({ id: playedAt, progress: 0 });
+      playNote(pitch, volume, instrument);
     }
-  }, [playedAt]);
+  }, [playedAt, pitch, volume, instrument]);
 
   const draw = useCallback(
     (g: PIXI.Graphics) => {
@@ -63,8 +72,16 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
       g.roundRect(0, 0, 60, 60, 8); // Square block
       g.fill({ color: blockColor, alpha: blockOpacity });
       g.stroke({ width: isSelected ? 3 : 2, color: isSelected ? 0x4f46e5 : 0xffffff, alpha: isSelected ? 1 : 0.4 });
+
+      // Draw volume bar
+      if (showBlockVolume) {
+        g.roundRect(4, 50, 52, 6, 3);
+        g.fill({ color: 0x000000, alpha: 0.3 });
+        g.roundRect(4, 50, 52 * volume, 6, 3);
+        g.fill({ color: 0xffffff, alpha: 0.8 });
+      }
     },
-    [isSelected, blockColor, blockOpacity]
+    [isSelected, blockColor, blockOpacity, showBlockVolume, volume]
   );
 
   const handlePointerDown = (e: any) => {
@@ -115,12 +132,14 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
     let hasPaused = false;
     const state = useStore.getState();
     const selectedBlocks = state.blocks.filter(b => state.selectedBlockIds.includes(b.id));
-    // Provide a fallback if this block isn't in selectedBlockIds (though it should be)
     if (!selectedBlocks.find(b => b.id === id)) {
       const thisBlock = state.blocks.find(b => b.id === id);
       if (thisBlock) selectedBlocks.push(thisBlock);
     }
+    const selectedTracks = state.tracks.filter(t => state.selectedTrackIds.includes(t.id));
+    
     const initialPositions = new Map(selectedBlocks.map(b => [b.id, { x: b.x, y: b.y }]));
+    const initialTrackNodes = new Map(selectedTracks.map(t => [t.id, t.nodes.map(n => ({...n}))]));
 
     const handleGlobalMove = (e: PointerEvent) => {
       const state = useStore.getState();
@@ -154,12 +173,25 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
         }
         return { id: b.id, updates: { x: targetX, y: targetY } };
       });
+      
+      const trackUpdates = selectedTracks.map(t => {
+        const initNodes = initialTrackNodes.get(t.id)!;
+        const newNodes = initNodes.map(n => {
+          const targetX = n.x + deltaX;
+          const targetY = n.y + deltaY;
+          if (targetX !== n.x || targetY !== n.y) {
+             actuallyMoved = true;
+          }
+          return { ...n, x: targetX, y: targetY };
+        });
+        return { id: t.id, nodes: newNodes };
+      });
 
       if (!actuallyMoved) return;
 
       if (!hasPaused) {
         useStore.temporal.setState(s => ({
-          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups }],
+          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, tracks: state.tracks }],
           futureStates: []
         }));
         useStore.temporal.getState().pause();
@@ -167,9 +199,12 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
       }
 
       state.updateBlocks(finalUpdates);
+      trackUpdates.forEach(tu => {
+        state.updateTrack(tu.id, { nodes: tu.nodes });
+      });
     };
 
-    const handleGlobalUp = (e: PointerEvent) => {
+    const handleGlobalUp = () => {
       setIsDragging(false);
       clickStartPosRef.current = null;
       if (hasPaused) {
@@ -216,17 +251,46 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
     return () => cancelAnimationFrame(animationFrameId);
   }, [draw]);
 
+  // Determine instrument icon
+  let instrumentIcon = '🎵';
+  if (instrument === 'piano') instrumentIcon = '🎹';
+  else if (instrument === 'synth') instrumentIcon = '📻';
+  else if (instrument === 'bass') instrumentIcon = '🎸';
+  else if (instrument === 'percussion') instrumentIcon = '🥁';
+
   return (
-    <pixiGraphics
-      ref={graphicsRef}
+    <pixiContainer
       x={x}
       y={y}
-      draw={draw}
       eventMode="static"
       cursor="pointer"
       hitArea={new PIXI.Rectangle(0, 0, 60, 60)}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
-    />
+      onPointerEnter={() => useStore.getState().setHoveredBlockId(id)}
+      onPointerLeave={() => {
+        const state = useStore.getState();
+        if (state.hoveredBlockId === id) {
+          state.setHoveredBlockId(null);
+        }
+      }}
+    >
+      <pixiGraphics
+        ref={graphicsRef}
+        draw={draw}
+      />
+      {showBlockName && name && (
+        // @ts-ignore - @pixi/react v8 intrinsic element types are incomplete
+        <pixiText text={name} x={4} y={4} style={{ fontSize: 20, fill: '#ffffff', fontFamily: 'Inter' }} scale={0.5} />
+      )}
+      {showBlockPitch && (
+        // @ts-ignore
+        <pixiText text={pitch} x={30} y={30} anchor={0.5} style={{ fontSize: 32, fill: '#ffffff', fontWeight: 'bold', fontFamily: 'Inter' }} scale={0.5} />
+      )}
+      {showBlockInstrument && (
+        // @ts-ignore
+        <pixiText text={instrumentIcon} x={42} y={4} style={{ fontSize: 24 }} scale={0.5} />
+      )}
+    </pixiContainer>
   );
 };

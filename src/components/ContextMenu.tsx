@@ -1,9 +1,32 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
-import { playNote } from '../utils/audio';
+import { shiftPitch } from '../utils/pitchUtils';
 
 export const ContextMenu: React.FC = () => {
-  const { contextMenu, closeContextMenu, updateBlock, blocks, removeBlock, updateBlocks, selectedBlockIds, deleteSelectedBlocks } = useStore();
+  const { contextMenu, closeContextMenu, blocks, removeBlock, selectedBlockIds, deleteSelected } = useStore();
+
+  const menuRef = React.useRef<HTMLDivElement>(null);
+  const [pos, setPos] = React.useState({ x: contextMenu?.x || 0, y: contextMenu?.y || 0 });
+
+  React.useEffect(() => {
+    if (contextMenu && menuRef.current) {
+      const rect = menuRef.current.getBoundingClientRect();
+      let newX = contextMenu.x;
+      let newY = contextMenu.y;
+
+      newX += 5;
+      newY += 5;
+
+      if (newX + rect.width > window.innerWidth) {
+        newX = window.innerWidth - rect.width - 8;
+      }
+      if (newY + rect.height > window.innerHeight) {
+        newY = window.innerHeight - rect.height - 8;
+      }
+
+      setPos({ x: newX, y: newY });
+    }
+  }, [contextMenu?.x, contextMenu?.y]);
 
   if (!contextMenu) return null;
 
@@ -15,28 +38,10 @@ export const ContextMenu: React.FC = () => {
     : [block];
 
   const tunePitch = (semitones: number) => {
-    const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-    
-    const updates = targetBlocks.map(b => {
-      const octaveMatch = b.pitch.match(/\d+$/);
-      const octave = octaveMatch ? parseInt(octaveMatch[0]) : 4;
-      const noteName = b.pitch.replace(/\d+$/, '');
-      
-      const noteIndex = NOTES.indexOf(noteName);
-      if (noteIndex === -1) return null;
-      
-      const absoluteNote = octave * 12 + noteIndex + semitones;
-      if (absoluteNote < 12) return null;
-      
-      const newOctave = Math.floor(absoluteNote / 12);
-      const newNoteIndex = absoluteNote % 12;
-      const newPitch = `${NOTES[newNoteIndex]}${newOctave}`;
-      
-      return { id: b.id, updates: { pitch: newPitch, playedAt: Date.now() } };
-    }).filter(Boolean) as {id: string, updates: any}[];
-
-    updateBlocks(updates);
-    updates.forEach(u => playNote(u.updates.pitch!));
+    useStore.getState().mutateBlocks(
+      [block.id],
+      (b) => ({ pitch: shiftPitch(b.pitch, semitones), playedAt: Date.now() })
+    );
   };
 
   const handleTuneUp = (e: React.MouseEvent) => {
@@ -52,7 +57,7 @@ export const ContextMenu: React.FC = () => {
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (targetBlocks.length > 1) {
-      deleteSelectedBlocks();
+      deleteSelected();
     } else {
       removeBlock(block.id);
     }
@@ -61,11 +66,12 @@ export const ContextMenu: React.FC = () => {
 
   return (
     <div 
+      ref={menuRef}
       className="context-menu glass-panel"
       style={{
         position: 'fixed',
-        left: contextMenu.x,
-        top: contextMenu.y,
+        left: pos.x,
+        top: pos.y,
         zIndex: 1000,
         padding: '8px',
         display: 'flex',
@@ -79,9 +85,74 @@ export const ContextMenu: React.FC = () => {
       <div style={{ fontSize: '12px', opacity: 0.7, padding: '4px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
         {targetBlocks.length > 1 ? `${targetBlocks.length} Blocks Selected` : `Block: ${block.pitch}`}
       </div>
-      <button className="action-btn" onClick={handleTuneUp}>Pitch +1</button>
-      <button className="action-btn" onClick={handleTuneDown}>Pitch -1</button>
-      <button className="action-btn" style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#fca5a5' }} onClick={handleDelete}>Delete</button>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px' }}>
+        <label style={{ fontSize: '12px', opacity: 0.8 }}>{block.instrument === 'percussion' ? 'Drum Type' : 'Pitch'}</label>
+        {block.instrument === 'percussion' ? (
+          <select 
+            value={block.pitch} 
+            onChange={(e) => {
+              useStore.getState().mutateBlocks(
+                [block.id],
+                () => ({ pitch: e.target.value, playedAt: Date.now() })
+              );
+            }}
+            style={{ background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '4px' }}
+          >
+            <option value="kick">Kick</option>
+            <option value="snare">Snare</option>
+            <option value="hihat">Hi-Hat</option>
+            <option value="tom">Tom</option>
+            <option value="cymbal">Cymbal</option>
+          </select>
+        ) : (
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button className="action-btn" style={{ flex: 1 }} onClick={handleTuneDown}>-1</button>
+            <button className="action-btn" style={{ flex: 1 }} onClick={handleTuneUp}>+1</button>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px' }}>
+        <label style={{ fontSize: '12px', opacity: 0.8 }}>Volume: {Math.round((block.volume ?? 1) * 100)}%</label>
+        <input 
+          type="range" 
+          min="0" 
+          max="1" 
+          step="0.01" 
+          value={block.volume ?? 1} 
+          onChange={(e) => {
+            const vol = parseFloat(e.target.value);
+            useStore.getState().mutateBlocks(
+              [block.id],
+              () => ({ volume: vol, playedAt: Date.now() })
+            );
+          }} 
+        />
+      </div>
+
+      {block.instrument !== 'percussion' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px' }}>
+          <label style={{ fontSize: '12px', opacity: 0.8 }}>Instrument</label>
+          <select 
+            value={block.instrument || 'piano'} 
+            onChange={(e) => {
+              const inst = e.target.value;
+              useStore.getState().mutateBlocks(
+                [block.id],
+                () => ({ instrument: inst, playedAt: Date.now() })
+              );
+            }}
+            style={{ background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '4px' }}
+          >
+            <option value="piano">Piano</option>
+            <option value="synth">Synth</option>
+            <option value="bass">Bass</option>
+          </select>
+        </div>
+      )}
+
+      <button className="action-btn" style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#fca5a5', marginTop: '4px' }} onClick={handleDelete}>Delete</button>
     </div>
   );
 };

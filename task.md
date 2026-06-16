@@ -31,10 +31,12 @@
 - [x] 實作常用快捷鍵 (複製/貼上/全選/多選/快速複製)
 
 ## Phase 5: 動態軌道系統 (Tracks & Sequencing)
-- [ ] 實作軌道繪製功能 (直線/貝茲曲線)
-- [ ] 實作觸發球 (Runner Ball) 沿軌道移動邏輯
-- [ ] 實作觸發球碰撞/經過音符方塊發聲判定
-- [ ] 實作軌道參數調整 (速度、循環、左右擺動 Sine wave)
+- [x] 更新 Store: 新增 Track, Runner, Playback 狀態與 Actions
+- [x] 實作 Playback 播放控制面板 UI (Play/Pause/Stop)
+- [x] 實作軌道繪製功能 (支援貝茲曲線控制點拖曳)
+- [x] 實作軌道屬性彈出視窗 (雙擊軌道修改 BPM、循環)
+- [x] 實作觸發球沿曲線軌道移動邏輯 (依據 BPM)
+- [x] 實作觸發球與音符方塊的碰撞判定 (無冷卻時間)
 
 ## Phase 6: MIDI 匯入與遊戲模式 (Integration & Gameplay)
 - [ ] 實作 MIDI 檔案解析與匯入功能

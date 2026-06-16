@@ -1,6 +1,17 @@
 import * as PIXI from 'pixi.js';
 
 export const getPitchColorNumber = (pitch: string, pianoKeysCount: number) => {
+  const drumColors: Record<string, number> = {
+    kick: 0xef4444, // Red
+    snare: 0x3b82f6, // Blue
+    hihat: 0xf59e0b, // Amber
+    tom: 0x8b5cf6, // Purple
+    cymbal: 0x10b981 // Emerald
+  };
+  if (drumColors[pitch]) {
+    return drumColors[pitch];
+  }
+
   const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const octaveMatch = pitch.match(/\d+$/);
   const octave = octaveMatch ? parseInt(octaveMatch[0]) : 4;
