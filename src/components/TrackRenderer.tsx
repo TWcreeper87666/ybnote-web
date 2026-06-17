@@ -28,7 +28,7 @@ const TrackHandle: React.FC<{
       draw={draw}
       eventMode="static"
       cursor="pointer"
-      onPointerDown={(e) => { 
+      onPointerDown={(e: PIXI.FederatedPointerEvent) => { 
         e.stopPropagation(); 
         if (e.button === 0) onDragStart(e); 
         else if (e.button === 2) onRightClick(e);
@@ -54,9 +54,11 @@ export const TrackRenderer: React.FC = () => {
       const thisTrack = state.tracks.find(t => t.id === isTrackDragging.trackId);
       if (thisTrack) selectedTracks.push(thisTrack);
     }
+    const selectedGroupRects = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
     
     const initialPositions = new Map(selectedBlocks.map(b => [b.id, { x: b.x, y: b.y }]));
     const initialTrackNodes = new Map(selectedTracks.map(t => [t.id, t.nodes.map(n => ({...n}))]));
+    const initialGroupRects = new Map(selectedGroupRects.map(g => [g.id, { x: g.x, y: g.y }]));
 
     const handleGlobalMove = (e: PointerEvent) => {
       const state = useStore.getState();
@@ -69,9 +71,9 @@ export const TrackRenderer: React.FC = () => {
       let newY = localY - isTrackDragging.dragOffset.y;
       
       if (state.snapToGrid) {
-        const gridSize = 60;
-        newX = Math.round(newX / gridSize) * gridSize;
-        newY = Math.round(newY / gridSize) * gridSize;
+        const snapSize = 30;
+        newX = Math.round(newX / snapSize) * snapSize;
+        newY = Math.round(newY / snapSize) * snapSize;
       }
       
       const initNodes = initialTrackNodes.get(isTrackDragging.trackId);
@@ -80,31 +82,27 @@ export const TrackRenderer: React.FC = () => {
       const deltaX = newX - initNodes[0].x;
       const deltaY = newY - initNodes[0].y;
       
-      let actuallyMoved = false;
+      const currentTrack = state.tracks.find(st => st.id === isTrackDragging.trackId);
+      if (currentTrack && currentTrack.nodes.length > 0 && 
+          (initNodes[0].x + deltaX) === currentTrack.nodes[0].x && 
+          (initNodes[0].y + deltaY) === currentTrack.nodes[0].y) {
+        return;
+      }
+      
       const finalUpdates = selectedBlocks.map(b => {
         const init = initialPositions.get(b.id)!;
-        const targetX = init.x + deltaX;
-        const targetY = init.y + deltaY;
-        if (targetX !== init.x || targetY !== init.y) { actuallyMoved = true; }
-        return { id: b.id, updates: { x: targetX, y: targetY } };
+        return { id: b.id, updates: { x: init.x + deltaX, y: init.y + deltaY } };
       });
       
       const trackUpdates = selectedTracks.map(t => {
-        const initNodes = initialTrackNodes.get(t.id)!;
-        const newNodes = initNodes.map(n => {
-          const targetX = n.x + deltaX;
-          const targetY = n.y + deltaY;
-          if (targetX !== n.x || targetY !== n.y) { actuallyMoved = true; }
-          return { ...n, x: targetX, y: targetY };
-        });
+        const trackInitNodes = initialTrackNodes.get(t.id)!;
+        const newNodes = trackInitNodes.map(n => ({ ...n, x: n.x + deltaX, y: n.y + deltaY }));
         return { id: t.id, nodes: newNodes };
       });
 
-      if (!actuallyMoved) return;
-
       if (!hasPaused) {
         useStore.temporal.setState(s => ({
-          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, tracks: state.tracks }],
+          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks }],
           futureStates: []
         }));
         useStore.temporal.getState().pause();
@@ -114,6 +112,10 @@ export const TrackRenderer: React.FC = () => {
       state.updateBlocks(finalUpdates);
       trackUpdates.forEach(tu => {
         state.updateTrack(tu.id, { nodes: tu.nodes });
+      });
+      selectedGroupRects.forEach(g => {
+        const init = initialGroupRects.get(g.id)!;
+        state.updateGroupRect(g.id, { x: init.x + deltaX, y: init.y + deltaY });
       });
     };
 
@@ -147,9 +149,9 @@ export const TrackRenderer: React.FC = () => {
        let y = (e.clientY - camera.y) / camera.zoom;
 
        if (state.snapToGrid) {
-         const gridSize = 60;
-         x = Math.round(x / gridSize) * gridSize;
-         y = Math.round(y / gridSize) * gridSize;
+         const snapSize = 30;
+         x = Math.round(x / snapSize) * snapSize;
+         y = Math.round(y / snapSize) * snapSize;
        }
 
        if (!hasPaused) {
@@ -217,7 +219,7 @@ export const TrackRenderer: React.FC = () => {
                 }
                 g.stroke({ width: 12, color: 0x000000, alpha: 0.001 }); // invisible hit area (reduced size)
               }}
-              onPointerDown={(e) => {
+              onPointerDown={(e: PIXI.FederatedPointerEvent) => {
                 e.stopPropagation();
                 const state = useStore.getState();
                 const camera = state.camera;
@@ -242,7 +244,7 @@ export const TrackRenderer: React.FC = () => {
                   } else if (!state.selectedTrackIds.includes(track.id)) {
                     state.selectTrack(track.id, false);
                   }
-                } else if (e.button === 2) { // Right click
+                } else if (e.button === 2 && isSelected) { // Right click
                   let minDist = Infinity;
                   let insertIdx = 1;
                   

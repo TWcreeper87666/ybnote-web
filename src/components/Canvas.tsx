@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Application, useTick } from '@pixi/react';
 import * as PIXI from 'pixi.js';
 import { useStore } from '../store/useStore';
@@ -6,6 +6,7 @@ import { NoteBlock } from './NoteBlock';
 import { playNote } from '../utils/audio';
 import { shiftPitch } from '../utils/pitchUtils';
 import { TrackRenderer } from './TrackRenderer';
+import { GroupRectRenderer } from './GroupRectRenderer';
 
 export type TrailStroke = {
   id: number;
@@ -84,8 +85,26 @@ export const Canvas: React.FC = () => {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [selectionBox, setSelectionBox] = useState<{x: number, y: number, w: number, h: number} | null>(null);
   const [selectionStart, setSelectionStart] = useState<{x: number, y: number} | null>(null);
+  const [groupDrawBox, setGroupDrawBox] = useState<{x: number, y: number, w: number, h: number} | null>(null);
+  const [groupDrawStart, setGroupDrawStart] = useState<{x: number, y: number} | null>(null);
+  const groupDrawBoxRef = useRef<{x: number, y: number, w: number, h: number} | null>(null);
   const containerRef = useRef<PIXI.Container>(null);
   const activeStrokesRef = useRef<TrailStroke[]>([]);
+
+  const finishGroupDraw = useCallback(() => {
+    const box = groupDrawBoxRef.current;
+    if (box) {
+      if (box.w > 10 && box.h > 10) {
+        useStore.getState().addGroupRect({ x: box.x, y: box.y, w: box.w, h: box.h });
+      } else {
+        // Default size if just single clicked
+        useStore.getState().addGroupRect({ x: box.x - 100, y: box.y - 100, w: 200, h: 200 });
+      }
+      groupDrawBoxRef.current = null;
+    }
+    setGroupDrawBox(null);
+    setGroupDrawStart(null);
+  }, []);
   const nextStrokeId = useRef(0);
   const currentStrokeId = useRef<number | null>(null);
 
@@ -99,6 +118,9 @@ export const Canvas: React.FC = () => {
       setIsPanning(false);
       setSelectionStart(null);
       setSelectionBox(null);
+      
+      finishGroupDraw();
+
       if (e.button === 2 || e.buttons === 0) {
         intersectedBlocksRef.current.clear();
         currentStrokeId.current = null;
@@ -115,12 +137,34 @@ export const Canvas: React.FC = () => {
   // Attach non-passive wheel listener to document to prevent zooming the entire page
   useEffect(() => {
     const handler = (e: WheelEvent) => {
-      if (e.ctrlKey) {
+      const state = useStore.getState();
+      if (state.hoveredBlockId && !e.ctrlKey) {
+        e.preventDefault();
+        const isVolume = e.shiftKey;
+        const delta = e.deltaY > 0 ? -1 : 1;
+        
+        state.mutateBlocks(
+          [state.hoveredBlockId as string],
+          (b) => {
+            if (isVolume) {
+              const newVolume = Math.max(0, Math.min(1, (b.volume ?? 1) + delta * 0.1));
+              return { volume: newVolume, playedAt: Date.now() };
+            } else {
+              const newPitch = shiftPitch(b.pitch, delta);
+              let newName = b.name;
+              if (b.instrument === 'percussion' && ['kick', 'snare', 'hihat', 'tom', 'cymbal'].includes(newPitch)) {
+                newName = newPitch.charAt(0).toUpperCase() + newPitch.slice(1);
+              }
+              return { pitch: newPitch, name: newName, playedAt: Date.now() };
+            }
+          },
+          { continuous: true }
+        );
+      } else {
         e.preventDefault();
         const zoomFactor = 1.1;
         const direction = e.deltaY > 0 ? 1 / zoomFactor : zoomFactor;
         
-        const state = useStore.getState();
         const oldZoom = state.camera.zoom;
         let newZoom = oldZoom * direction;
         newZoom = Math.min(Math.max(newZoom, 0.1), 5); // Clamp zoom
@@ -134,28 +178,6 @@ export const Canvas: React.FC = () => {
         const newCameraY = globalY - localY * newZoom;
 
         state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
-      } else {
-        const state = useStore.getState();
-        if (state.hoveredBlockId) {
-          e.preventDefault();
-          const isVolume = e.shiftKey;
-          const delta = e.deltaY > 0 ? -1 : 1;
-          
-          const state = useStore.getState();
-          state.mutateBlocks(
-            [state.hoveredBlockId],
-            (b) => {
-              if (isVolume) {
-                const newVolume = Math.max(0, Math.min(1, (b.volume ?? 1) + delta * 0.1));
-                return { volume: newVolume, playedAt: Date.now() };
-              } else {
-                const newPitch = shiftPitch(b.pitch, delta);
-                return { pitch: newPitch, playedAt: Date.now() };
-              }
-            },
-            { continuous: true }
-          );
-        }
       }
     };
     document.addEventListener('wheel', handler, { passive: false });
@@ -182,9 +204,10 @@ export const Canvas: React.FC = () => {
     return false;
   };
 
-  const checkTrailIntersection = (x1: number, y1: number, x2: number, y2: number) => {
+  const checkTrailIntersection = (x1: number, y1: number, x2: number, y2: number, isFirstPoint = false, startedOnBlock = false) => {
     const state = useStore.getState();
     const blocks = state.blocks;
+    const groupRects = state.groupRects;
     
     const currentFrameIntersected = new Set<string>();
 
@@ -194,6 +217,31 @@ export const Canvas: React.FC = () => {
         if (!intersectedBlocksRef.current.has(b.id)) {
           playNote(b.pitch, b.volume ?? 1, b.instrument ?? 'piano');
           state.updateBlock(b.id, { playedAt: Date.now() });
+        }
+      }
+    });
+
+    groupRects.forEach(g => {
+      if (lineIntersectsRect(x1, y1, x2, y2, g.x, g.y, g.w, g.h)) {
+        currentFrameIntersected.add(`groupRect:${g.id}`);
+        if (!intersectedBlocksRef.current.has(`groupRect:${g.id}`)) {
+          if (isFirstPoint && startedOnBlock) {
+             // Do not trigger, just mark as visited (which happens by adding to currentFrameIntersected)
+          } else {
+            state.updateGroupRect(g.id, { playedAt: Date.now() });
+            
+            const isInside = (bx: number, by: number, bw: number, bh: number) => {
+              return bx < g.x + g.w && bx + bw > g.x && by < g.y + g.h && by + bh > g.y;
+            };
+            
+            const blocksInside = state.blocks.filter(b => isInside(b.x, b.y, 60, 60));
+            if (blocksInside.length > 0) {
+              state.updateBlocks(blocksInside.map(b => ({
+                id: b.id,
+                updates: { playedAt: Date.now() }
+              })));
+            }
+          }
         }
       }
     });
@@ -223,6 +271,20 @@ export const Canvas: React.FC = () => {
           }
           const nodeId = state.addTrackNode(trackId, { x: pos.x, y: pos.y });
           state.setActiveNodeDrag({ trackId, nodeId });
+          if (e.pointerId !== undefined && e.target.setPointerCapture) {
+            e.target.setPointerCapture(e.pointerId);
+          }
+        }
+        return;
+      }
+
+      if (state.mode === 'draw_group') {
+        if (e.target && e.target.label === 'background') {
+          const pos = e.currentTarget.toLocal(e.global);
+          setGroupDrawStart({ x: pos.x, y: pos.y });
+          const newBox = { x: pos.x, y: pos.y, w: 0, h: 0 };
+          setGroupDrawBox(newBox);
+          groupDrawBoxRef.current = newBox;
           if (e.pointerId !== undefined && e.target.setPointerCapture) {
             e.target.setPointerCapture(e.pointerId);
           }
@@ -274,8 +336,17 @@ export const Canvas: React.FC = () => {
         id,
         points: [{ x: pos.x, y: pos.y, time: Date.now() }]
       });
+      let startedOnBlock = false;
+      let current = e.target as any;
+      while (current) {
+        if (current.label === 'note-block') {
+          startedOnBlock = true;
+          break;
+        }
+        current = current.parent;
+      }
       intersectedBlocksRef.current.clear();
-      checkTrailIntersection(pos.x, pos.y, pos.x, pos.y);
+      checkTrailIntersection(pos.x, pos.y, pos.x, pos.y, true, startedOnBlock);
     }
     
     useStore.getState().closeContextMenu();
@@ -288,6 +359,15 @@ export const Canvas: React.FC = () => {
         x: pos.x - panStart.x,
         y: pos.y - panStart.y,
       });
+    } else if (groupDrawStart) {
+      const pos = e.currentTarget.toLocal(e.global);
+      const x = Math.min(groupDrawStart.x, pos.x);
+      const y = Math.min(groupDrawStart.y, pos.y);
+      const w = Math.abs(pos.x - groupDrawStart.x);
+      const h = Math.abs(pos.y - groupDrawStart.y);
+      const newBox = { x, y, w, h };
+      setGroupDrawBox(newBox);
+      groupDrawBoxRef.current = newBox;
     } else if (selectionStart) {
       const pos = e.currentTarget.toLocal(e.global);
       const x = Math.min(selectionStart.x, pos.x);
@@ -305,8 +385,13 @@ export const Canvas: React.FC = () => {
       const selectedTIds = tracks.filter(t => {
         return t.nodes.some(n => n.x >= x && n.x <= x + w && n.y >= y && n.y <= y + h);
       }).map(t => t.id);
+
+      const groupRects = useStore.getState().groupRects;
+      const selectedGIds = groupRects.filter(g => {
+        return g.x < x + w && g.x + g.w > x && g.y < y + h && g.y + g.h > y;
+      }).map(g => g.id);
       
-      useStore.setState({ selectedBlockIds: selectedIds, selectedTrackIds: selectedTIds });
+      useStore.setState({ selectedBlockIds: selectedIds, selectedTrackIds: selectedTIds, selectedGroupRectIds: selectedGIds });
     } else if (e.buttons === 2) {
       const pos = e.currentTarget.toLocal(e.global);
       if (currentStrokeId.current !== null) {
@@ -324,6 +409,9 @@ export const Canvas: React.FC = () => {
     setIsPanning(false);
     setSelectionStart(null);
     setSelectionBox(null);
+    
+    finishGroupDraw();
+
     if (e.pointerId !== undefined && e.target && e.target.releasePointerCapture) {
       try { e.target.releasePointerCapture(e.pointerId); } catch (err) {}
     }
@@ -368,6 +456,15 @@ export const Canvas: React.FC = () => {
     }
   };
 
+  const drawGroupDrawBox = (g: PIXI.Graphics) => {
+    g.clear();
+    if (groupDrawBox) {
+      g.roundRect(groupDrawBox.x, groupDrawBox.y, groupDrawBox.w, groupDrawBox.h, 16);
+      g.fill({ color: 0x4f46e5, alpha: 0.15 });
+      g.stroke({ width: 2, color: 0x6366f1, alpha: 0.5 });
+    }
+  };
+
   return (
     <div 
       style={{ width: '100%', height: '100%' }} 
@@ -396,6 +493,9 @@ export const Canvas: React.FC = () => {
           />
           
           <pixiGraphics draw={drawSelectionBox} eventMode="none" />
+          <pixiGraphics draw={drawGroupDrawBox} eventMode="none" />
+
+          <GroupRectRenderer />
 
           {/* Render all blocks */}
           {blocks.map(block => (

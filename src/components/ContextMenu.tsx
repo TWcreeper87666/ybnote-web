@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore';
 import { shiftPitch } from '../utils/pitchUtils';
 
 export const ContextMenu: React.FC = () => {
-  const { contextMenu, closeContextMenu, blocks, removeBlock, selectedBlockIds, deleteSelected } = useStore();
+  const { contextMenu, closeContextMenu, blocks, removeBlock, groupRects, removeGroupRect, selectedBlockIds, deleteSelected } = useStore();
 
   const menuRef = React.useRef<HTMLDivElement>(null);
   const [pos, setPos] = React.useState({ x: contextMenu?.x || 0, y: contextMenu?.y || 0 });
@@ -30,7 +30,46 @@ export const ContextMenu: React.FC = () => {
 
   if (!contextMenu) return null;
 
-  const block = blocks.find(b => b.id === contextMenu.blockId);
+  const isGroupRect = contextMenu.blockId.startsWith('groupRect:');
+  const actualId = isGroupRect ? contextMenu.blockId.split(':')[1] : contextMenu.blockId;
+
+  if (isGroupRect) {
+    const rect = groupRects.find(g => g.id === actualId);
+    if (!rect) return null;
+
+    const handleDelete = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      removeGroupRect(rect.id);
+      closeContextMenu();
+    };
+
+    return (
+      <div 
+        ref={menuRef}
+        className="context-menu glass-panel"
+        style={{
+          position: 'fixed',
+          left: pos.x,
+          top: pos.y,
+          zIndex: 1000,
+          padding: '8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px',
+          minWidth: '120px',
+          pointerEvents: 'auto'
+        }}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <div style={{ fontSize: '12px', opacity: 0.7, padding: '4px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+          Group Area
+        </div>
+        <button className="action-btn" style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#fca5a5', marginTop: '4px' }} onClick={handleDelete}>Delete Group</button>
+      </div>
+    );
+  }
+
+  const block = blocks.find(b => b.id === actualId);
   if (!block) return null;
 
   const targetBlocks = selectedBlockIds.length > 0 && selectedBlockIds.includes(block.id) 

@@ -70,9 +70,9 @@ export const DrumKeyboard: React.FC = () => {
           let newY = y - 30;
           
           if (state.snapToGrid) {
-            const gridSize = 60;
-            newX = Math.round(newX / gridSize) * gridSize;
-            newY = Math.round(newY / gridSize) * gridSize;
+            const snapSize = 30;
+            newX = Math.round(newX / snapSize) * snapSize;
+            newY = Math.round(newY / snapSize) * snapSize;
           }
           
           state.addBlock({

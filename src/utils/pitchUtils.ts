@@ -1,12 +1,20 @@
 export const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+export const PERCUSSION_PITCHES = ['kick', 'snare', 'hihat', 'tom', 'cymbal'];
 
 /**
- * Shifts a pitch string (e.g. 'C4') by a given number of semitones.
+ * Shifts a pitch string (e.g. 'C4' or 'kick') by a given number of semitones or steps.
  * @param pitch The pitch string
- * @param delta Number of semitones to shift (positive or negative)
+ * @param delta Number of semitones/steps to shift (positive or negative)
  * @returns The new pitch string, or the original if invalid
  */
 export const shiftPitch = (pitch: string, delta: number): string => {
+  if (PERCUSSION_PITCHES.includes(pitch)) {
+    const currentIndex = PERCUSSION_PITCHES.indexOf(pitch);
+    let nextIndex = (currentIndex + delta) % PERCUSSION_PITCHES.length;
+    if (nextIndex < 0) nextIndex += PERCUSSION_PITCHES.length;
+    return PERCUSSION_PITCHES[nextIndex];
+  }
+
   const match = pitch.match(/^([A-G]#?)(\d)$/);
   if (!match) return pitch;
 

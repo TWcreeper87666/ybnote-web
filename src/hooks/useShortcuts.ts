@@ -88,7 +88,7 @@ export const useShortcuts = () => {
             state.deleteTrack(state.activeTrackId);
             state.setActiveTrackId(null);
           }
-          if (state.selectedBlockIds.length > 0 || state.selectedTrackIds.length > 0) {
+          if (state.selectedBlockIds.length > 0 || state.selectedTrackIds.length > 0 || state.selectedGroupRectIds.length > 0) {
             state.deleteSelected();
           }
         }

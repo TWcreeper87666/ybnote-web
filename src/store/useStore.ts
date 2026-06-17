@@ -23,6 +23,15 @@ interface Group {
   name: string;
 }
 
+export interface GroupRect {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  playedAt?: number;
+}
+
 interface CameraState {
   x: number;
   y: number;
@@ -49,17 +58,20 @@ interface Runner {
 }
 
 export type Theme = 'light' | 'dark';
-export type Mode = 'select' | 'draw_track' | 'piano' | 'drum';
+export type Mode = 'select' | 'draw_track' | 'piano' | 'drum' | 'draw_group';
 
 interface AppState {
   blocks: Block[];
   groups: Group[];
+  groupRects: GroupRect[];
   tracks: Track[];
   runners: Runner[];
   selectedBlockIds: string[];
   selectedTrackIds: string[];
+  selectedGroupRectIds: string[];
   clipboardBlocks: Block[];
   clipboardTracks: Track[];
+  clipboardGroupRects: GroupRect[];
   camera: CameraState;
   theme: Theme;
   showGrid: boolean;
@@ -100,6 +112,7 @@ interface AppState {
   deleteSelected: () => void;
   selectBlock: (id: string, multi?: boolean) => void;
   selectTrack: (id: string, multi?: boolean) => void;
+  selectGroupRect: (id: string, multi?: boolean) => void;
   selectAll: () => void;
   selectAllBlocks: () => void;
   clearSelection: () => void;
@@ -113,6 +126,11 @@ interface AppState {
   groupSelected: () => void;
   ungroupSelected: () => void;
   updateGroup: (id: string, name: string) => void;
+  
+  // Group Rects
+  addGroupRect: (groupRect: Omit<GroupRect, 'id'>) => string;
+  updateGroupRect: (id: string, updates: Partial<GroupRect>) => void;
+  removeGroupRect: (id: string) => void;
 
   // Clipboard
   copySelected: () => void;
@@ -165,12 +183,15 @@ export const useStore = create<AppState>()(
           { id: '3', name: 'Note 3', x: 400, y: 200, pitch: 'G4', volume: 1, instrument: 'piano', keyBinding: 'd' }
         ],
         groups: [],
+        groupRects: [],
         tracks: [],
         runners: [],
         selectedBlockIds: [],
         selectedTrackIds: [],
+        selectedGroupRectIds: [],
         clipboardBlocks: [],
         clipboardTracks: [],
+        clipboardGroupRects: [],
         camera: { x: 0, y: 0, zoom: 1 },
         theme: 'dark',
         showGrid: true,
@@ -224,7 +245,9 @@ export const useStore = create<AppState>()(
           selectedBlockIds: [],
           tracks: state.tracks.filter(t => !state.selectedTrackIds.includes(t.id)),
           runners: state.runners.filter(r => !state.selectedTrackIds.includes(r.trackId)),
-          selectedTrackIds: []
+          selectedTrackIds: [],
+          groupRects: state.groupRects.filter(g => !state.selectedGroupRectIds.includes(g.id)),
+          selectedGroupRectIds: []
         })),
 
         selectBlock: (id, multi) => set((state) => {
@@ -241,7 +264,7 @@ export const useStore = create<AppState>()(
               editingTrackId: null
             };
           }
-          return { selectedBlockIds: targetIds, selectedTrackIds: [], activeTrackId: null, editingTrackId: null };
+          return { selectedBlockIds: targetIds, selectedTrackIds: [], selectedGroupRectIds: [], activeTrackId: null, editingTrackId: null };
         }),
 
         selectTrack: (id, multi) => set((state) => {
@@ -254,12 +277,25 @@ export const useStore = create<AppState>()(
               activeTrackId: id,
             };
           }
-          return { selectedTrackIds: [id], selectedBlockIds: [], activeTrackId: id };
+          return { selectedTrackIds: [id], selectedBlockIds: [], selectedGroupRectIds: [], activeTrackId: id };
+        }),
+
+        selectGroupRect: (id, multi) => set((state) => {
+          if (multi) {
+            const isSelected = state.selectedGroupRectIds.includes(id);
+            return {
+              selectedGroupRectIds: isSelected
+                ? state.selectedGroupRectIds.filter(gId => gId !== id)
+                : [...new Set([...state.selectedGroupRectIds, id])]
+            };
+          }
+          return { selectedGroupRectIds: [id], selectedBlockIds: [], selectedTrackIds: [] };
         }),
 
         selectAll: () => set((state) => ({
           selectedBlockIds: state.blocks.map(b => b.id),
           selectedTrackIds: state.tracks.map(t => t.id),
+          selectedGroupRectIds: state.groupRects.map(g => g.id),
           activeTrackId: null,
           editingTrackId: null
         })),
@@ -267,11 +303,12 @@ export const useStore = create<AppState>()(
         selectAllBlocks: () => set((state) => ({
           selectedBlockIds: state.blocks.map(b => b.id),
           selectedTrackIds: [],
+          selectedGroupRectIds: [],
           activeTrackId: null,
           editingTrackId: null
         })),
 
-        clearSelection: () => set({ selectedBlockIds: [], selectedTrackIds: [], activeTrackId: null, editingTrackId: null }),
+        clearSelection: () => set({ selectedBlockIds: [], selectedTrackIds: [], selectedGroupRectIds: [], activeTrackId: null, editingTrackId: null }),
 
         mutateBlocks: (targetIds, mutator, options) => {
           const state = get();
@@ -342,15 +379,28 @@ export const useStore = create<AppState>()(
           groups: state.groups.map(g => g.id === id ? { ...g, name } : g)
         })),
 
+        addGroupRect: (groupRect) => {
+          const id = generateId();
+          set((state) => ({ groupRects: [...state.groupRects, { ...groupRect, id }] }));
+          return id;
+        },
+        updateGroupRect: (id, updates) => set((state) => ({
+          groupRects: state.groupRects.map(g => g.id === id ? { ...g, ...updates } : g)
+        })),
+        removeGroupRect: (id) => set((state) => ({
+          groupRects: state.groupRects.filter(g => g.id !== id)
+        })),
+
         copySelected: () => {
           const state = get();
           const blocksToCopy = state.blocks.filter(b => state.selectedBlockIds.includes(b.id));
           const tracksToCopy = state.tracks.filter(t => state.selectedTrackIds.includes(t.id));
-          set({ clipboardBlocks: blocksToCopy, clipboardTracks: tracksToCopy });
+          const groupRectsToCopy = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
+          set({ clipboardBlocks: blocksToCopy, clipboardTracks: tracksToCopy, clipboardGroupRects: groupRectsToCopy });
         },
 
         pasteClipboard: () => set((state) => {
-          if (state.clipboardBlocks.length === 0 && state.clipboardTracks.length === 0) return state;
+          if (state.clipboardBlocks.length === 0 && state.clipboardTracks.length === 0 && state.clipboardGroupRects.length === 0) return state;
           const newBlocks = state.clipboardBlocks.map(b => ({
             ...b,
             id: generateId(),
@@ -368,11 +418,19 @@ export const useStore = create<AppState>()(
               y: n.y + 20
             }))
           }));
+          const newGroupRects = state.clipboardGroupRects.map(g => ({
+            ...g,
+            id: generateId(),
+            x: g.x + 20,
+            y: g.y + 20
+          }));
           return {
             blocks: [...state.blocks, ...newBlocks],
             selectedBlockIds: newBlocks.map(b => b.id),
             tracks: [...state.tracks, ...newTracks],
             selectedTrackIds: newTracks.map(t => t.id),
+            groupRects: [...state.groupRects, ...newGroupRects],
+            selectedGroupRectIds: newGroupRects.map(g => g.id),
           };
         }),
 
@@ -414,14 +472,15 @@ export const useStore = create<AppState>()(
         setMode: (mode) => set((state) => ({ 
           mode, 
           activeTrackId: mode === 'select' ? null : state.activeTrackId,
-          selectedBlockIds: mode === 'draw_track' ? [] : state.selectedBlockIds,
-          selectedTrackIds: mode === 'draw_track' ? [] : state.selectedTrackIds,
+          selectedBlockIds: mode === 'draw_track' || mode === 'draw_group' ? [] : state.selectedBlockIds,
+          selectedTrackIds: mode === 'draw_track' || mode === 'draw_group' ? [] : state.selectedTrackIds,
+          selectedGroupRectIds: mode === 'draw_track' || mode === 'draw_group' ? [] : state.selectedGroupRectIds,
           isPianoOpen: mode === 'piano',
           isSettingsOpen: false,
           isHelpOpen: false
         })),
         setEditingTrackId: (editingTrackId) => set({ editingTrackId }),
-        setActiveTrackId: (activeTrackId) => set({ activeTrackId, selectedBlockIds: [], selectedTrackIds: activeTrackId ? [activeTrackId] : [] }),
+        setActiveTrackId: (activeTrackId) => set({ activeTrackId, selectedBlockIds: [], selectedTrackIds: activeTrackId ? [activeTrackId] : [], selectedGroupRectIds: [] }),
         setActiveNodeDrag: (activeNodeDrag) => set({ activeNodeDrag }),
         addTrackNode: (trackId, node) => {
           let id = generateId();
@@ -485,6 +544,7 @@ export const useStore = create<AppState>()(
         partialize: (state) => ({ 
           blocks: state.blocks, 
           groups: state.groups,
+          groupRects: state.groupRects,
           tracks: state.tracks,
           theme: state.theme, 
           showGrid: state.showGrid, 
@@ -494,14 +554,16 @@ export const useStore = create<AppState>()(
           showBlockName: state.showBlockName,
           showBlockPitch: state.showBlockPitch,
           showBlockVolume: state.showBlockVolume,
-          showBlockInstrument: state.showBlockInstrument
+          showBlockInstrument: state.showBlockInstrument,
+          camera: state.camera
         }), // only persist these fields
       }
     ),
     {
-      partialize: (state) => ({ blocks: state.blocks, groups: state.groups, tracks: state.tracks }), // only track history for blocks, groups, tracks
+      partialize: (state) => ({ blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks }), // only track history for blocks, groups, groupRects, tracks
       equality: (pastState, currentState) => {
         if (pastState.groups !== currentState.groups) return false;
+        if (pastState.groupRects !== currentState.groupRects) return false;
         if (pastState.tracks !== currentState.tracks) return false;
         if (pastState.blocks === currentState.blocks) return true;
         if (pastState.blocks.length !== currentState.blocks.length) return false;

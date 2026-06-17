@@ -37,6 +37,7 @@ export function useGameLoop() {
         let updatedRunners = [...state.runners];
         let hasChanges = false;
         const currentBlocks = state.blocks;
+        const currentGroupRects = state.groupRects;
 
         // Ensure we have a runner for each track
         state.tracks.forEach(track => {
@@ -83,7 +84,6 @@ export function useGameLoop() {
           const memory = triggeredBlocksRef.current.get(runner.id)!;
           
           const runnerRadius = 10;
-          let currentIntersections = new Set<string>();
 
           currentBlocks.forEach(block => {
             const isIntersecting = rectIntersect(
@@ -92,7 +92,6 @@ export function useGameLoop() {
             );
 
             if (isIntersecting) {
-              currentIntersections.add(block.id);
               if (!memory.has(block.id)) {
                 // Trigger sound
                 playNote(block.pitch, block.volume ?? 1, block.instrument ?? 'piano');
@@ -103,6 +102,40 @@ export function useGameLoop() {
               // If we are not intersecting anymore, remove from memory so it can be triggered again later if the track loops or self-intersects
               if (memory.has(block.id)) {
                 memory.delete(block.id);
+              }
+            }
+          });
+
+          currentGroupRects.forEach(groupRect => {
+            const isIntersecting = rectIntersect(
+              pos.x - runnerRadius, pos.y - runnerRadius, runnerRadius * 2, runnerRadius * 2,
+              groupRect.x, groupRect.y, groupRect.w, groupRect.h
+            );
+
+            const memoryId = `groupRect:${groupRect.id}`;
+
+            if (isIntersecting) {
+              if (!memory.has(memoryId)) {
+                state.updateGroupRect(groupRect.id, { playedAt: Date.now() });
+                memory.add(memoryId);
+
+                // Trigger all blocks inside this group rect
+                currentBlocks.forEach(block => {
+                  const isBlockInside = rectIntersect(
+                    groupRect.x, groupRect.y, groupRect.w, groupRect.h,
+                    block.x, block.y, 60, 60
+                  );
+                  if (isBlockInside && !memory.has(block.id)) {
+                    playNote(block.pitch, block.volume ?? 1, block.instrument ?? 'piano');
+                    state.updateBlock(block.id, { playedAt: Date.now() });
+                    // Add to memory so it doesn't double-trigger if the runner is simultaneously touching the block
+                    memory.add(block.id);
+                  }
+                });
+              }
+            } else {
+              if (memory.has(memoryId)) {
+                memory.delete(memoryId);
               }
             }
           });

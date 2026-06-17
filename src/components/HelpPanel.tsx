@@ -25,7 +25,7 @@ export const HelpPanel: React.FC = () => {
             <li><strong>Left Click (Bg):</strong> Marquee Selection</li>
             <li><strong>Right Click (Drag):</strong> Draw Play Trail</li>
             <li><strong>Middle Click (Drag):</strong> Pan Camera</li>
-            <li><strong>Ctrl + Scroll:</strong> Zoom In/Out</li>
+            <li><strong>Scroll (Bg):</strong> Zoom In/Out</li>
             <li style={{ marginTop: '8px' }}><strong>On Tracks:</strong></li>
             <li><strong>Left Click (Drag):</strong> Move Track</li>
             <li><strong>Right Click:</strong> Add Track Node</li>
