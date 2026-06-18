@@ -8,7 +8,7 @@ import { HelpPanel } from './components/HelpPanel';
 import { HierarchyPanel } from './components/HierarchyPanel';
 import { ContextMenu } from './components/ContextMenu';
 import { PlaybackControls } from './components/PlaybackControls';
-import { TrackPropertiesPopup } from './components/TrackPropertiesPopup';
+import { SelectionPropertiesHud } from './components/SelectionPropertiesHud';
 import { useStore } from './store/useStore';
 import { useShortcuts } from './hooks/useShortcuts';
 
@@ -29,7 +29,7 @@ function App() {
       <div className="main-wrapper">
         <Canvas />
         <h1 className="app-title">
-          YBNote Music Game
+          YBNote
         </h1>
         
         {/* UI Overlay */}
@@ -48,8 +48,8 @@ function App() {
             <DrumKeyboard />
             <SettingsPanel />
             <HelpPanel />
+            <SelectionPropertiesHud />
             <ContextMenu />
-            <TrackPropertiesPopup />
           </div>
         </div>
       </div>

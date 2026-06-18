@@ -7,6 +7,7 @@ import { playNote } from '../utils/audio';
 import { shiftPitch } from '../utils/pitchUtils';
 import { TrackRenderer } from './TrackRenderer';
 import { GroupRectRenderer } from './GroupRectRenderer';
+import { Plus } from 'lucide-react';
 
 export type TrailStroke = {
   id: number;
@@ -80,7 +81,7 @@ const TrailRenderer: React.FC<{
 };
 
 export const Canvas: React.FC = () => {
-  const { blocks, camera, updateCamera, showGrid, theme } = useStore();
+  const { blocks, camera, updateCamera, showGrid, theme, mode } = useStore();
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [selectionBox, setSelectionBox] = useState<{x: number, y: number, w: number, h: number} | null>(null);
@@ -95,10 +96,8 @@ export const Canvas: React.FC = () => {
     const box = groupDrawBoxRef.current;
     if (box) {
       if (box.w > 10 && box.h > 10) {
-        useStore.getState().addGroupRect({ x: box.x, y: box.y, w: box.w, h: box.h });
-      } else {
-        // Default size if just single clicked
-        useStore.getState().addGroupRect({ x: box.x - 100, y: box.y - 100, w: 200, h: 200 });
+        const id = useStore.getState().addGroupRect({ x: box.x, y: box.y, w: box.w, h: box.h });
+        useStore.getState().selectGroupRect(id, false);
       }
       groupDrawBoxRef.current = null;
     }
@@ -138,28 +137,63 @@ export const Canvas: React.FC = () => {
   useEffect(() => {
     const handler = (e: WheelEvent) => {
       const state = useStore.getState();
-      if (state.hoveredBlockId && !e.ctrlKey) {
+      let targetBlockId = state.hoveredBlockId;
+      let targetGroupRectId = state.hoveredGroupRectId;
+
+      if (state.mode === 'play') {
+        targetBlockId = null;
+        targetGroupRectId = null;
+      } else if (!targetBlockId && !targetGroupRectId) {
+        const globalX = e.clientX;
+        const globalY = e.clientY;
+        const localX = (globalX - state.camera.x) / state.camera.zoom;
+        const localY = (globalY - state.camera.y) / state.camera.zoom;
+        
+        for (let i = state.blocks.length - 1; i >= 0; i--) {
+          const b = state.blocks[i];
+          if (localX >= b.x && localX <= b.x + 60 && localY >= b.y && localY <= b.y + 60) {
+            targetBlockId = b.id;
+            break;
+          }
+        }
+
+        if (!targetBlockId) {
+          for (let i = state.groupRects.length - 1; i >= 0; i--) {
+            const g = state.groupRects[i];
+            if (localX >= g.x && localX <= g.x + g.w && localY >= g.y && localY <= g.y + g.h) {
+              targetGroupRectId = g.id;
+              break;
+            }
+          }
+        }
+      }
+
+      if (targetBlockId && !e.ctrlKey) {
         e.preventDefault();
         const isVolume = e.shiftKey;
         const delta = e.deltaY > 0 ? -1 : 1;
         
         state.mutateBlocks(
-          [state.hoveredBlockId as string],
+          [targetBlockId as string],
           (b) => {
             if (isVolume) {
-              const newVolume = Math.max(0, Math.min(1, (b.volume ?? 1) + delta * 0.1));
-              return { volume: newVolume, playedAt: Date.now() };
+              const newVolume = Math.round(Math.max(0, Math.min(1, (b.volume ?? 1) + delta * 0.1)) * 100) / 100;
+              return { volume: newVolume, playedAt: Date.now(), playedVolumeMultiplier: 1 };
             } else {
               const newPitch = shiftPitch(b.pitch, delta);
-              let newName = b.name;
-              if (b.instrument === 'percussion' && ['kick', 'snare', 'hihat', 'tom', 'cymbal'].includes(newPitch)) {
-                newName = newPitch.charAt(0).toUpperCase() + newPitch.slice(1);
-              }
-              return { pitch: newPitch, name: newName, playedAt: Date.now() };
+              return { pitch: newPitch, playedAt: Date.now(), playedVolumeMultiplier: 1 };
             }
           },
           { continuous: true }
         );
+      } else if (targetGroupRectId && !e.ctrlKey && e.shiftKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -1 : 1;
+        const rect = state.groupRects.find(g => g.id === targetGroupRectId);
+        if (rect) {
+          const newVolume = Math.round(Math.max(0, Math.min(1, (rect.volume ?? 1) + delta * 0.1)) * 100) / 100;
+          state.updateGroupRect(rect.id, { volume: newVolume });
+        }
       } else {
         e.preventDefault();
         const zoomFactor = 1.1;
@@ -169,8 +203,8 @@ export const Canvas: React.FC = () => {
         let newZoom = oldZoom * direction;
         newZoom = Math.min(Math.max(newZoom, 0.1), 5); // Clamp zoom
         
-        const globalX = e.clientX;
-        const globalY = e.clientY;
+        const globalX = state.mode === 'play' ? window.innerWidth / 2 : e.clientX;
+        const globalY = state.mode === 'play' ? window.innerHeight / 2 : e.clientY;
         const localX = (globalX - state.camera.x) / oldZoom;
         const localY = (globalY - state.camera.y) / oldZoom;
         
@@ -215,8 +249,7 @@ export const Canvas: React.FC = () => {
       if (lineIntersectsRect(x1, y1, x2, y2, b.x, b.y, 60, 60)) {
         currentFrameIntersected.add(b.id);
         if (!intersectedBlocksRef.current.has(b.id)) {
-          playNote(b.pitch, b.volume ?? 1, b.instrument ?? 'piano');
-          state.updateBlock(b.id, { playedAt: Date.now() });
+          state.updateBlock(b.id, { playedAt: Date.now(), playedVolumeMultiplier: 1 });
         }
       }
     });
@@ -238,7 +271,7 @@ export const Canvas: React.FC = () => {
             if (blocksInside.length > 0) {
               state.updateBlocks(blocksInside.map(b => ({
                 id: b.id,
-                updates: { playedAt: Date.now() }
+                updates: { playedAt: Date.now(), playedVolumeMultiplier: g.volume ?? 1 }
               })));
             }
           }
@@ -249,7 +282,108 @@ export const Canvas: React.FC = () => {
     intersectedBlocksRef.current = currentFrameIntersected;
   };
 
+  // Play Mode logic
+  useEffect(() => {
+    if (mode === 'play') {
+      document.body.requestPointerLock().catch(err => {
+        console.error("Pointer lock failed", err);
+      });
+    } else {
+      if (document.pointerLockElement) {
+        document.exitPointerLock();
+      }
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    const handlePointerLockChange = () => {
+      if (document.pointerLockElement !== document.body && useStore.getState().mode === 'play') {
+         useStore.getState().setMode('select');
+      }
+    };
+    document.addEventListener('pointerlockchange', handlePointerLockChange);
+    return () => document.removeEventListener('pointerlockchange', handlePointerLockChange);
+  }, []);
+
+  useEffect(() => {
+    if (mode !== 'play') return;
+    let rafId: number | null = null;
+    let pendingMovementX = 0;
+    let pendingMovementY = 0;
+    let buttonsPressed = 0;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      pendingMovementX += e.movementX;
+      pendingMovementY += e.movementY;
+      buttonsPressed = e.buttons;
+
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          const state = useStore.getState();
+          const newCamX = state.camera.x - pendingMovementX * state.mouseSensitivity;
+          const newCamY = state.camera.y - pendingMovementY * state.mouseSensitivity;
+          
+          if (buttonsPressed > 0) {
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            
+            const oldLocalX = (centerX - state.camera.x) / state.camera.zoom;
+            const oldLocalY = (centerY - state.camera.y) / state.camera.zoom;
+            
+            const newLocalX = (centerX - newCamX) / state.camera.zoom;
+            const newLocalY = (centerY - newCamY) / state.camera.zoom;
+            
+            checkTrailIntersection(oldLocalX, oldLocalY, newLocalX, newLocalY, false, false);
+          }
+          
+          state.updateCamera({ x: newCamX, y: newCamY });
+          
+          pendingMovementX = 0;
+          pendingMovementY = 0;
+          buttonsPressed = 0;
+          rafId = null;
+        });
+      }
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      const state = useStore.getState();
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+      const localX = (centerX - state.camera.x) / state.camera.zoom;
+      const localY = (centerY - state.camera.y) / state.camera.zoom;
+      
+      let startedOnBlock = false;
+      for (const b of state.blocks) {
+        if (localX >= b.x && localX <= b.x + 60 && localY >= b.y && localY <= b.y + 60) {
+          startedOnBlock = true;
+          break;
+        }
+      }
+      
+      intersectedBlocksRef.current.clear();
+      checkTrailIntersection(localX, localY, localX, localY, true, startedOnBlock);
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      if (e.buttons === 0) {
+        intersectedBlocksRef.current.clear();
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [mode]);
+
   const handlePointerDown = (e: any) => {
+    if (useStore.getState().mode === 'play') return;
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
@@ -280,7 +414,31 @@ export const Canvas: React.FC = () => {
 
       if (state.mode === 'draw_group') {
         if (e.target && e.target.label === 'background') {
+          const now = Date.now();
           const pos = e.currentTarget.toLocal(e.global);
+          const timeDiff = now - lastClickTimeRef.current;
+          
+          if (timeDiff > 50 && timeDiff < 350 && lastClickPosRef.current) {
+            const dx = pos.x - lastClickPosRef.current.x;
+            const dy = pos.y - lastClickPosRef.current.y;
+            if (Math.hypot(dx, dy) < 20) {
+               const state = useStore.getState();
+               const g = state.groupRects.find(g => g.id === state.lastSelectedId);
+               const w = g?.w || 200;
+               const h = g?.h || 200;
+               let nameToCopy = g?.name;
+               if (nameToCopy && nameToCopy.startsWith('Group ')) nameToCopy = undefined;
+               
+               const id = state.addGroupRect({ x: pos.x - w/2, y: pos.y - h/2, w, h, name: nameToCopy, volume: g?.volume, keyBinding: g?.keyBinding });
+               state.selectGroupRect(id, false);
+               lastClickTimeRef.current = 0;
+               return;
+            }
+          }
+          
+          lastClickTimeRef.current = now;
+          lastClickPosRef.current = { x: pos.x, y: pos.y };
+
           setGroupDrawStart({ x: pos.x, y: pos.y });
           const newBox = { x: pos.x, y: pos.y, w: 0, h: 0 };
           setGroupDrawBox(newBox);
@@ -293,6 +451,7 @@ export const Canvas: React.FC = () => {
       }
 
       if (e.target && e.target.label === 'background') {
+        useStore.getState().closeContextMenu();
         const now = Date.now();
         const posLocal = e.currentTarget.toLocal(e.global);
         const timeDiff = now - lastClickTimeRef.current;
@@ -302,10 +461,88 @@ export const Canvas: React.FC = () => {
           const dx = posLocal.x - lastClickPosRef.current.x;
           const dy = posLocal.y - lastClickPosRef.current.y;
           if (Math.hypot(dx, dy) < 20) {
-            if (state.mode === 'drum') {
-              state.addBlock({ pitch: 'kick', x: posLocal.x - 30, y: posLocal.y - 30, instrument: 'percussion', volume: 1, name: 'Kick' });
+            let spawnType: 'block' | 'drum' | 'groupRect' | 'track' | null = null;
+            if (state.mode === 'drum') spawnType = 'drum';
+            else {
+              if (state.lastSelectedType === 'groupRect') spawnType = 'groupRect';
+              else if (state.lastSelectedType === 'track') spawnType = 'track';
+              else if (state.lastSelectedType === 'block') {
+                 const b = state.blocks.find(b => b.id === state.lastSelectedId);
+                 if (b?.instrument === 'percussion') spawnType = 'drum';
+                 else spawnType = 'block';
+              } else {
+                 spawnType = 'block';
+              }
+            }
+
+            if (spawnType === 'groupRect') {
+               const g = state.groupRects.find(g => g.id === state.lastSelectedId);
+               const w = g?.w || 200;
+               const h = g?.h || 200;
+               let nameToCopy = g?.name;
+               if (nameToCopy && nameToCopy.startsWith('Group ')) nameToCopy = undefined;
+               
+               const id = state.addGroupRect({ 
+                 x: posLocal.x - w/2, 
+                 y: posLocal.y - h/2, 
+                 w, h, 
+                 name: nameToCopy, 
+                 volume: g?.volume, 
+                 keyBinding: g?.keyBinding 
+               });
+               state.selectGroupRect(id, false);
+            } else if (spawnType === 'track') {
+               const t = state.tracks.find(t => t.id === state.lastSelectedId);
+               if (t && t.nodes.length > 0) {
+                 const firstNode = t.nodes[0];
+                 const dx = posLocal.x - firstNode.x;
+                 const dy = posLocal.y - firstNode.y;
+                 const newNodes = t.nodes.map(n => ({ 
+                   ...n, 
+                   x: n.x + dx, 
+                   y: n.y + dy, 
+                   id: Math.random().toString(36).substring(2, 9) 
+                 }));
+                 
+                 let nameToCopy = t.name;
+                 if (nameToCopy && nameToCopy.startsWith('Track ')) nameToCopy = undefined;
+
+                 const trackId = state.addTrack({
+                   bpm: t.bpm,
+                   loop: t.loop,
+                   name: nameToCopy,
+                   nodes: newNodes,
+                 });
+                 state.selectTrack(trackId, false);
+               } else {
+                 const bpm = t?.bpm || 120;
+                 const loop = t?.loop || false;
+                 let nameToCopy = t?.name;
+                 if (nameToCopy && nameToCopy.startsWith('Track ')) nameToCopy = undefined;
+
+                 const trackId = state.addTrack({ bpm, loop, name: nameToCopy, nodes: [] });
+                 state.addTrackNode(trackId, { x: posLocal.x, y: posLocal.y });
+                 state.selectTrack(trackId, false);
+               }
             } else {
-              state.addBlock({ pitch: 'C4', x: posLocal.x - 30, y: posLocal.y - 30, instrument: 'piano', volume: 1, name: 'Note' });
+               const b = state.blocks.find(b => b.id === state.lastSelectedId);
+               if (spawnType === 'drum') {
+                 state.addBlock({ 
+                   pitch: b?.instrument === 'percussion' ? b.pitch : 'kick', 
+                   instrument: 'percussion', 
+                   volume: b?.instrument === 'percussion' ? b.volume : 1, 
+                   keyBinding: b?.instrument === 'percussion' ? b.keyBinding : undefined,
+                   x: posLocal.x - 30, y: posLocal.y - 30 
+                 });
+               } else {
+                 state.addBlock({ 
+                   pitch: b?.instrument !== 'percussion' && b ? b.pitch : 'C4', 
+                   instrument: b?.instrument !== 'percussion' && b ? b.instrument : 'piano', 
+                   volume: b?.instrument !== 'percussion' && b ? b.volume : 1, 
+                   keyBinding: b?.instrument !== 'percussion' && b ? b.keyBinding : undefined,
+                   x: posLocal.x - 30, y: posLocal.y - 30 
+                 });
+               }
             }
             lastClickTimeRef.current = 0; // reset
             return;
@@ -326,6 +563,7 @@ export const Canvas: React.FC = () => {
         }
       }
     } else if (button === 2) {
+      useStore.getState().closeContextMenu();
       if (e.target && e.target.label === 'background') {
         useStore.getState().clearSelection();
       }
@@ -348,18 +586,17 @@ export const Canvas: React.FC = () => {
       intersectedBlocksRef.current.clear();
       checkTrailIntersection(pos.x, pos.y, pos.x, pos.y, true, startedOnBlock);
     }
-    
-    useStore.getState().closeContextMenu();
   };
 
   const handlePointerMove = (e: any) => {
+    if (useStore.getState().mode === 'play') return;
     if (isPanning) {
       const pos = e.global;
       updateCamera({
         x: pos.x - panStart.x,
         y: pos.y - panStart.y,
       });
-    } else if (groupDrawStart) {
+    } else if (groupDrawStart && groupDrawBoxRef.current) {
       const pos = e.currentTarget.toLocal(e.global);
       const x = Math.min(groupDrawStart.x, pos.x);
       const y = Math.min(groupDrawStart.y, pos.y);
@@ -406,6 +643,7 @@ export const Canvas: React.FC = () => {
   };
 
   const handlePointerUp = (e: any) => {
+    if (useStore.getState().mode === 'play') return;
     setIsPanning(false);
     setSelectionStart(null);
     setSelectionBox(null);
@@ -459,7 +697,7 @@ export const Canvas: React.FC = () => {
   const drawGroupDrawBox = (g: PIXI.Graphics) => {
     g.clear();
     if (groupDrawBox) {
-      g.roundRect(groupDrawBox.x, groupDrawBox.y, groupDrawBox.w, groupDrawBox.h, 16);
+      g.roundRect(groupDrawBox.x, groupDrawBox.y, groupDrawBox.w, groupDrawBox.h, 8);
       g.fill({ color: 0x4f46e5, alpha: 0.15 });
       g.stroke({ width: 2, color: 0x6366f1, alpha: 0.5 });
     }
@@ -467,7 +705,7 @@ export const Canvas: React.FC = () => {
 
   return (
     <div 
-      style={{ width: '100%', height: '100%' }} 
+      style={{ width: '100%', height: '100%', position: 'relative' }} 
     >
       <Application 
         backgroundAlpha={0}
@@ -512,6 +750,33 @@ export const Canvas: React.FC = () => {
           <TrailRenderer activeStrokesRef={activeStrokesRef} currentStrokeId={currentStrokeId} />
         </pixiContainer>
       </Application>
+      <div 
+        style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          background: 'radial-gradient(circle, transparent 20%, rgba(0,0,0,0.85) 100%)',
+          opacity: mode === 'play' ? 1 : 0,
+          transition: 'opacity 1s ease-in-out',
+          zIndex: 10
+        }}
+      />
+      
+      <div
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          pointerEvents: 'none',
+          opacity: mode === 'play' ? 0.5 : 0,
+          transition: 'opacity 0.3s ease-in-out',
+          color: 'white',
+          zIndex: 11
+        }}
+      >
+        <Plus size={32} strokeWidth={1.5} />
+      </div>
     </div>
   );
 };

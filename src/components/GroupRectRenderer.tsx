@@ -26,6 +26,10 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
   const clickStartPosRef = React.useRef<{x: number, y: number} | null>(null);
   const wasSelectedRef = React.useRef(false);
 
+  const showBlockVolume = useStore(state => state.showBlockVolume);
+  const showGroupName = useStore(state => state.showGroupName);
+
+
   const ripplesRef = React.useRef<{id: number, progress: number}[]>([]);
   const lastPlayedRef = React.useRef(rect.playedAt);
   const graphicsRef = React.useRef<PIXI.Graphics>(null);
@@ -61,8 +65,20 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
 
       g.roundRect(rect.x, rect.y, rect.w, rect.h, 8);
       g.fill({ color: 0xffffff, alpha: 0.05 });
+
+      if (showBlockVolume) {
+        const barW = Math.max(52, Math.min(100, rect.w - 16));
+        const currentVol = rect.volume ?? 1;
+        const volAlpha = isSelected ? 1 : 0.5;
+        if (barW > 0) {
+          g.roundRect(rect.x + 8, rect.y + rect.h - 14, barW, 6, 3);
+          g.fill({ color: 0x000000, alpha: 0.3 * volAlpha });
+          g.roundRect(rect.x + 8, rect.y + rect.h - 14, barW * currentVol, 6, 3);
+          g.fill({ color: 0xffffff, alpha: 0.8 * volAlpha });
+        }
+      }
     },
-    [rect.x, rect.y, rect.w, rect.h, isSelected]
+    [rect.x, rect.y, rect.w, rect.h, isSelected, rect.volume, showBlockVolume]
   );
 
   // Animation loop for ripples
@@ -87,6 +103,12 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
     animationFrameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animationFrameId);
   }, [draw]);
+
+  React.useEffect(() => {
+    if (graphicsRef.current) {
+      graphicsRef.current.hitArea = new PIXI.Rectangle(rect.x, rect.y, rect.w, rect.h);
+    }
+  }, [rect.x, rect.y, rect.w, rect.h]);
 
   const handleResizeDown = (type: string, e: any) => {
     e.stopPropagation();
@@ -204,6 +226,10 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
     const isMultiSelect = e.ctrlKey || e.shiftKey;
     
     if (button === 0) { // Left click
+      const state = useStore.getState();
+      if (state.contextMenu && state.contextMenu.blockId !== `groupRect:${rect.id}`) {
+        state.closeContextMenu();
+      }
       e.stopPropagation();
       wasSelectedRef.current = isSelected;
       clickStartPosRef.current = { x: e.clientX, y: e.clientY };
@@ -303,7 +329,6 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
 
     const handleGlobalUp = () => {
       setIsDragging(false);
-      clickStartPosRef.current = null;
       if (hasPaused) {
         useStore.temporal.getState().resume();
       }
@@ -328,7 +353,7 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
       const dy = e.clientY - clickStartPosRef.current.y;
       if (Math.hypot(dx, dy) < 5) {
         if (wasSelectedRef.current && !e.ctrlKey && !e.shiftKey) {
-          useStore.getState().openContextMenu({
+          useStore.getState().toggleContextMenu({
             x: e.clientX, y: e.clientY, blockId: `groupRect:${rect.id}`
           });
         }
@@ -365,6 +390,13 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
         cursor="pointer"
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
+        onPointerEnter={() => useStore.getState().setHoveredGroupRectId(rect.id)}
+        onPointerLeave={() => {
+          const state = useStore.getState();
+          if (state.hoveredGroupRectId === rect.id) {
+            state.setHoveredGroupRectId(null);
+          }
+        }}
       />
       {isSelected && handles.map(h => (
         <pixiGraphics
@@ -377,6 +409,10 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
           onPointerDown={(e: PIXI.FederatedPointerEvent) => handleResizeDown(h.type, e)}
         />
       ))}
+      {showGroupName && (
+        // @ts-ignore
+        <pixiText text={`${rect.name || ''}`} x={rect.x + 8} y={rect.y + 8} style={{ fontSize: 32, fontWeight: 'bold', fill: '#ffffff', fontFamily: 'Inter' }} alpha={isSelected ? 1 : 0.5} scale={0.5} eventMode="none" />
+      )}
       {/* Invisible larger hit area for easier grabbing if it's mostly empty inside? 
           The rectangle itself is filled with alpha 0.15, so it should catch events. */}
     </pixiContainer>

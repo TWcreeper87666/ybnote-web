@@ -2,13 +2,14 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { playNote } from '../utils/audio';
 import { X } from 'lucide-react';
+import { getPitchColorHex } from '../utils/colors';
 
 const DRUMS = [
-  { pitch: 'kick', label: 'Kick', color: '#ef4444' },
-  { pitch: 'snare', label: 'Snare', color: '#f59e0b' },
-  { pitch: 'hihat', label: 'Hi-Hat', color: '#10b981' },
-  { pitch: 'tom', label: 'Tom', color: '#3b82f6' },
-  { pitch: 'cymbal', label: 'Cymbal', color: '#8b5cf6' }
+  { pitch: 'kick', label: 'Kick' },
+  { pitch: 'snare', label: 'Snare' },
+  { pitch: 'hihat', label: 'Hi-Hat' },
+  { pitch: 'tom', label: 'Tom' },
+  { pitch: 'cymbal', label: 'Cymbal' }
 ];
 
 export const DrumKeyboard: React.FC = () => {
@@ -19,7 +20,15 @@ export const DrumKeyboard: React.FC = () => {
   const [isDraggingDrum, setIsDraggingDrum] = useState(false);
   const [drumDragOffset, setDrumDragOffset] = useState({ x: 0, y: 0 });
 
-  const [draggedDrum, setDraggedDrum] = useState<{pitch: string, color: string, x: number, y: number} | null>(null);
+  const [draggedDrum, setDraggedDrum] = useState<{pitch: string, x: number, y: number} | null>(null);
+  const [hitPitch, setHitPitch] = useState<string | null>(null);
+
+  const triggerHit = (pitch: string) => {
+    setHitPitch(pitch);
+    setTimeout(() => {
+      setHitPitch(prev => prev === pitch ? null : prev);
+    }, 100);
+  };
 
   useEffect(() => {
     if (!isDraggingDrum) return;
@@ -39,16 +48,18 @@ export const DrumKeyboard: React.FC = () => {
     setDrumDragOffset({ x: e.clientX - drumPos.x, y: e.clientY - drumPos.y });
   };
 
-  const handleDrumPointerDown = (e: React.PointerEvent, pitch: string, color: string) => {
+  const handleDrumPointerDown = (e: React.PointerEvent, pitch: string) => {
     e.preventDefault();
     e.stopPropagation();
     
     if (e.button === 2) {
+      triggerHit(pitch);
       playNote(pitch, 1, 'percussion');
       try { e.currentTarget.releasePointerCapture(e.pointerId); } catch(err) {}
     } else if (e.button === 0) {
+      triggerHit(pitch);
       playNote(pitch, 1, 'percussion');
-      setDraggedDrum({ pitch, color, x: e.clientX, y: e.clientY });
+      setDraggedDrum({ pitch, x: e.clientX, y: e.clientY });
 
       const handlePointerMove = (moveEv: PointerEvent) => {
         setDraggedDrum(prev => prev ? { ...prev, x: moveEv.clientX, y: moveEv.clientY } : null);
@@ -91,6 +102,7 @@ export const DrumKeyboard: React.FC = () => {
 
   const handleDrumPointerEnter = (e: React.PointerEvent, pitch: string) => {
     if (e.buttons === 2) {
+      triggerHit(pitch);
       playNote(pitch, 1, 'percussion');
     }
   };
@@ -114,11 +126,11 @@ export const DrumKeyboard: React.FC = () => {
           {DRUMS.map(drum => (
             <div 
               key={drum.pitch}
-              onPointerDown={(e) => handleDrumPointerDown(e, drum.pitch, drum.color)}
+              onPointerDown={(e) => handleDrumPointerDown(e, drum.pitch)}
               onPointerEnter={(e) => handleDrumPointerEnter(e, drum.pitch)}
-              className="drum-pad"
+              className={`drum-pad ${hitPitch === drum.pitch ? 'hit' : ''}`}
               style={{
-                backgroundColor: drum.color,
+                backgroundColor: getPitchColorHex(drum.pitch, 36),
               }}
             >
               {drum.label}
@@ -133,7 +145,7 @@ export const DrumKeyboard: React.FC = () => {
           left: draggedDrum.x - 30,
           top: draggedDrum.y - 30,
           width: 60, height: 60,
-          backgroundColor: draggedDrum.color,
+          backgroundColor: getPitchColorHex(draggedDrum.pitch, 36),
           borderRadius: 8,
           pointerEvents: 'none',
           zIndex: 9999,

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
-import { Settings, Music, Drum, Trash2, Undo2, Redo2, LayoutList, PenTool, HelpCircle, Square } from 'lucide-react';
+import { Settings, Music, Drum, Trash2, Undo2, Redo2, LayoutList, PenTool, HelpCircle, Square, Play } from 'lucide-react';
 
 export const Toolbar: React.FC = () => {
   const { toggleSettings, toggleHelp, toggleHierarchy, deleteSelected, selectedBlockIds, selectedTrackIds, selectedGroupRectIds, mode, setMode } = useStore();
@@ -8,28 +8,12 @@ export const Toolbar: React.FC = () => {
 
 
   return (
-    <div className="toolbar glass-panel">
-      <div className="toolbar-group">
-        <button 
-          className={`toolbar-btn ${mode === 'draw_track' ? 'primary-btn' : ''}`}
-          onClick={() => setMode(mode === 'draw_track' ? 'select' : 'draw_track')}
-          title="Draw Track (Bezier)"
-        >
-          <PenTool size={24} />
-        </button>
-
-        <button 
-          className={`toolbar-btn ${mode === 'draw_group' ? 'primary-btn' : ''}`}
-          onClick={() => setMode(mode === 'draw_group' ? 'select' : 'draw_group')}
-          title="Draw Group"
-        >
-          <Square size={24} />
-        </button>
-
+    <>
+      <div className="top-toolbar glass-panel" style={{ gap: '8px' }}>
         <button 
           className={`toolbar-btn ${mode === 'piano' ? 'primary-btn' : ''}`}
           onClick={() => setMode(mode === 'piano' ? 'select' : 'piano')}
-          title="Add Note (Piano Mode)"
+          title="Add Note (1)"
         >
           <Music size={24} />
         </button>
@@ -37,11 +21,37 @@ export const Toolbar: React.FC = () => {
         <button 
           className={`toolbar-btn ${mode === 'drum' ? 'primary-btn' : ''}`}
           onClick={() => setMode(mode === 'drum' ? 'select' : 'drum')}
-          title="Add Drum Block (Drum Mode)"
+          title="Add Drum Block (2)"
         >
           <Drum size={24} />
         </button>
+
+        <button 
+          className={`toolbar-btn ${mode === 'draw_group' ? 'primary-btn' : ''}`}
+          onClick={() => setMode(mode === 'draw_group' ? 'select' : 'draw_group')}
+          title="Draw Group (3)"
+        >
+          <Square size={24} />
+        </button>
+
+        <button 
+          className={`toolbar-btn ${mode === 'draw_track' ? 'primary-btn' : ''}`}
+          onClick={() => setMode(mode === 'draw_track' ? 'select' : 'draw_track')}
+          title="Draw Track (4)"
+        >
+          <PenTool size={24} />
+        </button>
+
+        <button 
+          className={`toolbar-btn ${mode === 'play' ? 'primary-btn' : ''}`}
+          onClick={() => setMode(mode === 'play' ? 'select' : 'play')}
+          title="Play Mode (5)"
+        >
+          <Play size={24} />
+        </button>
       </div>
+
+      <div className="toolbar glass-panel">
 
       <button 
         className="toolbar-btn"
@@ -91,6 +101,7 @@ export const Toolbar: React.FC = () => {
       >
         <HelpCircle size={24} />
       </button>
-    </div>
+      </div>
+    </>
   );
 };

@@ -8,7 +8,10 @@ export const SettingsPanel: React.FC = () => {
   if (!isSettingsOpen) return null;
 
   return (
-    <div className="settings-panel glass-panel">
+    <div 
+      className="settings-panel glass-panel"
+      onWheel={(e) => e.stopPropagation()}
+    >
       <div className="settings-header">
         <h2>Settings</h2>
         <button onClick={toggleSettings} className="icon-btn icon-btn-round">
@@ -16,7 +19,7 @@ export const SettingsPanel: React.FC = () => {
         </button>
       </div>
 
-      <div className="settings-body">
+      <div className="settings-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
         {/* Theme Toggle */}
         <div className="settings-row">
           <span className="settings-label">
@@ -59,18 +62,24 @@ export const SettingsPanel: React.FC = () => {
           </label>
         </div>
 
+
+
         <div className="settings-section">
-          <h3>Piano & Blocks</h3>
+          <h3>Controls</h3>
           <label className="switch-row">
-            <span>Keys Count</span>
+            <span>Mouse Sensitivity ({useStore.getState().mouseSensitivity.toFixed(1)})</span>
             <input 
-              type="number" 
-              min="12" max="88" 
-              value={useStore.getState().pianoKeysCount} 
-              onChange={(e) => useStore.getState().setPianoKeysCount(parseInt(e.target.value) || 36)} 
-              style={{ width: '60px', background: 'transparent', border: '1px solid gray', color: 'inherit', padding: '4px', borderRadius: '4px' }}
+              type="range" 
+              min="0.1" max="3" step="0.1"
+              value={useStore.getState().mouseSensitivity} 
+              onChange={(e) => useStore.getState().setMouseSensitivity(parseFloat(e.target.value))} 
+              style={{ width: '100px' }}
             />
           </label>
+        </div>
+
+        <div className="settings-section">
+          <h3>Block Display</h3>
           <label className="switch-row">
             <span>Block Opacity</span>
             <input 
@@ -81,16 +90,12 @@ export const SettingsPanel: React.FC = () => {
               style={{ width: '100px' }}
             />
           </label>
-        </div>
-
-        <div className="settings-section">
-          <h3>Block Display</h3>
           <label className="switch-row">
-            <span>Show Name</span>
+            <span>Show Group Name</span>
             <input 
               type="checkbox" 
-              checked={useStore.getState().showBlockName} 
-              onChange={(e) => useStore.getState().setDisplaySettings({ showBlockName: e.target.checked })} 
+              checked={useStore.getState().showGroupName} 
+              onChange={(e) => useStore.getState().setDisplaySettings({ showGroupName: e.target.checked })} 
             />
           </label>
           <label className="switch-row">

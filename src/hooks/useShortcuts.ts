@@ -25,7 +25,27 @@ export const useShortcuts = () => {
       // Hotkey Note Triggering
       const blocksWithKey = state.blocks.filter(b => b.keyBinding && b.keyBinding.toLowerCase() === e.key.toLowerCase());
       if (blocksWithKey.length > 0 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        state.updateBlocks(blocksWithKey.map(b => ({ id: b.id, updates: { playedAt: Date.now() } })));
+        state.updateBlocks(blocksWithKey.map(b => ({ id: b.id, updates: { playedAt: Date.now(), playedVolumeMultiplier: 1 } })));
+      }
+
+      // Hotkey GroupRect Triggering
+      const groupsWithKey = state.groupRects.filter(g => g.keyBinding && g.keyBinding.toLowerCase() === e.key.toLowerCase());
+      if (groupsWithKey.length > 0 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        groupsWithKey.forEach(g => {
+          state.updateGroupRect(g.id, { playedAt: Date.now() });
+          
+          const isInside = (bx: number, by: number, bw: number, bh: number) => {
+            return bx < g.x + g.w && bx + bw > g.x && by < g.y + g.h && by + bh > g.y;
+          };
+          
+          const blocksInside = state.blocks.filter(b => isInside(b.x, b.y, 60, 60));
+          if (blocksInside.length > 0) {
+            state.updateBlocks(blocksInside.map(b => ({
+              id: b.id,
+              updates: { playedAt: Date.now(), playedVolumeMultiplier: g.volume ?? 1 }
+            })));
+          }
+        });
       }
 
       // Editor Shortcuts
@@ -83,6 +103,23 @@ export const useShortcuts = () => {
             break;
         }
       } else {
+        if (['1', '2', '3', '4', '5'].includes(e.key)) {
+          const keyToMode: Record<string, any> = {
+            '1': 'piano',
+            '2': 'drum',
+            '3': 'draw_group',
+            '4': 'draw_track',
+            '5': 'play'
+          };
+          const targetMode = keyToMode[e.key];
+          if (state.mode === targetMode) {
+            state.setMode('select');
+          } else {
+            state.setMode(targetMode);
+          }
+          return;
+        }
+
         if (e.key === 'Delete' || e.key === 'Backspace') {
           if (state.activeTrackId) {
             state.deleteTrack(state.activeTrackId);

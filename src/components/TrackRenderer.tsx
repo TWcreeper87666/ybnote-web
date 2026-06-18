@@ -201,8 +201,8 @@ export const TrackRenderer: React.FC = () => {
               cursor="pointer"
               draw={(g) => {
                 g.clear();
-                if (track.nodes.length === 0) return;
-                const cps = computeTrackControlPoints(track.nodes, track.loop);
+                const isCircular = track.loop === true;
+                const cps = computeTrackControlPoints(track.nodes, isCircular);
 
                 g.moveTo(track.nodes[0].x, track.nodes[0].y);
                 for (let i = 1; i < track.nodes.length; i++) {
@@ -211,7 +211,7 @@ export const TrackRenderer: React.FC = () => {
                   const cp2 = cps[i].controlIn;
                   g.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p2.x, p2.y);
                 }
-                if (track.loop && track.nodes.length > 2) {
+                if (isCircular && track.nodes.length > 2) {
                   const p2 = track.nodes[0];
                   const cp1 = cps[track.nodes.length - 1].controlOut;
                   const cp2 = cps[0].controlIn;
@@ -229,8 +229,13 @@ export const TrackRenderer: React.FC = () => {
                 if (e.button === 0) { // Left click
                   const now = Date.now();
                   const last = (e as any).lastClickTime || 0;
+                  
                   if (now - last < 300) {
-                    setEditingTrackId(track.id);
+                    state.toggleContextMenu({ x: e.clientX, y: e.clientY, blockId: `track:${track.id}` });
+                  } else {
+                    if (state.contextMenu) {
+                      state.closeContextMenu();
+                    }
                   }
                   (e as any).lastClickTime = now;
                   
@@ -260,7 +265,7 @@ export const TrackRenderer: React.FC = () => {
                     const dist = distToSegment(x, y, track.nodes[i].x, track.nodes[i].y, track.nodes[i+1].x, track.nodes[i+1].y);
                     if (dist < minDist) { minDist = dist; insertIdx = i + 1; }
                   }
-                  if (track.loop) {
+                  if (track.loop === true) {
                     const dist = distToSegment(x, y, track.nodes[track.nodes.length-1].x, track.nodes[track.nodes.length-1].y, track.nodes[0].x, track.nodes[0].y);
                     if (dist < minDist) { minDist = dist; insertIdx = track.nodes.length; }
                   }
@@ -292,13 +297,14 @@ export const TrackRenderer: React.FC = () => {
       {/* Render Runners */}
       {runners.map(runner => {
         const track = visualTracks.find(t => t.id === runner.trackId);
-        if (!track || track.nodes.length < 2) return null;
+        if (!track || track.nodes.length < 2 || track.enabled === false) return null;
         
-        const segmentsCount = track.loop ? track.nodes.length : track.nodes.length - 1;
+        const isCircular = track.loop === true;
+        const segmentsCount = isCircular ? track.nodes.length : track.nodes.length - 1;
         const segmentIndex = Math.min(Math.floor(runner.progress), segmentsCount - 1);
         const segmentT = runner.progress - segmentIndex;
         
-        const cps = computeTrackControlPoints(track.nodes, track.loop);
+        const cps = computeTrackControlPoints(track.nodes, isCircular);
 
         const p1 = track.nodes[segmentIndex];
         const p2 = track.nodes[(segmentIndex + 1) % track.nodes.length];
@@ -338,9 +344,15 @@ const TrackPath: React.FC<{ track: any; isActive: boolean; isSelected: boolean }
     g.clear();
     if (track.nodes.length === 0) return;
 
-    const cps = computeTrackControlPoints(track.nodes, track.loop);
-    const color = isSelected ? 0xec4899 : (isActive ? 0x6366f1 : 0x9ca3af);
-    const alpha = isActive ? 1 : 0.5;
+    const isCircular = track.loop === true;
+    const cps = computeTrackControlPoints(track.nodes, isCircular);
+    const isEnabled = track.enabled !== false;
+    let color = isSelected ? 0xec4899 : (isActive ? 0x6366f1 : 0x9ca3af);
+    if (!isEnabled) {
+      color = isSelected ? 0xf472b6 : 0x6b7280;
+    }
+    const alpha = isEnabled ? (isActive ? 1 : 0.5) : (isActive ? 0.6 : 0.3);
+    const lineWidth = isEnabled ? 6 : 3;
 
     g.moveTo(track.nodes[0].x, track.nodes[0].y);
     for (let i = 1; i < track.nodes.length; i++) {
@@ -349,21 +361,21 @@ const TrackPath: React.FC<{ track: any; isActive: boolean; isSelected: boolean }
       const cp2 = cps[i].controlIn;
       g.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p2.x, p2.y);
     }
-    if (track.loop && track.nodes.length > 2) {
+    if (isCircular && track.nodes.length > 2) {
       const p2 = track.nodes[0];
       const cp1 = cps[track.nodes.length - 1].controlOut;
       const cp2 = cps[0].controlIn;
       g.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p2.x, p2.y);
     }
 
-    g.stroke({ width: 6, color, alpha });
+    g.stroke({ width: lineWidth, color, alpha });
 
     if (track.nodes.length > 1) {
       const n = track.nodes.length;
       let p2 = cps[n - 1].controlIn;
       let endPoint = track.nodes[n - 1];
 
-      if (track.loop && n > 2) {
+      if (isCircular && n > 2) {
         p2 = cps[0].controlIn;
         endPoint = track.nodes[0];
       }
@@ -371,7 +383,7 @@ const TrackPath: React.FC<{ track: any; isActive: boolean; isSelected: boolean }
       let dx = endPoint.x - p2.x;
       let dy = endPoint.y - p2.y;
       if (dx === 0 && dy === 0) {
-        const prev = track.loop && n > 2 ? track.nodes[n - 1] : track.nodes[n - 2];
+        const prev = isCircular && n > 2 ? track.nodes[n - 1] : track.nodes[n - 2];
         dx = endPoint.x - prev.x;
         dy = endPoint.y - prev.y;
       }

@@ -39,8 +39,17 @@ export function useGameLoop() {
         const currentBlocks = state.blocks;
         const currentGroupRects = state.groupRects;
 
-        // Ensure we have a runner for each track
-        state.tracks.forEach(track => {
+        // Ensure we have a runner for each enabled track
+        const enabledTracks = state.tracks.filter(t => t.enabled !== false);
+        
+        // Remove runners for disabled tracks
+        const previousRunnerCount = updatedRunners.length;
+        updatedRunners = updatedRunners.filter(r => enabledTracks.some(t => t.id === r.trackId));
+        if (updatedRunners.length !== previousRunnerCount) {
+          hasChanges = true;
+        }
+
+        enabledTracks.forEach(track => {
           if (!updatedRunners.find(r => r.trackId === track.id)) {
             updatedRunners.push({ id: Math.random().toString(), trackId: track.id, progress: 0 });
             hasChanges = true;
@@ -52,12 +61,14 @@ export function useGameLoop() {
           const track = state.tracks.find(t => t.id === runner.trackId);
           if (!track || track.nodes.length < 2) return runner;
 
-          const segmentsCount = track.loop ? track.nodes.length : track.nodes.length - 1;
+          const isCircular = track.loop === true;
+          const isRestart = track.loop === 'restart';
+          const segmentsCount = isCircular ? track.nodes.length : track.nodes.length - 1;
           const speed = track.bpm / 60; // segments per second
           let newProgress = runner.progress + speed * deltaTime;
 
           if (newProgress >= segmentsCount) {
-            if (track.loop) {
+            if (isCircular || isRestart) {
               newProgress = newProgress % segmentsCount;
             } else {
               newProgress = segmentsCount; // stay at end
@@ -65,7 +76,7 @@ export function useGameLoop() {
           }
 
           // Compute exact position
-          const cps = computeTrackControlPoints(track.nodes, track.loop);
+          const cps = computeTrackControlPoints(track.nodes, isCircular);
           
           const segmentIndex = Math.min(Math.floor(newProgress), segmentsCount - 1);
           const segmentT = newProgress - segmentIndex;
@@ -93,9 +104,8 @@ export function useGameLoop() {
 
             if (isIntersecting) {
               if (!memory.has(block.id)) {
-                // Trigger sound
-                playNote(block.pitch, block.volume ?? 1, block.instrument ?? 'piano');
-                state.updateBlock(block.id, { playedAt: Date.now() });
+                // Trigger sound directly via track
+                state.updateBlock(block.id, { playedAt: Date.now(), playedVolumeMultiplier: 1 });
                 memory.add(block.id);
               }
             } else {
@@ -126,8 +136,7 @@ export function useGameLoop() {
                     block.x, block.y, 60, 60
                   );
                   if (isBlockInside && !memory.has(block.id)) {
-                    playNote(block.pitch, block.volume ?? 1, block.instrument ?? 'piano');
-                    state.updateBlock(block.id, { playedAt: Date.now() });
+                    state.updateBlock(block.id, { playedAt: Date.now(), playedVolumeMultiplier: groupRect.volume ?? 1 });
                     // Add to memory so it doesn't double-trigger if the runner is simultaneously touching the block
                     memory.add(block.id);
                   }

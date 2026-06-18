@@ -7,11 +7,13 @@ import { getPitchColorHex } from '../utils/colors';
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 export const PianoKeyboard: React.FC = () => {
-  const { isPianoOpen, togglePiano, pianoKeysCount } = useStore();
+  const { isPianoOpen, togglePiano } = useStore();
+  const pianoKeysCount = 36;
   const keyboardRef = useRef<HTMLDivElement>(null);
   
   // Draggable piano state
-  const [pianoPos, setPianoPos] = useState({ x: window.innerWidth / 2 - 200, y: window.innerHeight - 200 });
+  const [hasDragged, setHasDragged] = useState(false);
+  const [pianoPos, setPianoPos] = useState({ x: 0, y: 0 });
   const [isDraggingPiano, setIsDraggingPiano] = useState(false);
   const [pianoDragOffset, setPianoDragOffset] = useState({ x: 0, y: 0 });
 
@@ -34,8 +36,18 @@ export const PianoKeyboard: React.FC = () => {
   const handlePianoHeaderDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
+    
+    if (!hasDragged) {
+      if (keyboardRef.current && keyboardRef.current.parentElement) {
+        const rect = keyboardRef.current.parentElement.getBoundingClientRect();
+        setPianoPos({ x: rect.left, y: rect.top });
+        setPianoDragOffset({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      }
+      setHasDragged(true);
+    } else {
+      setPianoDragOffset({ x: e.clientX - pianoPos.x, y: e.clientY - pianoPos.y });
+    }
     setIsDraggingPiano(true);
-    setPianoDragOffset({ x: e.clientX - pianoPos.x, y: e.clientY - pianoPos.y });
   };
 
   const handleKeyPointerDown = (e: React.PointerEvent, pitch: string) => {
@@ -133,7 +145,7 @@ export const PianoKeyboard: React.FC = () => {
     <>
       <div 
         className="piano-container glass-panel" 
-        style={{ position: 'fixed', left: pianoPos.x, top: pianoPos.y, transform: 'none', bottom: 'auto' }}
+        style={hasDragged ? { position: 'fixed', left: pianoPos.x, top: pianoPos.y, transform: 'none', bottom: 'auto' } : undefined}
       >
         <div className="piano-header" onPointerDown={handlePianoHeaderDown} style={{ cursor: 'move', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span className="piano-title">Virtual Piano (Drag keys to Canvas)</span>
@@ -153,7 +165,7 @@ export const PianoKeyboard: React.FC = () => {
           </div>
         </div>
         
-        <div ref={keyboardRef} className="keyboard-keys" style={{ flexWrap: 'wrap', maxWidth: '80vw' }}>
+        <div ref={keyboardRef} className="keyboard-keys" style={{ flexWrap: 'nowrap' }}>
           {renderKeys()}
         </div>
       </div>

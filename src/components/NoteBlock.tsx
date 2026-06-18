@@ -18,14 +18,14 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
   const isSelected = selectedBlockIds.includes(id);
 
   const block = useStore(state => state.blocks.find(b => b.id === id));
-  const name = block?.name;
   const volume = block?.volume ?? 1;
   const instrument = block?.instrument ?? 'piano';
 
-  const showBlockName = useStore(state => state.showBlockName);
   const showBlockPitch = useStore(state => state.showBlockPitch);
   const showBlockVolume = useStore(state => state.showBlockVolume);
   const showBlockInstrument = useStore(state => state.showBlockInstrument);
+
+  const playedVolumeMultiplier = block?.playedVolumeMultiplier ?? 1;
 
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -40,15 +40,16 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
   const blockColor = getPitchColorNumber(pitch, pianoKeysCount);
 
   const playedAt = useStore(state => state.blocks.find(b => b.id === id)?.playedAt);
-  const lastPlayedRef = React.useRef(playedAt);
+  const lastPlayedRef = React.useRef(playedAt && Date.now() - playedAt > 2000 ? playedAt : 0);
 
   React.useEffect(() => {
     if (playedAt && playedAt !== lastPlayedRef.current) {
       lastPlayedRef.current = playedAt;
       ripplesRef.current.push({ id: playedAt, progress: 0 });
-      playNote(pitch, volume, instrument);
+      
+      playNote(pitch, volume * playedVolumeMultiplier, instrument);
     }
-  }, [playedAt, pitch, volume, instrument]);
+  }, [playedAt, pitch, volume, instrument, playedVolumeMultiplier]);
 
   const draw = useCallback(
     (g: PIXI.Graphics) => {
@@ -89,6 +90,10 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
     const isMultiSelect = e.ctrlKey || e.shiftKey;
     
     if (button === 0) {
+      const state = useStore.getState();
+      if (state.contextMenu && state.contextMenu.blockId !== id) {
+        state.closeContextMenu();
+      }
       e.stopPropagation(); // prevent canvas from handling left click box selection
       wasSelectedRef.current = isSelected;
       clickStartPosRef.current = { x: e.clientX, y: e.clientY };
@@ -120,7 +125,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
       const dy = e.clientY - clickStartPosRef.current.y;
       if (Math.sqrt(dx*dx + dy*dy) < 5) {
         if (wasSelectedRef.current && !e.ctrlKey && !e.shiftKey) {
-          useStore.getState().openContextMenu({
+          useStore.getState().toggleContextMenu({
             x: e.clientX, y: e.clientY, blockId: id
           });
         }
@@ -204,7 +209,6 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
 
     const handleGlobalUp = () => {
       setIsDragging(false);
-      clickStartPosRef.current = null;
       if (hasPaused) {
         useStore.temporal.getState().resume();
       }
@@ -278,10 +282,6 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
         ref={graphicsRef}
         draw={draw}
       />
-      {showBlockName && name && (
-        // @ts-ignore - @pixi/react v8 intrinsic element types are incomplete
-        <pixiText text={name} x={4} y={4} style={{ fontSize: 20, fill: '#ffffff', fontFamily: 'Inter' }} scale={0.5} />
-      )}
       {showBlockPitch && (
         // @ts-ignore
         <pixiText text={pitch} x={30} y={30} anchor={0.5} style={{ fontSize: 32, fill: '#ffffff', fontWeight: 'bold', fontFamily: 'Inter' }} scale={0.5} />

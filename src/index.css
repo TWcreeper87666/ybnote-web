@@ -114,11 +114,24 @@ body {
   position: relative;
 }
 
+.top-toolbar,
 .toolbar,
 .settings-panel,
 .hierarchy-panel,
 .piano-container {
   pointer-events: auto;
+}
+
+/* Top Toolbar */
+.top-toolbar {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  display: flex;
+  padding: 12px;
+  border-radius: 20px;
+  transition: all 0.3s ease;
+  z-index: 20;
 }
 
 /* Toolbar */
@@ -142,6 +155,10 @@ body {
   background: rgba(0, 0, 0, 0.05);
   padding: 8px;
   border-radius: 18px;
+}
+
+.toolbar-group.horizontal {
+  flex-direction: row;
 }
 
 .dark .toolbar-group {
@@ -201,15 +218,27 @@ body {
   background: var(--disabled-bg);
 }
 
+@keyframes slideInRight {
+  from {
+    transform: translateX(40px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
 /* Settings Panel */
 .settings-panel {
   position: absolute;
-  top: 24px;
+  top: 106px;
   right: 96px;
   width: 320px;
   padding: 24px;
   border-radius: 24px;
   background: var(--settings-bg);
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .settings-header {
@@ -253,6 +282,21 @@ body {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  padding-right: 12px;
+}
+
+.settings-body::-webkit-scrollbar {
+  width: 6px;
+}
+.settings-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.settings-body::-webkit-scrollbar-thumb {
+  background: var(--panel-border);
+  border-radius: 10px;
+}
+.settings-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
 }
 
 .settings-row {
@@ -376,6 +420,8 @@ body {
   cursor: pointer;
   transition: background 0.2s;
   font-size: 14px;
+  text-align: center;
+  display: block;
 }
 
 .action-btn:hover {
@@ -394,6 +440,8 @@ body {
   flex-direction: column;
   gap: 8px;
   background: var(--settings-bg);
+  width: max-content;
+  max-width: 90vw;
 }
 
 .piano-header {
@@ -482,7 +530,7 @@ body {
   user-select: none;
 }
 
-.drum-pad:active {
+.drum-pad.hit {
   transform: scale(0.9);
   opacity: 0.8;
 }
@@ -563,7 +611,7 @@ body {
   padding: 6px 8px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.1s;
+  transition: background 0.15s;
 }
 
 .hierarchy-item:hover {
@@ -574,7 +622,11 @@ body {
   color: #6366f1;
 }
 
-.group-item {
+.group-rect-item {
+  color: var(--text-color);
+}
+
+.track-item {
   color: var(--text-color);
 }
 
@@ -598,6 +650,70 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* Filter Bar */
+.hierarchy-filter-bar {
+  display: flex;
+  gap: 4px;
+}
+
+.hierarchy-filter-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: transparent;
+  color: var(--text-color);
+  opacity: 0.35;
+}
+
+.hierarchy-filter-btn.active {
+  opacity: 1;
+  background: var(--action-bg);
+}
+
+.hierarchy-filter-btn:hover {
+  opacity: 0.8;
+  background: var(--action-bg);
+}
+
+/* Collapse Button */
+.hierarchy-collapse-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+.hierarchy-collapse-btn:hover {
+  opacity: 1;
+}
+
+/* Key Badge */
+.hierarchy-key-badge {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--panel-border);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text-color);
+  opacity: 0.7;
+  flex-shrink: 0;
 }
 
 .key-badge {
@@ -648,4 +764,58 @@ body {
   background: var(--primary-gradient);
   color: white;
   box-shadow: 0 4px 10px rgba(99, 102, 241, 0.4);
+}
+
+/* Selection Properties HUD */
+.selection-properties-hud {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--panel-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  color: var(--text-color);
+  font-size: 11px;
+  pointer-events: none;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 140px;
+}
+
+.hud-header {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+  margin-bottom: 4px;
+  font-size: 10px;
+  border-bottom: 1px solid var(--panel-border);
+  padding-bottom: 4px;
+}
+
+.hud-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hud-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hud-label {
+  opacity: 0.6;
+}
+
+.hud-value {
+  font-weight: 500;
+  text-align: right;
 }
