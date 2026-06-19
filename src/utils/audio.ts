@@ -1,6 +1,6 @@
 import * as Tone from 'tone';
 
-let limiter: Tone.Limiter;
+let compressor: Tone.Compressor;
 let masterVolume: Tone.Volume;
 let pianoSynth: Tone.PolySynth<Tone.Synth>;
 let synthInstrument: Tone.PolySynth<Tone.FMSynth>;
@@ -37,9 +37,18 @@ let isAudioInitialized = false;
 const initAudio = () => {
   if (isAudioInitialized) return;
   
-  // 1. & 2. Create Limiter and Master Volume to prevent clipping
-  limiter = new Tone.Limiter(-2).toDestination();
-  masterVolume = new Tone.Volume(-8).connect(limiter);
+  // 1. & 2. Create Compressor, Limiter and Master Volume to prevent clipping and handle high polyphony
+  compressor = new Tone.Compressor({
+    threshold: -24,
+    ratio: 12,
+    attack: 0.003,
+    release: 0.25
+  });
+  
+  const limiter = new Tone.Limiter(-2).toDestination();
+  compressor.connect(limiter);
+  
+  masterVolume = new Tone.Volume(-12).connect(compressor);
 
   // Use Synthesized Piano instead of Sampler to avoid network requests and connection resets
   pianoSynth = new Tone.PolySynth(Tone.Synth).connect(masterVolume);
@@ -90,7 +99,24 @@ const initAudio = () => {
     envelope: { attack: 0.005, decay: 1.5, sustain: 0, release: 0.1 }
   })).connect(masterVolume);
 
+  // Prevent browser from suspending AudioContext after a period of inactivity
+  const silentOsc = new Tone.Oscillator().start();
+  const silentGain = new Tone.Gain(0).toDestination();
+  silentOsc.connect(silentGain);
+
   isAudioInitialized = true;
+};
+
+export const setMasterVolume = (volume: number) => {
+  if (!masterVolume) return;
+  // Convert 0-1 linear volume to decibels (-60 to 0)
+  // Or just a simple curve:
+  if (volume <= 0.01) {
+    masterVolume.volume.value = -Infinity;
+  } else {
+    // 1.0 -> 0dB, 0.5 -> ~ -6dB, 0.1 -> ~ -20dB
+    masterVolume.volume.value = 20 * Math.log10(volume);
+  }
 };
 
 // Attempt to keep audio context alive when returning to the page
@@ -115,7 +141,7 @@ export const playNote = async (pitch: string, volume: number = 1.0, instrument: 
     await Tone.start();
     initAudio();
   } else if (Tone.context.state !== 'running') {
-    Tone.context.resume();
+    await Tone.context.resume();
   }
   
   // Volume usually ranges from 0 to 1, we can map it to velocity.

@@ -1,10 +1,19 @@
 import React from 'react';
-import { useStore } from '../store/useStore';
-import { Settings, Music, Drum, Trash2, Undo2, Redo2, LayoutList, PenTool, HelpCircle, Square, Play } from 'lucide-react';
+import { useStore, undoAction, redoAction } from '../store/useStore';
+import { Settings, Music, Drum, Trash2, Undo2, Redo2, LayoutList, PenTool, HelpCircle, Square, Wand2, Circle, Download, Upload, Gamepad2 } from 'lucide-react';
+import { exportRecordedEventsToMidi, importMidiToBlocks } from '../utils/midiUtils';
+import { useNavigate } from 'react-router-dom';
 
 export const Toolbar: React.FC = () => {
-  const { toggleSettings, toggleHelp, toggleHierarchy, deleteSelected, selectedBlockIds, selectedTrackIds, selectedGroupRectIds, mode, setMode } = useStore();
-  const { undo, redo } = useStore.temporal.getState();
+  const { toggleSettings, toggleHelp, toggleHierarchy, deleteSelected, selectedBlockIds, selectedTrackIds, selectedGroupRectIds, mode, setMode, isRecording, startRecording, stopRecording } = useStore();
+  const navigate = useNavigate();
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      importMidiToBlocks(file).catch(console.error);
+    }
+  };
 
 
   return (
@@ -31,7 +40,7 @@ export const Toolbar: React.FC = () => {
           onClick={() => setMode(mode === 'draw_group' ? 'select' : 'draw_group')}
           title="Draw Group (3)"
         >
-          <Square size={24} />
+          <Square size={24} fill="currentColor" />
         </button>
 
         <button 
@@ -45,25 +54,47 @@ export const Toolbar: React.FC = () => {
         <button 
           className={`toolbar-btn ${mode === 'play' ? 'primary-btn' : ''}`}
           onClick={() => setMode(mode === 'play' ? 'select' : 'play')}
-          title="Play Mode (5)"
+          title="Perform Mode (5)"
         >
-          <Play size={24} />
+          <Wand2 size={24} />
         </button>
+
+        <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)', margin: '0 8px' }} />
+
+        <button 
+          className={`toolbar-btn ${isRecording ? 'danger-btn' : ''}`}
+          onClick={() => isRecording ? stopRecording() : startRecording()}
+          title={isRecording ? "Stop Recording" : "Record Macro"}
+        >
+          <Circle size={24} fill={isRecording ? 'currentColor' : 'none'} />
+        </button>
+
+        <button 
+          className="toolbar-btn"
+          onClick={exportRecordedEventsToMidi}
+          title="Export Recording to MIDI"
+        >
+          <Upload size={24} />
+        </button>
+
+        <label className="toolbar-btn" title="Import MIDI" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Download size={24} />
+          <input type="file" accept=".mid,.midi" style={{ display: 'none' }} onChange={handleImport} />
+        </label>
       </div>
 
       <div className="toolbar glass-panel">
 
       <button 
-        className="toolbar-btn"
-        onClick={() => undo()}
+        className="toolbar-btn glass-panel" 
+        onClick={() => undoAction()}
         title="Undo (Ctrl+Z)"
       >
         <Undo2 size={24} />
       </button>
-
       <button 
-        className="toolbar-btn"
-        onClick={() => redo()}
+        className="toolbar-btn glass-panel" 
+        onClick={() => redoAction()}
         title="Redo (Ctrl+Y)"
       >
         <Redo2 size={24} />
@@ -84,6 +115,14 @@ export const Toolbar: React.FC = () => {
         title="Toggle Hierarchy"
       >
         <LayoutList size={24} />
+      </button>
+
+      <button 
+        className="toolbar-btn"
+        onClick={() => navigate('/game')}
+        title="Enter Game Mode"
+      >
+        <Gamepad2 size={24} />
       </button>
 
       <button 

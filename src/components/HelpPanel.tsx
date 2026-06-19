@@ -31,8 +31,8 @@ export const HelpPanel: React.FC = () => {
             <li><strong>Right Click (Drag):</strong> Draw Play Trail</li>
             <li><strong>Middle Click (Drag):</strong> Pan Camera</li>
             <li><strong>Scroll (Bg):</strong> Zoom In/Out</li>
-            <li style={{ marginTop: '8px' }}><strong>On Selected Object:</strong></li>
-            <li><strong>Left Click:</strong> Open Context Menu</li>
+            <li style={{ marginTop: '8px' }}><strong>On Any Object:</strong></li>
+            <li><strong>Double Click:</strong> Open Context Menu</li>
             <li style={{ marginTop: '8px' }}><strong>On Tracks:</strong></li>
             <li><strong>Left Click (Drag):</strong> Move Track</li>
             <li><strong>Right Click (Line):</strong> Add Track Node</li>
@@ -43,10 +43,10 @@ export const HelpPanel: React.FC = () => {
             <li style={{ marginTop: '8px' }}><strong>On NoteBlock:</strong></li>
             <li><strong>Scroll:</strong> Modify Pitch</li>
             <li><strong>Shift + Scroll:</strong> Modify Volume</li>
-            <li style={{ marginTop: '8px' }}><strong>In Play Mode (Mode 5):</strong></li>
+            <li style={{ marginTop: '8px' }}><strong>In Perform Mode (Mode 5):</strong></li>
             <li><strong>Mouse Move:</strong> Look Around</li>
             <li><strong>Hold Any Click:</strong> Draw Trail / Trigger Notes</li>
-            <li><strong>Esc:</strong> Exit Play Mode</li>
+            <li><strong>Esc:</strong> Exit Perform Mode</li>
           </ul>
         </div>
 
@@ -63,7 +63,7 @@ export const HelpPanel: React.FC = () => {
             <li><strong>Ctrl + F:</strong> Search / Outline</li>
             <li><strong>F2:</strong> Rename Selected Group/Track (in Outliner)</li>
             <li><strong>Del / Backspace:</strong> Delete Selected</li>
-            <li><strong>1-5:</strong> Switch Modes (Note, Drum, Group, Track, Play)</li>
+            <li><strong>1-5:</strong> Switch Modes (Note, Drum, Group, Track, Perform)</li>
             <li><strong>A-Z / 0-9:</strong> Play Note (if key is bound)</li>
           </ul>
         </div>

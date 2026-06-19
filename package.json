@@ -1,5 +1,5 @@
 {
-  "name": "temp_app",
+  "name": "YBNote",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,10 +11,12 @@
   },
   "dependencies": {
     "@pixi/react": "^8.0.5",
+    "@tonejs/midi": "^2.0.28",
     "lucide-react": "^1.18.0",
     "pixi.js": "^8.19.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-router-dom": "^7.18.0",
     "tone": "^15.1.22",
     "zundo": "^2.3.0",
     "zustand": "^5.0.14"

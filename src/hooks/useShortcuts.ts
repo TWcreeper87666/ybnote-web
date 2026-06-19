@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useStore } from '../store/useStore';
+import { useStore, undoAction, redoAction } from '../store/useStore';
 
 export const useShortcuts = () => {
   useEffect(() => {
@@ -29,7 +29,7 @@ export const useShortcuts = () => {
       }
 
       // Hotkey GroupRect Triggering
-      const groupsWithKey = state.groupRects.filter(g => g.keyBinding && g.keyBinding.toLowerCase() === e.key.toLowerCase());
+      const groupsWithKey = state.groupRects.filter(g => g.enabled !== false && g.keyBinding && g.keyBinding.toLowerCase() === e.key.toLowerCase());
       if (groupsWithKey.length > 0 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         groupsWithKey.forEach(g => {
           state.updateGroupRect(g.id, { playedAt: Date.now() });
@@ -92,14 +92,14 @@ export const useShortcuts = () => {
           case 'z':
             e.preventDefault();
             if (e.shiftKey) {
-              useStore.temporal.getState().redo();
+              redoAction();
             } else {
-              useStore.temporal.getState().undo();
+              undoAction();
             }
             break;
           case 'y':
             e.preventDefault();
-            useStore.temporal.getState().redo();
+            redoAction();
             break;
         }
       } else {

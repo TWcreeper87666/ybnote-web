@@ -65,7 +65,17 @@ export const SettingsPanel: React.FC = () => {
 
 
         <div className="settings-section">
-          <h3>Controls</h3>
+          <h3>Controls & Audio</h3>
+          <label className="switch-row">
+            <span>Master Volume ({Math.round(useStore.getState().masterVolume * 100)}%)</span>
+            <input 
+              type="range" 
+              min="0" max="1" step="0.05"
+              value={useStore.getState().masterVolume} 
+              onChange={(e) => useStore.getState().setMasterVolume(parseFloat(e.target.value))} 
+              style={{ width: '100px' }}
+            />
+          </label>
           <label className="switch-row">
             <span>Mouse Sensitivity ({useStore.getState().mouseSensitivity.toFixed(1)})</span>
             <input 

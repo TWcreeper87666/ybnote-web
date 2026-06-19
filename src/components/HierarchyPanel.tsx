@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store/useStore';
-import { Search, Folder, Music, LayoutList, Keyboard, GitBranch, Square, ChevronRight, ChevronDown, X } from 'lucide-react';
+import { Search, Music, LayoutList, GitBranch, Square, X, ChevronRight, ChevronDown, Keyboard, Check, CheckSquare } from 'lucide-react';
 
 // Smooth camera animation helper
 const animateCameraTo = (targetX: number, targetY: number, duration = 300) => {
@@ -26,18 +26,18 @@ const animateCameraTo = (targetX: number, targetY: number, duration = 300) => {
   requestAnimationFrame(tick);
 };
 
-type FilterState = { notes: boolean; groups: boolean; tracks: boolean };
+type FilterState = { notes: boolean; groups: boolean; tracks: boolean; enable: boolean };
 
 export const HierarchyPanel: React.FC = () => {
   const { 
-    blocks, groups, groupRects, tracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds,
+    blocks, groupRects, tracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds,
     isHierarchyOpen, 
     selectBlock, updateBlock, updateGroupRect, selectGroupRect, selectTrack,
     searchQuery, setSearchQuery,
     camera
   } = useStore();
 
-  const [filters, setFilters] = useState<FilterState>({ notes: true, groups: true, tracks: true });
+  const [filters, setFilters] = useState<FilterState>({ notes: true, groups: true, tracks: true, enable: false });
 
   useEffect(() => {
     const searchInput = document.getElementById('outliner-search-input') as HTMLInputElement;
@@ -51,21 +51,48 @@ export const HierarchyPanel: React.FC = () => {
       // Force open hierarchy panel if closed
       useStore.setState({ isHierarchyOpen: true });
       
-      // Determine if we need to expand a group
+      // Determine if we need to expand a group and check if item is disabled
       const state = useStore.getState();
-      if (!id.startsWith('groupRect:') && !id.startsWith('track:')) {
+      let needsNotes = false;
+      let needsGroups = false;
+      let needsTracks = false;
+      let isDisabled = false;
+
+      if (id.startsWith('groupRect:')) {
+         needsGroups = true;
+         const gr = state.groupRects.find(g => g.id === id.split(':')[1]);
+         if (gr && gr.enabled === false) isDisabled = true;
+      } else if (id.startsWith('track:')) {
+         needsTracks = true;
+         const tr = state.tracks.find(t => t.id === id.split(':')[1]);
+         if (tr && tr.enabled === false) isDisabled = true;
+      } else {
+         needsNotes = true;
          const block = state.blocks.find(b => b.id === id);
          if (block) {
+           if ((block as any).enabled === false) isDisabled = true;
            for (const gr of state.groupRects) {
              const bCenterX = block.x + 30;
              const bCenterY = block.y + 30;
              if (bCenterX >= gr.x && bCenterX <= gr.x + gr.w && bCenterY >= gr.y && bCenterY <= gr.y + gr.h) {
+               needsGroups = true;
+               if (gr.enabled === false) isDisabled = true;
                window.dispatchEvent(new CustomEvent('expand-group', { detail: gr.id }));
                break;
              }
            }
          }
       }
+
+      useStore.setState({ searchQuery: '' });
+      setFilters(prev => {
+        const next = { ...prev };
+        if (isDisabled) next.enable = false;
+        if (needsNotes) next.notes = true;
+        if (needsGroups) next.groups = true;
+        if (needsTracks) next.tracks = true;
+        return next;
+      });
 
       setTimeout(() => {
         const elId = id.startsWith('groupRect:') ? `outliner-item-groupRect-${id.split(':')[1]}` : `outliner-item-${id}`;
@@ -108,24 +135,87 @@ export const HierarchyPanel: React.FC = () => {
     e.currentTarget.releasePointerCapture(e.pointerId);
   };
 
+  const handleShiftClick = (clickedId: string, clickedType: 'block' | 'groupRect' | 'track') => {
+    const state = useStore.getState();
+    const lastId = state.lastSelectedId;
+    const lastType = state.lastSelectedType;
+    
+    if (!lastId || !lastType) {
+      if (clickedType === 'block') selectBlock(clickedId, false);
+      else if (clickedType === 'groupRect') selectGroupRect(clickedId, false);
+      else if (clickedType === 'track') selectTrack(clickedId, false);
+      return;
+    }
+
+    const itemEls = Array.from(document.querySelectorAll('.hierarchy-item'));
+    const getElId = (id: string, type: string) => 
+      type === 'groupRect' ? `outliner-item-groupRect-${id}` :
+      type === 'track' ? `outliner-item-track-${id}` :
+      `outliner-item-${id}`;
+
+    const clickedElId = getElId(clickedId, clickedType);
+    const lastElId = getElId(lastId, lastType);
+
+    const clickedIdx = itemEls.findIndex(el => el.id === clickedElId);
+    const lastIdx = itemEls.findIndex(el => el.id === lastElId);
+
+    if (clickedIdx === -1 || lastIdx === -1) {
+      if (clickedType === 'block') selectBlock(clickedId, true);
+      else if (clickedType === 'groupRect') selectGroupRect(clickedId, true);
+      else if (clickedType === 'track') selectTrack(clickedId, true);
+      return;
+    }
+
+    const startIdx = Math.min(clickedIdx, lastIdx);
+    const endIdx = Math.max(clickedIdx, lastIdx);
+
+    const rangeEls = itemEls.slice(startIdx, endIdx + 1);
+    
+    const newSelectedBlocks = new Set(state.selectedBlockIds);
+    const newSelectedGroups = new Set(state.selectedGroupRectIds);
+    const newSelectedTracks = new Set(state.selectedTrackIds);
+
+    rangeEls.forEach(el => {
+      const id = el.id;
+      if (id.startsWith('outliner-item-groupRect-')) {
+        newSelectedGroups.add(id.replace('outliner-item-groupRect-', ''));
+      } else if (id.startsWith('outliner-item-track-')) {
+        newSelectedTracks.add(id.replace('outliner-item-track-', ''));
+      } else if (id.startsWith('outliner-item-')) {
+        newSelectedBlocks.add(id.replace('outliner-item-', ''));
+      }
+    });
+
+    useStore.setState({
+      selectedBlockIds: Array.from(newSelectedBlocks),
+      selectedGroupRectIds: Array.from(newSelectedGroups),
+      selectedTrackIds: Array.from(newSelectedTracks),
+      lastSelectedId: clickedId,
+      lastSelectedType: clickedType
+    });
+  };
+
   if (!isHierarchyOpen) return null;
 
   const query = searchQuery.toLowerCase();
 
-  // Filter blocks by search
+  // Filter blocks by search and enabled
   const filteredBlocks = blocks.filter(b =>
-    b.pitch.toLowerCase().includes(query) ||
-    (b.keyBinding && b.keyBinding.toLowerCase().includes(query))
+    (b.pitch.toLowerCase().includes(query) ||
+    (b.keyBinding && b.keyBinding.toLowerCase().includes(query))) &&
+    (!filters.enable || (b as any).enabled !== false)
   );
 
-  // Filter groupRects by search
+  // Filter groupRects by search and enabled
   const filteredGroupRects = groupRects.filter(g =>
-    (g.name || '').toLowerCase().includes(query) || !query
+    ((g.name || '').toLowerCase().includes(query) || !query) &&
+    (!filters.enable || g.enabled !== false)
   );
 
-  // Filter tracks by search (match by index-based label)
-  const filteredTracks = tracks.filter((_, i) =>
-    `Track ${i + 1}`.toLowerCase().includes(query) || !query
+  // Filter tracks by search (match by index-based label) and enabled
+  const filteredTracks = tracks.filter((t, i) =>
+    (`Track ${i + 1}`.toLowerCase().includes(query) || !query) &&
+    (!filters.enable || t.enabled !== false)
   );
 
   // Determine which notes are spatially inside which group rects
@@ -200,7 +290,15 @@ export const HierarchyPanel: React.FC = () => {
       </div>
 
       {/* Filter Toggles */}
-      <div className="hierarchy-filter-bar">
+      <div 
+        className="hierarchy-filter-bar"
+        onWheel={(e) => {
+          if (e.deltaY !== 0) {
+            e.stopPropagation();
+            e.currentTarget.scrollLeft += e.deltaY;
+          }
+        }}
+      >
         <button
           className={`hierarchy-filter-btn ${filters.notes ? 'active' : ''}`}
           onClick={() => toggleFilter('notes')}
@@ -213,7 +311,7 @@ export const HierarchyPanel: React.FC = () => {
           onClick={() => toggleFilter('groups')}
           title="Toggle Groups"
         >
-          <Square size={14} /> Groups
+          <Square size={14} fill="currentColor" /> Groups
         </button>
         <button
           className={`hierarchy-filter-btn ${filters.tracks ? 'active' : ''}`}
@@ -221,6 +319,13 @@ export const HierarchyPanel: React.FC = () => {
           title="Toggle Tracks"
         >
           <GitBranch size={14} /> Tracks
+        </button>
+        <button
+          className={`hierarchy-filter-btn ${filters.enable ? 'active' : ''}`}
+          onClick={() => toggleFilter('enable')}
+          title="Toggle Enabled Only"
+        >
+          <Check size={14} /> Enabled
         </button>
       </div>
       
@@ -257,6 +362,7 @@ export const HierarchyPanel: React.FC = () => {
               updateGroupRect={updateGroupRect}
               camera={camera}
               tracks={tracks}
+              handleShiftClick={handleShiftClick}
             />
           );
         })}
@@ -270,11 +376,12 @@ export const HierarchyPanel: React.FC = () => {
             selectBlock={selectBlock} 
             updateBlock={updateBlock} 
             camera={camera}
+            handleShiftClick={handleShiftClick}
           />
         ))}
 
         {/* Ungrouped tracks */}
-        {filters.tracks && ungroupedTracks.map((track, i) => (
+        {filters.tracks && ungroupedTracks.map((track) => (
           <TrackItem
             key={track.id}
             track={track}
@@ -282,6 +389,7 @@ export const HierarchyPanel: React.FC = () => {
             selected={selectedTrackIds.includes(track.id)}
             selectTrack={selectTrack}
             camera={camera}
+            handleShiftClick={handleShiftClick}
           />
         ))}
       </div>
@@ -291,13 +399,20 @@ export const HierarchyPanel: React.FC = () => {
 
 // ─── GroupRect Item ───────────────────────────────────────────────────────────
 
-const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds, selectBlock, selectGroupRect, selectTrack, updateBlock, updateGroupRect, camera, tracks }: any) => {
+const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds, selectBlock, selectGroupRect, selectTrack, updateBlock, updateGroupRect, camera, tracks, handleShiftClick }: any) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(false);
   const isSelected = selectedGroupRectIds.includes(groupRect.id);
   const hasChildren = childBlocks.length > 0 || childTracks.length > 0;
   const wasSelectedRef = useRef(false);
+
+  const blockIdsToSelect = childBlocks.map((b: any) => b.id);
+  const trackIdsToSelect = childTracks.map((t: any) => t.id);
+  const isAllSelected = 
+    isSelected &&
+    blockIdsToSelect.every((id: string) => selectedBlockIds.includes(id)) &&
+    trackIdsToSelect.every((id: string) => selectedTrackIds.includes(id));
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -336,13 +451,18 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
       <div 
         id={`outliner-item-groupRect-${groupRect.id}`}
         className={`hierarchy-item group-rect-item ${isSelected ? 'selected' : ''}`}
+        style={{ opacity: groupRect.enabled === false && !isSelected ? 0.4 : 1 }}
         onPointerDown={() => wasSelectedRef.current = isSelected}
         onClick={(e) => {
-          if (wasSelectedRef.current && !e.ctrlKey && !e.shiftKey) {
-            useStore.getState().toggleContextMenu({ x: e.clientX, y: e.clientY, blockId: `groupRect:${groupRect.id}` });
+          if (e.shiftKey) {
+            handleShiftClick(groupRect.id, 'groupRect');
           } else {
-            selectGroupRect(groupRect.id, e.ctrlKey || e.shiftKey);
+            selectGroupRect(groupRect.id, e.ctrlKey);
           }
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          useStore.getState().openContextMenu({ x: e.clientX, y: e.clientY, blockId: `groupRect:${groupRect.id}` });
         }}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -360,7 +480,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
         >
           {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
         </button>
-        <Square size={16} className="flex-shrink-0" style={{ opacity: 0.7 }} />
+        <Square size={16} className="flex-shrink-0" style={{ opacity: 0.7 }} fill="currentColor" />
         {isEditing ? (
           <input 
             value={editName} 
@@ -392,6 +512,31 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
             {childBlocks.length}
           </span>
         )}
+        <button
+          className="icon-btn"
+          onClick={(e) => {
+             e.stopPropagation();
+             if (isAllSelected) {
+               useStore.setState(s => ({
+                 selectedGroupRectIds: s.selectedGroupRectIds.filter(id => id !== groupRect.id),
+                 selectedBlockIds: s.selectedBlockIds.filter(id => !blockIdsToSelect.includes(id)),
+                 selectedTrackIds: s.selectedTrackIds.filter(id => !trackIdsToSelect.includes(id))
+               }));
+             } else {
+               useStore.setState(s => ({
+                 selectedGroupRectIds: [...new Set([...s.selectedGroupRectIds, groupRect.id])],
+                 selectedBlockIds: [...new Set([...s.selectedBlockIds, ...blockIdsToSelect])],
+                 selectedTrackIds: [...new Set([...s.selectedTrackIds, ...trackIdsToSelect])],
+                 lastSelectedId: groupRect.id,
+                 lastSelectedType: 'groupRect'
+               }));
+             }
+          }}
+          title={isAllSelected ? "Deselect Group and Children" : "Select Group and Children"}
+          style={{ width: '20px', height: '20px', padding: 0, marginRight: '4px', opacity: 0.7 }}
+        >
+          {isAllSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+        </button>
         <div 
           className="hierarchy-key-badge"
           title={groupRect.keyBinding ? `Key bound: ${groupRect.keyBinding}` : "No key bound"}
@@ -412,6 +557,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
               selectBlock={selectBlock} 
               updateBlock={updateBlock} 
               camera={camera}
+              handleShiftClick={handleShiftClick}
             />
           ))}
           {childTracks.map((track: any) => (
@@ -422,6 +568,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
               selected={selectedTrackIds.includes(track.id)}
               selectTrack={selectTrack}
               camera={camera}
+              handleShiftClick={handleShiftClick}
             />
           ))}
         </div>
@@ -432,7 +579,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
 
 // ─── Block Item ──────────────────────────────────────────────────────────────
 
-const BlockItem = ({ block, selected, selectBlock, updateBlock, camera }: any) => {
+const BlockItem = ({ block, selected, selectBlock, camera, handleShiftClick }: any) => {
   const wasSelectedRef = useRef(false);
 
   const handleGoTo = () => {
@@ -445,13 +592,18 @@ const BlockItem = ({ block, selected, selectBlock, updateBlock, camera }: any) =
     <div 
       id={`outliner-item-${block.id}`}
       className={`hierarchy-item block-item ${selected ? 'selected' : ''}`}
+      style={{ opacity: block.enabled === false && !selected ? 0.4 : 1 }}
       onPointerDown={() => wasSelectedRef.current = selected}
       onClick={(e) => {
-        if (wasSelectedRef.current && !e.ctrlKey && !e.shiftKey) {
-          useStore.getState().toggleContextMenu({ x: e.clientX, y: e.clientY, blockId: block.id });
+        if (e.shiftKey) {
+          handleShiftClick(block.id, 'block');
         } else {
-          selectBlock(block.id, e.ctrlKey || e.shiftKey);
+          selectBlock(block.id, e.ctrlKey);
         }
+      }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        useStore.getState().openContextMenu({ x: e.clientX, y: e.clientY, blockId: block.id });
       }}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -480,7 +632,7 @@ const BlockItem = ({ block, selected, selectBlock, updateBlock, camera }: any) =
 
 // ─── Track Item ──────────────────────────────────────────────────────────────
 
-const TrackItem = ({ track, label, selected, selectTrack, camera }: any) => {
+const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftClick }: any) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const wasSelectedRef = useRef(false);
@@ -513,13 +665,18 @@ const TrackItem = ({ track, label, selected, selectTrack, camera }: any) => {
     <div 
       id={`outliner-item-track-${track.id}`}
       className={`hierarchy-item track-item ${selected ? 'selected' : ''}`}
+      style={{ opacity: track.enabled === false && !selected ? 0.4 : 1 }}
       onPointerDown={() => wasSelectedRef.current = selected}
       onClick={(e) => {
-        if (wasSelectedRef.current && !e.ctrlKey && !e.shiftKey) {
-          useStore.getState().toggleContextMenu({ x: e.clientX, y: e.clientY, blockId: `track:${track.id}` });
+        if (e.shiftKey) {
+          handleShiftClick(track.id, 'track');
         } else {
-          selectTrack(track.id, e.ctrlKey || e.shiftKey);
+          selectTrack(track.id, e.ctrlKey);
         }
+      }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        useStore.getState().openContextMenu({ x: e.clientX, y: e.clientY, blockId: `track:${track.id}` });
       }}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -560,3 +717,4 @@ const TrackItem = ({ track, label, selected, selectTrack, camera }: any) => {
     </div>
   );
 };
+

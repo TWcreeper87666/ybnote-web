@@ -39,10 +39,25 @@
 - [x] 實作觸發球與音符方塊的碰撞判定 (無冷卻時間)
 
 ## Phase 6: MIDI 匯入與遊戲模式 (Integration & Gameplay)
-- [ ] 實作 MIDI 檔案解析與匯入功能
-- [ ] 實作 MIDI 自動生成畫布方塊排列邏輯
-- [ ] 實作 Osu! 節奏遊玩模式 (時間軸判定、分數計算、UI回饋)
-- [ ] 遊戲整體拋光、音效優化與效能調校
+- [x] 錄影功能 (Macro Recording / Event Sequencing)
+- [x] 實作 MIDI 檔案解析與匯入/匯出功能
+- [x] 實作 MIDI 自動生成畫布方塊排列邏輯
+- [x] 實作 Osu! 節奏遊玩模式 (縮小判定圈、分數計算、獨立路由)
+- [x] 遊戲整體拋光、音效優化與效能調校
+
+## Phase 6: Game Mode Implementation
+- [x] Rename `PlayPage` to `GamePage` and update Routing in `App.tsx`
+- [x] Update `useStore` with Game states (`gameState`, `gameBlocks`, `gameEvents`, `gameScore`, `gameCombo`)
+- [x] Implement `parseMidiForGame` in `midiUtils.ts` (extract unique notes)
+- [x] Implement `GamePage` UI:
+  - [x] Upload Phase: MIDI file input
+  - [x] Arrange Phase: 30s countdown timer & Skip button
+  - [x] Play Phase: Score & Combo display
+- [x] Implement `GameCanvas` Logic:
+  - [x] Arrange Phase: Allow dragging blocks
+  - [x] Play Phase: Enable pointer-lock (FPS view) and trail intersection logic
+  - [x] Play Phase: Render approach circles based on `gameEvents`
+  - [x] Play Phase: Hit detection (timing diff when trail intersects block) & Scoring
 
 ## Phase 7: Known Bugs Fixes (Resolved)
 - [x] 按滑鼠中鍵無法移動版面或方塊 (Pixi v8 Event API update)
@@ -51,5 +66,12 @@
 - [x] 系統會存之前的方塊，但是方塊無法互動 (Fixed by updating deprecated `e.data.button` properties)
 - [x] 雙擊滑鼠會變成選取文字 (Fixed with `user-select: none`)
 - [x] 右鍵會開啟chrome的選單，右鍵可以選取方塊 (Disabled context menu & handled right click block selection)
-- [x] 音調改變方塊的顏色並沒有改變 (Added `getPitchColor` utility)
 - [x] ctrl+滾輪也沒有反應 (Fixed native wheel event listener)
+
+## Phase 8: Game Mode Enhancements
+- [x] Fix ESC pointer lock behavior (listen to pointerlockchange to pause automatically).
+- [x] Add Undo/Redo/Settings UI and state tracking to Arrangement phase.
+- [x] Add global volume setting to Settings panel (shared between editor and game).
+- [x] Implement Arrangement phase preview mini-player (play, pause, slider, speed).
+- [x] Implement Play Speed dropdown next to "Start Game" and apply speed multiplier to gameplay.
+

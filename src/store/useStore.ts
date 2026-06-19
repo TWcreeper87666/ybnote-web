@@ -33,6 +33,7 @@ export interface GroupRect {
   playedAt?: number;
   volume?: number; // 0.0 to 1.0, master volume for group
   keyBinding?: string;
+  enabled?: boolean;
 }
 
 interface CameraState {
@@ -65,6 +66,13 @@ interface Runner {
 export type Theme = 'light' | 'dark';
 export type Mode = 'select' | 'draw_track' | 'piano' | 'drum' | 'draw_group' | 'play';
 
+export interface HitEvent {
+  type: 'Perfect' | 'Good' | 'Bad' | 'Miss';
+  offset: number; // in ms
+  time: number; // Date.now() timestamp
+  color: number;
+}
+
 interface AppState {
   blocks: Block[];
   groups: Group[];
@@ -87,6 +95,17 @@ interface AppState {
   isSettingsOpen: boolean;
   isHelpOpen: boolean;
   isHierarchyOpen: boolean;
+  uiStateBeforePlay?: {
+    isPianoOpen: boolean;
+    isSettingsOpen: boolean;
+    isHelpOpen: boolean;
+    isHierarchyOpen: boolean;
+    isSearchOpen: boolean;
+    selectedBlockIds: string[];
+    selectedTrackIds: string[];
+    selectedGroupRectIds: string[];
+    activeTrackId: string | null;
+  };
   searchQuery: string;
   isSearchOpen: boolean;
 
@@ -109,6 +128,7 @@ interface AppState {
   pianoKeysCount: number;
   blockOpacity: number;
   mouseSensitivity: number;
+  masterVolume: number;
   contextMenu: { x: number, y: number, blockId: string } | null;
 
   lastSelectedId: string | null;
@@ -154,6 +174,7 @@ interface AppState {
   setPianoKeysCount: (count: number) => void;
   setBlockOpacity: (opacity: number) => void;
   setMouseSensitivity: (sensitivity: number) => void;
+  setMasterVolume: (volume: number) => void;
   openContextMenu: (menu: { x: number, y: number, blockId: string }) => void;
   closeContextMenu: () => void;
   toggleContextMenu: (menu: { x: number, y: number, blockId: string }) => void;
@@ -182,6 +203,40 @@ interface AppState {
   removeTrackNode: (trackId: string, nodeId: string) => void;
   updateTrackNode: (trackId: string, nodeId: string, updates: Partial<TrackNode>) => void;
   setRunners: (runners: Runner[]) => void;
+
+  // Macro Recording
+  isRecording: boolean;
+  recordedEvents: { time: number; type: 'block' | 'groupRect'; targetId: string }[];
+  recordingStartTime: number | null;
+  startRecording: () => void;
+  stopRecording: () => void;
+  recordEvent: (type: 'block' | 'groupRect', targetId: string) => void;
+  clearRecordedEvents: () => void;
+
+  // Game Mode State
+  gameState: 'upload' | 'arrange' | 'countdown' | 'play' | 'paused' | 'result';
+  gameFileName: string | null;
+  gameBlocks: Block[];
+  gameSpeed: number;
+  gameEvents: { time: number; pitch: string; instrument: string; blockId: string; }[];
+  gameScore: number;
+  gameCombo: number;
+  gameResetCount: number;
+  setGameState: (state: AppState['gameState']) => void;
+  setGameFileName: (name: string | null) => void;
+  setGameBlocks: (blocks: Block[]) => void;
+  updateGameBlock: (id: string, updates: Partial<Block>) => void;
+  setGameEvents: (events: AppState['gameEvents']) => void;
+  setGameStats: (stats: Partial<{ gameScore: number, gameCombo: number, latestHit: HitEvent | null }>) => void;
+  setGameSpeed: (speed: number) => void;
+  resetGamePlay: () => void;
+  latestHit: HitEvent | null;
+
+  latestPerformHit: { time: number, color: number } | null;
+  setLatestPerformHit: (hit: { time: number, color: number }) => void;
+  
+  toastMessage: { text: string; id: number } | null;
+  showToast: (msg: string) => void;
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -212,7 +267,7 @@ export const useStore = create<AppState>()(
         isPianoOpen: false,
         isSettingsOpen: false,
         isHelpOpen: false,
-        isHierarchyOpen: true,
+        isHierarchyOpen: false,
         searchQuery: '',
         isSearchOpen: false,
 
@@ -233,10 +288,26 @@ export const useStore = create<AppState>()(
         pianoKeysCount: 36,
         blockOpacity: 1,
         mouseSensitivity: 1,
+        masterVolume: 1,
         contextMenu: null,
 
         lastSelectedId: null,
         lastSelectedType: null,
+
+        isRecording: false,
+        recordedEvents: [],
+        recordingStartTime: null,
+
+        gameState: 'upload',
+        gameFileName: null,
+        gameBlocks: [],
+        gameSpeed: 1,
+        gameEvents: [],
+        gameScore: 0,
+        gameCombo: 0,
+        gameResetCount: 0,
+        
+        toastMessage: null,
 
         addBlock: (block) => set((state) => ({
           blocks: [...state.blocks, { ...block, playedAt: Date.now(), playedVolumeMultiplier: 1, id: generateId() }]
@@ -247,12 +318,24 @@ export const useStore = create<AppState>()(
           selectedBlockIds: state.selectedBlockIds.filter((selId) => selId !== id)
         })),
 
-        updateBlock: (id, updates) => set((state) => ({
-          blocks: state.blocks.map(b => b.id === id ? { ...b, ...updates } : b)
-        })),
+        updateBlock: (id, updates) => set((state) => {
+          if (updates.playedAt !== undefined) {
+             get().recordEvent('block', id);
+          }
+          return {
+            blocks: state.blocks.map(b => b.id === id ? { ...b, ...updates } : b)
+          };
+        }),
 
         updateBlocks: (updates) => set((state) => {
           const updateMap = new Map(updates.map(u => [u.id, u.updates]));
+          
+          updates.forEach(u => {
+            if (u.updates.playedAt !== undefined) {
+              get().recordEvent('block', u.id);
+            }
+          });
+
           const newState: Partial<AppState> = {
             blocks: state.blocks.map(b => updateMap.has(b.id) ? { ...b, ...updateMap.get(b.id)! } : b)
           };
@@ -362,7 +445,7 @@ export const useStore = create<AppState>()(
           if (options?.continuous) {
             if (!isHistoryPausedForContinuous) {
               useStore.temporal.setState(s => ({
-                pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, tracks: state.tracks }],
+                pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks, gameBlocks: state.gameBlocks }],
                 futureStates: []
               }));
               useStore.temporal.getState().pause();
@@ -414,14 +497,17 @@ export const useStore = create<AppState>()(
         addGroupRect: (groupRect) => {
           const id = generateId();
           const name = groupRect.name || `Group ${get().groupRects.length + 1}`;
-          set((state) => ({ groupRects: [...state.groupRects, { ...groupRect, name, id }] }));
+          set((state) => ({ groupRects: [...state.groupRects, { enabled: true, ...groupRect, name, id }] }));
           return id;
         },
         updateGroupRect: (id, updates) => set((state) => {
+          if (updates.playedAt !== undefined) {
+            get().recordEvent('groupRect', id);
+          }
           const newState: Partial<AppState> = {
              groupRects: state.groupRects.map(g => g.id === id ? { ...g, ...updates } : g)
           };
-          if (updates.name !== undefined || updates.volume !== undefined || updates.keyBinding !== undefined || updates.w !== undefined || updates.h !== undefined) {
+          if (updates.name !== undefined || updates.volume !== undefined || updates.keyBinding !== undefined || updates.w !== undefined || updates.h !== undefined || updates.enabled !== undefined) {
              newState.lastSelectedId = id;
              newState.lastSelectedType = 'groupRect';
           }
@@ -485,6 +571,10 @@ export const useStore = create<AppState>()(
         setPianoKeysCount: (count) => set({ pianoKeysCount: count }),
         setBlockOpacity: (opacity) => set({ blockOpacity: opacity }),
         setMouseSensitivity: (mouseSensitivity) => set({ mouseSensitivity }),
+        setMasterVolume: (volume) => {
+            import('../utils/audio').then(({ setMasterVolume }) => setMasterVolume(volume));
+            set({ masterVolume: volume });
+        },
         openContextMenu: (menu) => set({ contextMenu: menu }),
         closeContextMenu: () => set({ contextMenu: null }),
         toggleContextMenu: (menu) => set((state) => ({ contextMenu: state.contextMenu?.blockId === menu.blockId ? null : menu })),
@@ -519,16 +609,62 @@ export const useStore = create<AppState>()(
         })),
         togglePlay: () => set((state) => ({ isPlaying: !state.isPlaying })),
         stopPlay: () => set({ isPlaying: false, runners: [] }),
-        setMode: (mode) => set((state) => ({
-          mode,
-          activeTrackId: mode === 'select' ? null : state.activeTrackId,
-          selectedBlockIds: mode === 'draw_track' || mode === 'draw_group' ? [] : state.selectedBlockIds,
-          selectedTrackIds: mode === 'draw_track' || mode === 'draw_group' ? [] : state.selectedTrackIds,
-          selectedGroupRectIds: mode === 'draw_track' || mode === 'draw_group' ? [] : state.selectedGroupRectIds,
-          isPianoOpen: mode === 'piano',
-          isSettingsOpen: false,
-          isHelpOpen: false
-        })),
+        setMode: (mode) => set((state) => {
+          const updates: Partial<AppState> = {
+            mode,
+            activeTrackId: mode === 'select' ? null : state.activeTrackId,
+            selectedBlockIds: mode === 'draw_track' || mode === 'draw_group' || mode === 'play' ? [] : state.selectedBlockIds,
+            selectedTrackIds: mode === 'draw_track' || mode === 'draw_group' || mode === 'play' ? [] : state.selectedTrackIds,
+            selectedGroupRectIds: mode === 'draw_track' || mode === 'draw_group' || mode === 'play' ? [] : state.selectedGroupRectIds,
+          };
+
+          if (mode === 'play') {
+             updates.contextMenu = null;
+             // Record all UI states before entering play mode
+             if (!state.uiStateBeforePlay) {
+                 updates.uiStateBeforePlay = {
+                     isPianoOpen: state.isPianoOpen,
+                     isSettingsOpen: state.isSettingsOpen,
+                     isHelpOpen: state.isHelpOpen,
+                     isHierarchyOpen: state.isHierarchyOpen,
+                     isSearchOpen: state.isSearchOpen,
+                     selectedBlockIds: state.selectedBlockIds,
+                     selectedTrackIds: state.selectedTrackIds,
+                     selectedGroupRectIds: state.selectedGroupRectIds,
+                     activeTrackId: state.activeTrackId,
+                 };
+             }
+             // Hide UI panels in play mode
+             updates.isPianoOpen = false;
+             updates.isSettingsOpen = false;
+             updates.isHelpOpen = false;
+             updates.isHierarchyOpen = false;
+             updates.isSearchOpen = false;
+          } else {
+             // Handle normal mode transitions
+             updates.isPianoOpen = mode === 'piano';
+             updates.isSettingsOpen = false;
+             updates.isHelpOpen = false;
+             
+             // Restore UI states if exiting play mode
+             if (state.mode === 'play' && state.uiStateBeforePlay) {
+                 updates.isPianoOpen = mode === 'piano' ? true : state.uiStateBeforePlay.isPianoOpen;
+                 updates.isSettingsOpen = state.uiStateBeforePlay.isSettingsOpen;
+                 updates.isHelpOpen = state.uiStateBeforePlay.isHelpOpen;
+                 updates.isHierarchyOpen = state.uiStateBeforePlay.isHierarchyOpen;
+                 updates.isSearchOpen = state.uiStateBeforePlay.isSearchOpen;
+                 
+                 updates.selectedBlockIds = state.uiStateBeforePlay.selectedBlockIds;
+                 updates.selectedTrackIds = state.uiStateBeforePlay.selectedTrackIds;
+                 updates.selectedGroupRectIds = state.uiStateBeforePlay.selectedGroupRectIds;
+                 updates.activeTrackId = state.uiStateBeforePlay.activeTrackId;
+                 
+                 updates.uiStateBeforePlay = undefined;
+             }
+          }
+
+          return updates as AppState;
+        }),
         setEditingTrackId: (editingTrackId) => set({ editingTrackId }),
         setActiveTrackId: (activeTrackId) => set({ activeTrackId, selectedBlockIds: [], selectedTrackIds: activeTrackId ? [activeTrackId] : [], selectedGroupRectIds: [] }),
         setActiveNodeDrag: (activeNodeDrag) => set({ activeNodeDrag }),
@@ -588,6 +724,32 @@ export const useStore = create<AppState>()(
           } : t)
         })),
         setRunners: (runners) => set({ runners }),
+
+        startRecording: () => set({ isRecording: true, recordingStartTime: Date.now(), recordedEvents: [] }),
+        stopRecording: () => set({ isRecording: false, recordingStartTime: null }),
+        recordEvent: (type, targetId) => set((state) => {
+          if (!state.isRecording || !state.recordingStartTime) return state;
+          const time = Date.now() - state.recordingStartTime;
+          return { recordedEvents: [...state.recordedEvents, { time, type, targetId }] };
+        }),
+        clearRecordedEvents: () => set({ recordedEvents: [] }),
+
+        setGameState: (gameState) => set({ gameState }),
+        setGameFileName: (gameFileName) => set({ gameFileName }),
+        setGameBlocks: (gameBlocks) => set({ gameBlocks }),
+        updateGameBlock: (id, updates) => set((state) => ({
+           gameBlocks: state.gameBlocks.map(b => b.id === id ? { ...b, ...updates } : b)
+        })),
+        setGameEvents: (gameEvents) => set({ gameEvents }),
+        setGameStats: (stats) => set(state => ({ ...state, ...stats })),
+        setGameSpeed: (gameSpeed) => set({ gameSpeed }),
+        resetGamePlay: () => set(s => ({ gameResetCount: s.gameResetCount + 1, gameScore: 0, gameCombo: 0, latestHit: null })),
+        latestHit: null,
+
+        latestPerformHit: null,
+        setLatestPerformHit: (hit) => set({ latestPerformHit: hit }),
+        
+        showToast: (msg) => set({ toastMessage: { text: msg, id: Date.now() } })
       }),
       {
         name: 'ybnote-storage',
@@ -602,16 +764,18 @@ export const useStore = create<AppState>()(
           pianoKeysCount: state.pianoKeysCount,
           blockOpacity: state.blockOpacity,
           mouseSensitivity: state.mouseSensitivity,
+          masterVolume: state.masterVolume,
           showGroupName: state.showGroupName,
           showBlockPitch: state.showBlockPitch,
           showBlockVolume: state.showBlockVolume,
           showBlockInstrument: state.showBlockInstrument,
-          camera: state.camera
+          camera: state.camera,
+          recordedEvents: state.recordedEvents
         }), // only persist these fields
       }
     ),
     {
-      partialize: (state) => ({ blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks }), // only track history for blocks, groups, groupRects, tracks
+      partialize: (state) => ({ blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks, gameBlocks: state.gameBlocks }), // track history
       equality: (pastState, currentState) => {
         if (pastState.groups !== currentState.groups) return false;
         if (pastState.tracks !== currentState.tracks) return false;
@@ -623,7 +787,7 @@ export const useStore = create<AppState>()(
             const cg = currentState.groupRects[i];
             if (pg === cg) continue;
             if (pg.id !== cg.id || pg.name !== cg.name || pg.x !== cg.x || pg.y !== cg.y ||
-                pg.w !== cg.w || pg.h !== cg.h || pg.volume !== cg.volume || pg.keyBinding !== cg.keyBinding) {
+                pg.w !== cg.w || pg.h !== cg.h || pg.volume !== cg.volume || pg.keyBinding !== cg.keyBinding || pg.enabled !== cg.enabled) {
               return false;
             }
           }
@@ -642,8 +806,65 @@ export const useStore = create<AppState>()(
             return false;
           }
         }
+        if (pastState.gameBlocks !== currentState.gameBlocks) {
+          if (pastState.gameBlocks.length !== currentState.gameBlocks.length) return false;
+          for (let i = 0; i < pastState.gameBlocks.length; i++) {
+            const pb = pastState.gameBlocks[i];
+            const cb = currentState.gameBlocks[i];
+            if (pb === cb) continue;
+            if (pb.id !== cb.id || pb.x !== cb.x || pb.y !== cb.y || pb.pitch !== cb.pitch ||
+              pb.volume !== cb.volume ||
+              pb.instrument !== cb.instrument || pb.keyBinding !== cb.keyBinding ||
+              pb.groupId !== cb.groupId) {
+              return false;
+            }
+          }
+        }
+
         return true;
-      },
+      }
     }
   )
 );
+
+export const undoAction = () => {
+  const temporal = useStore.temporal.getState();
+  if (temporal.pastStates.length === 0) {
+    useStore.getState().showToast('Nothing to undo');
+    return;
+  }
+  const past = temporal.pastStates[temporal.pastStates.length - 1];
+  const current = useStore.getState();
+  
+  let msg = 'Undo: Modify Object';
+  if ((past.blocks?.length || 0) < (current.blocks?.length || 0)) msg = 'Undo: Add Note';
+  else if ((past.blocks?.length || 0) > (current.blocks?.length || 0)) msg = 'Undo: Delete Note';
+  else if ((past.groupRects?.length || 0) < (current.groupRects?.length || 0)) msg = 'Undo: Add Group';
+  else if ((past.groupRects?.length || 0) > (current.groupRects?.length || 0)) msg = 'Undo: Delete Group';
+  else if ((past.tracks?.length || 0) < (current.tracks?.length || 0)) msg = 'Undo: Add Track';
+  else if ((past.tracks?.length || 0) > (current.tracks?.length || 0)) msg = 'Undo: Delete Track';
+
+  temporal.undo();
+  useStore.getState().showToast(msg);
+};
+
+export const redoAction = () => {
+  const temporal = useStore.temporal.getState();
+  if (temporal.futureStates.length === 0) {
+    useStore.getState().showToast('Nothing to redo');
+    return;
+  }
+  const future = temporal.futureStates[temporal.futureStates.length - 1];
+  const current = useStore.getState();
+  
+  let msg = 'Redo: Modify Object';
+  if ((future.blocks?.length || 0) > (current.blocks?.length || 0)) msg = 'Redo: Add Note';
+  else if ((future.blocks?.length || 0) < (current.blocks?.length || 0)) msg = 'Redo: Delete Note';
+  else if ((future.groupRects?.length || 0) > (current.groupRects?.length || 0)) msg = 'Redo: Add Group';
+  else if ((future.groupRects?.length || 0) < (current.groupRects?.length || 0)) msg = 'Redo: Delete Group';
+  else if ((future.tracks?.length || 0) > (current.tracks?.length || 0)) msg = 'Redo: Add Track';
+  else if ((future.tracks?.length || 0) < (current.tracks?.length || 0)) msg = 'Redo: Delete Track';
+
+  temporal.redo();
+  useStore.getState().showToast(msg);
+};

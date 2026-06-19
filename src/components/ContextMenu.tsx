@@ -35,6 +35,27 @@ export const ContextMenu: React.FC = () => {
     }
   }, [contextMenu, measuredPos]);
 
+  React.useEffect(() => {
+    if (!contextMenu) return;
+
+    const handleGlobalInteraction = (e: Event) => {
+      if (menuRef.current && menuRef.current.contains(e.target as Node)) {
+        return;
+      }
+      closeContextMenu();
+    };
+
+    window.addEventListener('pointerdown', handleGlobalInteraction, { capture: true });
+    window.addEventListener('wheel', handleGlobalInteraction, { capture: true });
+    window.addEventListener('contextmenu', handleGlobalInteraction, { capture: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', handleGlobalInteraction, { capture: true });
+      window.removeEventListener('wheel', handleGlobalInteraction, { capture: true });
+      window.removeEventListener('contextmenu', handleGlobalInteraction, { capture: true });
+    };
+  }, [contextMenu, closeContextMenu]);
+
   if (!contextMenu) return null;
 
   const displayX = measuredPos ? measuredPos.x : contextMenu.x - 60;
@@ -189,7 +210,7 @@ export const ContextMenu: React.FC = () => {
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 8px 4px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>
-            <Square size={14} /> Group Area
+            <Square size={14} fill="currentColor" /> Group Area
           </div>
           <div style={{ display: 'flex', gap: '4px', marginLeft: '16px' }}>
             <button 
@@ -261,6 +282,16 @@ export const ContextMenu: React.FC = () => {
             className="uppercase"
             style={{ background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '4px', textAlign: 'center', caretColor: 'transparent' }}
           />
+        </div>
+
+        <div 
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px', cursor: 'pointer' }}
+          onClick={() => useStore.getState().updateGroupRect(rect.id, { enabled: rect.enabled === false ? true : false })}
+        >
+          <span style={{ fontSize: '12px', opacity: 0.8, userSelect: 'none' }}>Enable Group</span>
+          <div className={`switch-track ${rect.enabled !== false ? 'active' : ''}`} style={{ zoom: 0.8 }}>
+            <div className="switch-thumb" />
+          </div>
         </div>
       </div>
     );

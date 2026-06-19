@@ -3,7 +3,6 @@ import { Application, useTick } from '@pixi/react';
 import * as PIXI from 'pixi.js';
 import { useStore } from '../store/useStore';
 import { NoteBlock } from './NoteBlock';
-import { playNote } from '../utils/audio';
 import { shiftPitch } from '../utils/pitchUtils';
 import { TrackRenderer } from './TrackRenderer';
 import { GroupRectRenderer } from './GroupRectRenderer';
@@ -77,11 +76,11 @@ const TrailRenderer: React.FC<{
     }
   });
 
-  return <pixiGraphics ref={gRef} draw={() => {}} eventMode="none" />;
+  return <pixiGraphics ref={gRef} zIndex={200} draw={() => {}} eventMode="none" />;
 };
 
 export const Canvas: React.FC = () => {
-  const { blocks, camera, updateCamera, showGrid, theme, mode } = useStore();
+  const { blocks, camera, updateCamera, showGrid, theme, mode, latestPerformHit } = useStore();
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [selectionBox, setSelectionBox] = useState<{x: number, y: number, w: number, h: number} | null>(null);
@@ -255,6 +254,7 @@ export const Canvas: React.FC = () => {
     });
 
     groupRects.forEach(g => {
+      if (g.enabled === false) return;
       if (lineIntersectsRect(x1, y1, x2, y2, g.x, g.y, g.w, g.h)) {
         currentFrameIntersected.add(`groupRect:${g.id}`);
         if (!intersectedBlocksRef.current.has(`groupRect:${g.id}`)) {
@@ -346,7 +346,7 @@ export const Canvas: React.FC = () => {
       }
     };
 
-    const handleMouseDown = (e: MouseEvent) => {
+    const handleMouseDown = () => {
       const state = useStore.getState();
       const centerX = window.innerWidth / 2;
       const centerY = window.innerHeight / 2;
@@ -718,6 +718,7 @@ export const Canvas: React.FC = () => {
           y={camera.y}
           scale={camera.zoom}
           eventMode="static"
+          sortableChildren={true}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -726,12 +727,13 @@ export const Canvas: React.FC = () => {
           {/* Background Hit Area for dragging the canvas */}
           <pixiGraphics 
             label="background"
+            zIndex={-10}
             draw={drawBackground} 
             eventMode="static"
           />
           
-          <pixiGraphics draw={drawSelectionBox} eventMode="none" />
-          <pixiGraphics draw={drawGroupDrawBox} eventMode="none" />
+          <pixiGraphics zIndex={200} draw={drawSelectionBox} eventMode="none" />
+          <pixiGraphics zIndex={200} draw={drawGroupDrawBox} eventMode="none" />
 
           <GroupRectRenderer />
 
@@ -761,6 +763,20 @@ export const Canvas: React.FC = () => {
           zIndex: 10
         }}
       />
+
+      {mode === 'play' && latestPerformHit && Date.now() - latestPerformHit.time < 500 && (
+         <div 
+           key={`perf-bg-${latestPerformHit.time}`}
+           style={{
+             position: 'absolute',
+             inset: 0,
+             pointerEvents: 'none',
+             background: `radial-gradient(circle, transparent 0%, rgba(${(latestPerformHit.color >> 16) & 255}, ${(latestPerformHit.color >> 8) & 255}, ${latestPerformHit.color & 255}, 0.2) 100%)`,
+             animation: 'flashBg 0.5s ease-out forwards',
+             zIndex: 9
+           }}
+         />
+      )}
       
       <div
         style={{

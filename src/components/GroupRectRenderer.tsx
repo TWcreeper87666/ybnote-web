@@ -1,6 +1,6 @@
-import React, { useCallback, useState } from 'react';
-import * as PIXI from 'pixi.js';
+import React, { useState } from 'react';
 import { useStore } from '../store/useStore';
+import { BaseGroupRect } from './BaseGroupRect';
 
 export const GroupRectRenderer: React.FC = () => {
   const groupRects = useStore(state => state.groupRects);
@@ -25,90 +25,13 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
   const initialRectRef = React.useRef<{x: number, y: number, w: number, h: number} | null>(null);
   const clickStartPosRef = React.useRef<{x: number, y: number} | null>(null);
   const wasSelectedRef = React.useRef(false);
+  const lastClickTimeRef = React.useRef(0);
 
   const showBlockVolume = useStore(state => state.showBlockVolume);
   const showGroupName = useStore(state => state.showGroupName);
 
 
-  const ripplesRef = React.useRef<{id: number, progress: number}[]>([]);
-  const lastPlayedRef = React.useRef(rect.playedAt);
-  const graphicsRef = React.useRef<PIXI.Graphics>(null);
 
-  React.useEffect(() => {
-    if (rect.playedAt && rect.playedAt !== lastPlayedRef.current) {
-      lastPlayedRef.current = rect.playedAt;
-      ripplesRef.current.push({ id: rect.playedAt, progress: 0 });
-    }
-  }, [rect.playedAt]);
-
-  const draw = useCallback((g: PIXI.Graphics) => {
-    g.clear();
-
-    // Draw ripples (particles)
-    ripplesRef.current.forEach(r => {
-      const expansion = r.progress * 40; 
-      const alpha = 1 - r.progress; 
-      g.roundRect(rect.x - expansion, rect.y - expansion, rect.w + expansion * 2, rect.h + expansion * 2, 8);
-      g.stroke({ width: 4, color: 0x8b5cf6, alpha: alpha });
-    });
-
-      // Selected outline glow
-      if (isSelected) {
-        g.roundRect(rect.x - 4, rect.y - 4, rect.w + 8, rect.h + 8, 10);
-        g.fill({ color: 0x6366f1, alpha: 0.3 }); // Indigo glow
-        g.stroke({ width: 3, color: 0x4f46e5, alpha: 0.8 });
-      } else {
-        // Default border
-        g.roundRect(rect.x, rect.y, rect.w, rect.h, 8);
-        g.stroke({ width: 2, color: 0xffffff, alpha: 0.2 });
-      }
-
-      g.roundRect(rect.x, rect.y, rect.w, rect.h, 8);
-      g.fill({ color: 0xffffff, alpha: 0.05 });
-
-      if (showBlockVolume) {
-        const barW = Math.max(52, Math.min(100, rect.w - 16));
-        const currentVol = rect.volume ?? 1;
-        const volAlpha = isSelected ? 1 : 0.5;
-        if (barW > 0) {
-          g.roundRect(rect.x + 8, rect.y + rect.h - 14, barW, 6, 3);
-          g.fill({ color: 0x000000, alpha: 0.3 * volAlpha });
-          g.roundRect(rect.x + 8, rect.y + rect.h - 14, barW * currentVol, 6, 3);
-          g.fill({ color: 0xffffff, alpha: 0.8 * volAlpha });
-        }
-      }
-    },
-    [rect.x, rect.y, rect.w, rect.h, isSelected, rect.volume, showBlockVolume]
-  );
-
-  // Animation loop for ripples
-  React.useEffect(() => {
-    let animationFrameId: number;
-    let lastTime = performance.now();
-    
-    const tick = (time: number) => {
-      const delta = (time - lastTime) / 1000;
-      lastTime = time;
-      
-      if (ripplesRef.current.length > 0) {
-        ripplesRef.current.forEach(r => r.progress += delta * 2.0);
-        ripplesRef.current = ripplesRef.current.filter(r => r.progress < 1);
-        if (graphicsRef.current) {
-          draw(graphicsRef.current);
-        }
-      }
-      animationFrameId = requestAnimationFrame(tick);
-    };
-    
-    animationFrameId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [draw]);
-
-  React.useEffect(() => {
-    if (graphicsRef.current) {
-      graphicsRef.current.hitArea = new PIXI.Rectangle(rect.x, rect.y, rect.w, rect.h);
-    }
-  }, [rect.x, rect.y, rect.w, rect.h]);
 
   const handleResizeDown = (type: string, e: any) => {
     e.stopPropagation();
@@ -192,7 +115,7 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
 
       if (!hasPaused) {
         useStore.temporal.setState(s => ({
-          pastStates: [...s.pastStates, { groupRects: state.groupRects }],
+          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks, gameBlocks: state.gameBlocks }],
           futureStates: []
         }));
         useStore.temporal.getState().pause();
@@ -310,7 +233,7 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
 
       if (!hasPaused) {
         useStore.temporal.setState(s => ({
-          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks }],
+          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks, gameBlocks: state.gameBlocks }],
           futureStates: []
         }));
         useStore.temporal.getState().pause();
@@ -352,69 +275,49 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
       const dx = e.clientX - clickStartPosRef.current.x;
       const dy = e.clientY - clickStartPosRef.current.y;
       if (Math.hypot(dx, dy) < 5) {
-        if (wasSelectedRef.current && !e.ctrlKey && !e.shiftKey) {
-          useStore.getState().toggleContextMenu({
-            x: e.clientX, y: e.clientY, blockId: `groupRect:${rect.id}`
-          });
+        const now = Date.now();
+        if (now - lastClickTimeRef.current < 300) {
+          if (!e.ctrlKey && !e.shiftKey) {
+            useStore.getState().openContextMenu({
+              x: e.clientX, y: e.clientY, blockId: `groupRect:${rect.id}`
+            });
+          }
+          lastClickTimeRef.current = 0;
+        } else {
+          lastClickTimeRef.current = now;
         }
       }
     }
   };
 
-  const handleDrawHandle = useCallback((g: PIXI.Graphics, w: number, h: number) => {
-    g.clear();
-    g.rect(0, 0, w, h);
-    g.fill({ color: 0x000000, alpha: 0.001 }); // invisible but interactive
-  }, []);
-
-  const m = 16; // Hit area thickness for resizing
-  const handles = [
-    // Edges
-    { type: 'n', x: rect.x, y: rect.y - m/2, w: rect.w, h: m, cursor: 'ns-resize' },
-    { type: 's', x: rect.x, y: rect.y + rect.h - m/2, w: rect.w, h: m, cursor: 'ns-resize' },
-    { type: 'w', x: rect.x - m/2, y: rect.y, w: m, h: rect.h, cursor: 'ew-resize' },
-    { type: 'e', x: rect.x + rect.w - m/2, y: rect.y, w: m, h: rect.h, cursor: 'ew-resize' },
-    // Corners (rendered last so they take priority in corners)
-    { type: 'nw', x: rect.x - m/2, y: rect.y - m/2, w: m, h: m, cursor: 'nwse-resize' },
-    { type: 'ne', x: rect.x + rect.w - m/2, y: rect.y - m/2, w: m, h: m, cursor: 'nesw-resize' },
-    { type: 'sw', x: rect.x - m/2, y: rect.y + rect.h - m/2, w: m, h: m, cursor: 'nesw-resize' },
-    { type: 'se', x: rect.x + rect.w - m/2, y: rect.y + rect.h - m/2, w: m, h: m, cursor: 'nwse-resize' },
-  ];
+  const handlePointerEnter = () => useStore.getState().setHoveredGroupRectId(rect.id);
+  const handlePointerLeave = () => {
+    const state = useStore.getState();
+    if (state.hoveredGroupRectId === rect.id) {
+      state.setHoveredGroupRectId(null);
+    }
+  };
 
   return (
-    <pixiContainer>
-      <pixiGraphics
-        ref={graphicsRef}
-        draw={draw}
-        eventMode="static"
-        cursor="pointer"
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        onPointerEnter={() => useStore.getState().setHoveredGroupRectId(rect.id)}
-        onPointerLeave={() => {
-          const state = useStore.getState();
-          if (state.hoveredGroupRectId === rect.id) {
-            state.setHoveredGroupRectId(null);
-          }
-        }}
-      />
-      {isSelected && handles.map(h => (
-        <pixiGraphics
-          key={h.type}
-          x={h.x}
-          y={h.y}
-          draw={(g) => handleDrawHandle(g, h.w, h.h)}
-          eventMode="static"
-          cursor={h.cursor}
-          onPointerDown={(e: PIXI.FederatedPointerEvent) => handleResizeDown(h.type, e)}
-        />
-      ))}
-      {showGroupName && (
-        // @ts-ignore
-        <pixiText text={`${rect.name || ''}`} x={rect.x + 8} y={rect.y + 8} style={{ fontSize: 32, fontWeight: 'bold', fill: '#ffffff', fontFamily: 'Inter' }} alpha={isSelected ? 1 : 0.5} scale={0.5} eventMode="none" />
-      )}
-      {/* Invisible larger hit area for easier grabbing if it's mostly empty inside? 
-          The rectangle itself is filled with alpha 0.15, so it should catch events. */}
-    </pixiContainer>
+    <BaseGroupRect
+      id={rect.id}
+      x={rect.x}
+      y={rect.y}
+      w={rect.w}
+      h={rect.h}
+      name={rect.name}
+      volume={rect.volume}
+      isSelected={isSelected}
+      showVolume={showBlockVolume}
+      showGroupName={showGroupName}
+      playedAt={rect.playedAt}
+      enabled={rect.enabled}
+      isInteractive={true}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+      onResizeDown={handleResizeDown}
+    />
   );
 };

@@ -8,12 +8,13 @@ export const SelectionPropertiesHud: React.FC = () => {
     groupRects,
     selectedBlockIds,
     selectedTrackIds,
-    selectedGroupRectIds
+    selectedGroupRectIds,
+    mode
   } = useStore();
 
   const totalSelected = selectedBlockIds.length + selectedTrackIds.length + selectedGroupRectIds.length;
 
-  if (totalSelected === 0) {
+  if (totalSelected === 0 || mode === 'play') {
     return null;
   }
 
@@ -60,6 +61,7 @@ export const SelectionPropertiesHud: React.FC = () => {
                 <div className="hud-row"><span className="hud-label">Name:</span> <span className="hud-value">{groupRect.name || 'Unnamed Region'}</span></div>
                 <div className="hud-row"><span className="hud-label">Notes:</span> <span className="hud-value">{blocks.filter(b => b.x + 30 >= groupRect.x && b.x + 30 <= groupRect.x + groupRect.w && b.y + 30 >= groupRect.y && b.y + 30 <= groupRect.y + groupRect.h).length}</span></div>
                 <div className="hud-row"><span className="hud-label">Volume:</span> <span className="hud-value">{Math.round((groupRect.volume ?? 1) * 100)}%</span></div>
+                <div className="hud-row"><span className="hud-label">Enabled:</span> <span className="hud-value">{groupRect.enabled !== false ? 'Yes' : 'No'}</span></div>
                 {groupRect.keyBinding && <div className="hud-row"><span className="hud-label">Key Binding:</span> <span className="hud-value">{groupRect.keyBinding}</span></div>}
               </>
             );

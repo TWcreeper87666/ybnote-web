@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
-import { playNote } from '../utils/audio';
 import { computeTrackControlPoints } from '../utils/spline';
 
 function getBezierPoint(t: number, p0: any, p1: any, p2: any, p3: any) {
@@ -117,6 +116,7 @@ export function useGameLoop() {
           });
 
           currentGroupRects.forEach(groupRect => {
+            if (groupRect.enabled === false) return;
             const isIntersecting = rectIntersect(
               pos.x - runnerRadius, pos.y - runnerRadius, runnerRadius * 2, runnerRadius * 2,
               groupRect.x, groupRect.y, groupRect.w, groupRect.h
