@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import * as PIXI from 'pixi.js';
-import { computeTrackControlPoints } from '../utils/spline';
+import { computeTrackControlPoints } from '../../utils/spline';
 
 const TrackHandle: React.FC<{
   x: number;

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useStore } from '../store/useStore';
+import { useStore } from '../../store/useStore';
 
 export const Toast: React.FC = () => {
   const toastMessage = useStore(state => state.toastMessage);

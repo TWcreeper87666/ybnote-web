@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import * as PIXI from 'pixi.js';
-import { useStore } from '../store/useStore';
-import { computeTrackControlPoints } from '../utils/spline';
+import { useStore } from '../../store/useStore';
+import { computeTrackControlPoints } from '../../utils/spline';
 import { BaseTrack } from './BaseTrack';
 
 export const TrackRenderer: React.FC = () => {

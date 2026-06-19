@@ -1,7 +1,7 @@
 import React from 'react';
-import { useStore, undoAction, redoAction } from '../store/useStore';
+import { useStore, undoAction, redoAction } from '../../store/useStore';
 import { Settings, Music, Drum, Trash2, Undo2, Redo2, LayoutList, PenTool, HelpCircle, Square, Wand2, Circle, Download, Upload, Gamepad2 } from 'lucide-react';
-import { exportRecordedEventsToMidi, importMidiToBlocks } from '../utils/midiUtils';
+import { exportRecordedEventsToMidi, importMidiToBlocks } from '../../utils/midiUtils';
 import { useNavigate } from 'react-router-dom';
 
 export const Toolbar: React.FC = () => {

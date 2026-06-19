@@ -1,15 +1,15 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GameCanvas } from '../components/GameCanvas';
+import { GameCanvas } from '../components/canvas/GameCanvas';
 import { parseMidiForGame } from '../utils/midiUtils';
 import { Upload, SkipForward, Plus, Undo2, Redo2, Settings, Play, Pause, Volume2 } from 'lucide-react';
-import { SettingsPanel } from '../components/SettingsPanel';
+import { SettingsPanel } from '../components/ui/SettingsPanel';
 import { playNote } from '../utils/audio';
 import { useStore, undoAction, redoAction } from '../store/useStore';
 
 export const GamePage: React.FC = () => {
   const navigate = useNavigate();
-  const { theme, gameState, setGameState, setGameBlocks, setGameEvents, gameScore, gameCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, toggleSettings, latestHit, updateGameBlock } = useStore();
+  const { theme, gameState, setGameState, setGameBlocks, setGameEvents, gameScore, gameCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, toggleSettings, latestHit } = useStore();
   const [countdownTime, setCountdownTime] = useState(3);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);

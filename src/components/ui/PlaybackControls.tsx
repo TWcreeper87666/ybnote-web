@@ -1,5 +1,5 @@
 import React from 'react';
-import { useStore } from '../store/useStore';
+import { useStore } from '../../store/useStore';
 import { Play, Square, Pause } from 'lucide-react';
 
 export const PlaybackControls: React.FC = () => {

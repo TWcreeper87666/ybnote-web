@@ -1,6 +1,6 @@
 import React from 'react';
-import { useStore } from '../store/useStore';
-import { shiftPitch } from '../utils/pitchUtils';
+import { useStore } from '../../store/useStore';
+import { shiftPitch } from '../../utils/pitchUtils';
 import { Trash2, Search, Activity, Square, Music } from 'lucide-react';
 
 export const ContextMenu: React.FC = () => {

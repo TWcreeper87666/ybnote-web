@@ -1,5 +1,5 @@
 import React from 'react';
-import { useStore } from '../store/useStore';
+import { useStore } from '../../store/useStore';
 import { X, Keyboard, Mouse } from 'lucide-react';
 
 export const HelpPanel: React.FC = () => {

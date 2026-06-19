@@ -1,5 +1,5 @@
 import React from 'react';
-import { useStore } from '../store/useStore';
+import { useStore } from '../../store/useStore';
 import { X, Moon, Sun, Grid } from 'lucide-react';
 
 export const SettingsPanel: React.FC = () => {

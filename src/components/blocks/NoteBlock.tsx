@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { useStore } from '../store/useStore';
+import { useStore } from '../../store/useStore';
 import { BaseBlock } from './BaseBlock';
 import { DrumBlock } from './DrumBlock';
-import { getPitchColorNumber } from '../utils/colors';
+import { getPitchColorNumber } from '../../utils/colors';
 
 interface NoteBlockProps {
   id: string;
@@ -41,7 +41,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
   React.useEffect(() => {
     if (playedAt && playedAt !== lastPlayedRef.current) {
       lastPlayedRef.current = playedAt;
-      import('../utils/audio').then(({ playNote }) => {
+      import('../../utils/audio').then(({ playNote }) => {
           playNote(pitch, volume * playedVolumeMultiplier, instrument);
           if (useStore.getState().mode === 'play') {
              useStore.getState().setLatestPerformHit({ time: Date.now(), color: blockColor });

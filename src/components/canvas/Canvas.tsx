@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Application, useTick } from '@pixi/react';
 import * as PIXI from 'pixi.js';
-import { useStore } from '../store/useStore';
-import { NoteBlock } from './NoteBlock';
-import { shiftPitch } from '../utils/pitchUtils';
-import { TrackRenderer } from './TrackRenderer';
-import { GroupRectRenderer } from './GroupRectRenderer';
+import { useStore } from '../../store/useStore';
+import { NoteBlock } from '../blocks/NoteBlock';
+import { shiftPitch } from '../../utils/pitchUtils';
+import { TrackRenderer } from '../containers/TrackRenderer';
+import { GroupRectRenderer } from '../containers/GroupRectRenderer';
 import { Plus } from 'lucide-react';
 
 export type TrailStroke = {

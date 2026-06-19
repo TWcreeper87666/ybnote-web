@@ -1,7 +1,7 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { EditorPage } from './pages/EditorPage';
 import { GamePage } from './pages/GamePage';
-import { Toast } from './components/Toast';
+import { Toast } from './components/ui/Toast';
 import './index.css';
 
 function App() {

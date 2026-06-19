@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Application, useTick } from '@pixi/react';
 import * as PIXI from 'pixi.js';
-import { useStore } from '../store/useStore';
-import { getPitchColorNumber } from '../utils/colors';
-import { playNote } from '../utils/audio';
-import { BaseBlock } from './BaseBlock';
+import { useStore } from '../../store/useStore';
+import { getPitchColorNumber } from '../../utils/colors';
+import { playNote } from '../../utils/audio';
+import { BaseBlock } from '../blocks/BaseBlock';
 
 const APPROACH_TIME = 800; // ms before the event that the circle appears
 const HIT_WINDOW = 200; // ms window for perfect hit

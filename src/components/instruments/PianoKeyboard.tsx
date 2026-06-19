@@ -1,8 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { useStore } from '../store/useStore';
-import { playNote } from '../utils/audio';
+import { useStore } from '../../store/useStore';
+import { playNote } from '../../utils/audio';
 import { X } from 'lucide-react';
-import { getPitchColorHex } from '../utils/colors';
+import { getPitchColorHex } from '../../utils/colors';
 
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useStore } from '../store/useStore';
+import { useStore } from '../../store/useStore';
 import { Search, Music, LayoutList, GitBranch, Square, X, ChevronRight, ChevronDown, Keyboard, Check, CheckSquare } from 'lucide-react';
 
 // Smooth camera animation helper
