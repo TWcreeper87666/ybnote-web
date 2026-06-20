@@ -126,7 +126,7 @@ export const BaseGroupRect: React.FC<BaseGroupRectProps> = ({
   ];
 
   return (
-    <pixiContainer zIndex={isSelected ? 100 : 0}>
+    <pixiContainer zIndex={isSelected ? 1 : 0}>
       <pixiGraphics
         ref={graphicsRef}
         draw={draw}

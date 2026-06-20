@@ -12,12 +12,15 @@
   "dependencies": {
     "@pixi/react": "^8.0.5",
     "@tonejs/midi": "^2.0.28",
+    "jszip": "^3.10.1",
+    "lamejs": "^1.2.1",
     "lucide-react": "^1.18.0",
     "pixi.js": "^8.19.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.18.0",
     "tone": "^15.1.22",
+    "wavesurfer.js": "^7.12.8",
     "zundo": "^2.3.0",
     "zustand": "^5.0.14"
   },

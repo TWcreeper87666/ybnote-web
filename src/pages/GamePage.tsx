@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GameCanvas } from '../components/canvas/GameCanvas';
 import { parseMidiForGame } from '../utils/midiUtils';
+import { importLevel } from '../utils/levelUtils';
 import { Upload, SkipForward, Plus, Undo2, Redo2, Settings, Play, Pause, Volume2 } from 'lucide-react';
 import { SettingsPanel } from '../components/ui/SettingsPanel';
 import { playNote } from '../utils/audio';
@@ -139,17 +140,34 @@ export const GamePage: React.FC = () => {
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      try {
+    if (!file) return;
+
+    try {
+      if (file.name.endsWith('.yblevel')) {
+        // Import .yblevel package
+        const { levelData } = await importLevel(file);
+        setGameFileName(file.name);
+        setGameBlocks(levelData.blocks.map(b => ({
+          id: b.id,
+          x: b.x,
+          y: b.y,
+          pitch: b.pitch,
+          instrument: b.instrument,
+          volume: b.volume,
+        })));
+        setGameEvents(levelData.events);
+        setGameState('arrange');
+      } else {
+        // Import .mid/.midi
         const { gameBlocks, gameEvents } = await parseMidiForGame(file);
         setGameFileName(file.name);
         setGameBlocks(gameBlocks);
         setGameEvents(gameEvents);
         setGameState('arrange');
-      } catch (err) {
-        console.error(err);
-        alert("Failed to parse MIDI");
       }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to import file");
     }
   };
 
@@ -177,7 +195,7 @@ export const GamePage: React.FC = () => {
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', background: '#6366f1', color: 'white', borderRadius: 8, cursor: 'pointer', fontSize: 18, fontWeight: 'bold' }}>
                  <Upload size={24} />
                  Select MIDI File
-                 <input type="file" accept=".mid,.midi" style={{ display: 'none' }} onChange={handleImport} />
+                 <input type="file" accept=".mid,.midi,.yblevel" style={{ display: 'none' }} onChange={handleImport} />
               </label>
            </div>
         )}
