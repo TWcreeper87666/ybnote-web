@@ -58,6 +58,8 @@ export const HelpPanel: React.FC = () => {
             <li><strong>Ctrl + D:</strong> Duplicate Selected</li>
             <li><strong>Ctrl + A:</strong> Select All (Blocks & Tracks)</li>
             <li><strong>Ctrl + Shift + A:</strong> Select All Blocks Only</li>
+            <li><strong>Ctrl + G:</strong> Group Selected</li>
+            <li><strong>Ctrl + Shift + G:</strong> Ungroup Selected</li>
             <li><strong>Ctrl + Z:</strong> Undo</li>
             <li><strong>Ctrl + Y:</strong> Redo</li>
             <li><strong>Ctrl + F:</strong> Search / Outline</li>

@@ -123,15 +123,15 @@ export const setMasterVolume = (volume: number) => {
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && isAudioInitialized) {
-      if (Tone.context.state !== 'running') {
-        Tone.context.resume();
+      if (Tone.getContext().state !== 'running') {
+        Tone.getContext().resume();
       }
     }
   });
 
   window.addEventListener('pointerdown', () => {
-    if (isAudioInitialized && Tone.context.state !== 'running') {
-      Tone.context.resume();
+    if (isAudioInitialized && Tone.getContext().state !== 'running') {
+      Tone.getContext().resume();
     }
   }, { capture: true });
 }
@@ -140,8 +140,8 @@ export const playNote = async (pitch: string, volume: number = 1.0, instrument: 
   if (!isAudioInitialized) {
     await Tone.start();
     initAudio();
-  } else if (Tone.context.state !== 'running') {
-    await Tone.context.resume();
+  } else if (Tone.getContext().state !== 'running') {
+    await Tone.getContext().resume();
   }
   
   // Volume usually ranges from 0 to 1, we can map it to velocity.

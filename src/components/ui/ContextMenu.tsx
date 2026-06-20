@@ -1,10 +1,14 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
 import { shiftPitch } from '../../utils/pitchUtils';
-import { Trash2, Search, Activity, Square, Music } from 'lucide-react';
-
+import { 
+  Trash2, Search, Activity, Square, Music, Play, Pause,
+  AlignStartVertical, AlignCenterVertical, AlignEndVertical,
+  AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
+  AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter
+} from 'lucide-react';
 export const ContextMenu: React.FC = () => {
-  const { contextMenu, closeContextMenu, blocks, removeBlock, groupRects, removeGroupRect, selectedBlockIds, deleteSelected } = useStore();
+  const { contextMenu, closeContextMenu, blocks, removeBlock, groupRects, removeGroupRect, selectedBlockIds, deleteSelected, trackPlaybackStatus, playTrack, pauseTrack, stopTrack, isPlaying } = useStore();
 
   const menuRef = React.useRef<HTMLDivElement>(null);
   const [measuredPos, setMeasuredPos] = React.useState<{x: number, y: number} | null>(null);
@@ -14,6 +18,33 @@ export const ContextMenu: React.FC = () => {
     prevContextMenuRef.current = contextMenu;
     setMeasuredPos(null);
   }
+
+  const [isDragging, setIsDragging] = React.useState(false);
+  const dragStart = React.useRef({ x: 0, y: 0 });
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!measuredPos) return;
+    setIsDragging(true);
+    dragStart.current = {
+      x: e.clientX - measuredPos.x,
+      y: e.clientY - measuredPos.y
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDragging) {
+      setMeasuredPos({
+        x: e.clientX - dragStart.current.x,
+        y: e.clientY - dragStart.current.y
+      });
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    setIsDragging(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
 
   React.useLayoutEffect(() => {
     if (contextMenu && menuRef.current && !measuredPos) {
@@ -95,7 +126,12 @@ export const ContextMenu: React.FC = () => {
         }}
         onContextMenu={(e) => e.preventDefault()}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 8px 4px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '4px' }}>
+        <div 
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 8px 4px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '4px', cursor: 'move', userSelect: 'none' }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>
             <Activity size={14} /> Track
           </div>
@@ -103,6 +139,7 @@ export const ContextMenu: React.FC = () => {
             <button 
               className="icon-btn" 
               style={{ padding: '4px', color: '#9ca3af', backgroundColor: 'transparent', borderRadius: '4px' }} 
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 closeContextMenu();
@@ -115,6 +152,7 @@ export const ContextMenu: React.FC = () => {
             <button 
               className="icon-btn" 
               style={{ padding: '4px', color: '#f87171', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: '4px' }} 
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={handleDelete}
               title="Delete Track"
             >
@@ -123,6 +161,41 @@ export const ContextMenu: React.FC = () => {
           </div>
         </div>
         
+        {track.enabled !== false && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px' }}>
+          <label style={{ fontSize: '12px', opacity: 0.8 }}>Playback</label>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {trackPlaybackStatus[track.id] === 'playing' || isPlaying ? (
+              <button 
+                className="icon-btn" 
+                style={{ flex: 1, padding: '4px', borderRadius: '4px', background: 'rgba(234, 179, 8, 0.2)', color: '#eab308', display: 'flex', justifyContent: 'center', transition: 'all 0.2s' }} 
+                onClick={(e) => { e.stopPropagation(); pauseTrack(track.id); }} 
+                title="Pause"
+              >
+                <Pause size={16} fill="currentColor" />
+              </button>
+            ) : (
+              <button 
+                className="icon-btn" 
+                style={{ flex: 1, padding: '4px', borderRadius: '4px', background: 'rgba(34, 197, 94, 0.2)', color: '#22c55e', display: 'flex', justifyContent: 'center', transition: 'all 0.2s' }} 
+                onClick={(e) => { e.stopPropagation(); playTrack(track.id); }} 
+                title="Play"
+              >
+                <Play size={16} fill="currentColor" />
+              </button>
+            )}
+            <button 
+              className="icon-btn" 
+              style={{ flex: 1, padding: '4px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'center', transition: 'all 0.2s' }} 
+              onClick={(e) => { e.stopPropagation(); stopTrack(track.id); }} 
+              title="Stop"
+            >
+              <Square size={16} fill="currentColor" />
+            </button>
+          </div>
+        </div>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px' }}>
           <label style={{ fontSize: '12px', opacity: 0.8 }}>Name</label>
           <input 
@@ -208,7 +281,12 @@ export const ContextMenu: React.FC = () => {
         }}
         onContextMenu={(e) => e.preventDefault()}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 8px 4px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '4px' }}>
+        <div 
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 8px 4px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '4px', cursor: 'move', userSelect: 'none' }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>
             <Square size={14} fill="currentColor" /> Group Area
           </div>
@@ -216,6 +294,7 @@ export const ContextMenu: React.FC = () => {
             <button 
               className="icon-btn" 
               style={{ padding: '4px', color: '#9ca3af', backgroundColor: 'transparent', borderRadius: '4px' }} 
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 closeContextMenu();
@@ -228,6 +307,7 @@ export const ContextMenu: React.FC = () => {
             <button 
               className="icon-btn" 
               style={{ padding: '4px', color: '#f87171', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: '4px' }} 
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={handleDelete}
               title="Delete Group"
             >
@@ -331,6 +411,76 @@ export const ContextMenu: React.FC = () => {
     closeContextMenu();
   };
 
+  const handleAlignLeft = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const minX = Math.min(...targetBlocks.map(b => b.x));
+    useStore.getState().mutateBlocks([block.id], () => ({ x: minX }));
+  };
+
+  const handleAlignCenterHorizontal = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const minX = Math.min(...targetBlocks.map(b => b.x));
+    const maxX = Math.max(...targetBlocks.map(b => b.x));
+    const centerX = (minX + maxX) / 2;
+    useStore.getState().mutateBlocks([block.id], () => ({ x: centerX }));
+  };
+
+  const handleAlignRight = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const maxX = Math.max(...targetBlocks.map(b => b.x));
+    useStore.getState().mutateBlocks([block.id], () => ({ x: maxX }));
+  };
+
+  const handleAlignTop = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const minY = Math.min(...targetBlocks.map(b => b.y));
+    useStore.getState().mutateBlocks([block.id], () => ({ y: minY }));
+  };
+
+  const handleAlignCenterVertical = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const minY = Math.min(...targetBlocks.map(b => b.y));
+    const maxY = Math.max(...targetBlocks.map(b => b.y));
+    const centerY = (minY + maxY) / 2;
+    useStore.getState().mutateBlocks([block.id], () => ({ y: centerY }));
+  };
+
+  const handleAlignBottom = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const maxY = Math.max(...targetBlocks.map(b => b.y));
+    useStore.getState().mutateBlocks([block.id], () => ({ y: maxY }));
+  };
+
+  const handleDistributeHorizontal = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (targetBlocks.length < 2) return;
+    const sorted = [...targetBlocks].sort((a, b) => a.x - b.x);
+    const minX = sorted[0].x;
+    const maxX = sorted[sorted.length - 1].x;
+    const step = (maxX - minX) / (sorted.length - 1);
+    
+    const updates = sorted.map((b, i) => ({
+      id: b.id,
+      updates: { x: minX + step * i }
+    }));
+    useStore.getState().updateBlocks(updates);
+  };
+
+  const handleDistributeVertical = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (targetBlocks.length < 2) return;
+    const sorted = [...targetBlocks].sort((a, b) => a.y - b.y);
+    const minY = sorted[0].y;
+    const maxY = sorted[sorted.length - 1].y;
+    const step = (maxY - minY) / (sorted.length - 1);
+    
+    const updates = sorted.map((b, i) => ({
+      id: b.id,
+      updates: { y: minY + step * i }
+    }));
+    useStore.getState().updateBlocks(updates);
+  };
+
   return (
     <div 
       ref={menuRef}
@@ -350,7 +500,12 @@ export const ContextMenu: React.FC = () => {
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 8px 4px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '4px' }}>
+        <div 
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 8px 4px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '4px', cursor: 'move', userSelect: 'none' }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>
             <Music size={14} /> {targetBlocks.length > 1 ? `${targetBlocks.length} Blocks` : `Block: ${block.pitch}`}
           </div>
@@ -358,6 +513,7 @@ export const ContextMenu: React.FC = () => {
             <button 
               className="icon-btn" 
               style={{ padding: '4px', color: '#9ca3af', backgroundColor: 'transparent', borderRadius: '4px' }} 
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 closeContextMenu();
@@ -370,6 +526,7 @@ export const ContextMenu: React.FC = () => {
             <button 
               className="icon-btn" 
               style={{ padding: '4px', color: '#f87171', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: '4px' }} 
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={handleDelete}
               title={targetBlocks.length > 1 ? 'Delete Selected' : 'Delete Block'}
             >
@@ -377,6 +534,40 @@ export const ContextMenu: React.FC = () => {
             </button>
           </div>
         </div>
+
+      {targetBlocks.length > 1 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px' }}>
+          <label style={{ fontSize: '12px', opacity: 0.8 }}>Align Selected</label>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button className="icon-btn" style={{ flex: 1, padding: '4px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'center' }} onClick={handleAlignLeft} title="Align Left">
+              <AlignStartVertical size={16} />
+            </button>
+            <button className="icon-btn" style={{ flex: 1, padding: '4px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'center' }} onClick={handleAlignCenterHorizontal} title="Align Center (Horizontal)">
+              <AlignCenterVertical size={16} />
+            </button>
+            <button className="icon-btn" style={{ flex: 1, padding: '4px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'center' }} onClick={handleAlignRight} title="Align Right">
+              <AlignEndVertical size={16} />
+            </button>
+            <button className="icon-btn" style={{ flex: 1, padding: '4px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'center' }} onClick={handleDistributeHorizontal} title="Distribute Horizontally">
+              <AlignHorizontalDistributeCenter size={16} />
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button className="icon-btn" style={{ flex: 1, padding: '4px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'center' }} onClick={handleAlignTop} title="Align Top">
+              <AlignStartHorizontal size={16} />
+            </button>
+            <button className="icon-btn" style={{ flex: 1, padding: '4px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'center' }} onClick={handleAlignCenterVertical} title="Align Center (Vertical)">
+              <AlignCenterHorizontal size={16} />
+            </button>
+            <button className="icon-btn" style={{ flex: 1, padding: '4px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'center' }} onClick={handleAlignBottom} title="Align Bottom">
+              <AlignEndHorizontal size={16} />
+            </button>
+            <button className="icon-btn" style={{ flex: 1, padding: '4px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'center' }} onClick={handleDistributeVertical} title="Distribute Vertically">
+              <AlignVerticalDistributeCenter size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {block.instrument !== 'percussion' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px' }}>

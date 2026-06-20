@@ -100,46 +100,114 @@ export const importMidiToBlocks = async (file: File) => {
     const midi = new Midi(arrayBuffer);
     
     const state = useStore.getState();
-    const newBlocks: Parameters<typeof state.addBlock>[0][] = [];
     
-    // Configurable mapping
-    const timeToXScale = 200; // pixels per second
-    const startX = 100;
-    
+    const allNotes: { time: number, pitch: string, instrument: string, volume: number, midiNumber: number }[] = [];
     midi.tracks.forEach(track => {
       const instrument = track.instrument.percussion ? 'percussion' : 
                          (track.instrument.number >= 32 && track.instrument.number <= 39) ? 'bass' :
                          (track.instrument.number >= 80 && track.instrument.number <= 87) ? 'synth' : 'piano';
                          
       track.notes.forEach(note => {
-         const x = startX + note.time * timeToXScale;
-         
-         // Base Y on pitch
-         // Midi notes are roughly 21 to 108. C4 is 60.
-         // Let's say C4 is at Y=500. Each semitone is 30 pixels.
-         const y = 500 - (note.midi - 60) * 30;
-         
-         newBlocks.push({
-             x,
-             y,
-             pitch: track.instrument.percussion ? 'kick' : note.name, // Simplified percussion mapping for now
-             instrument: instrument,
-             volume: note.velocity,
-         });
+         const pitch = track.instrument.percussion ? 'kick' : note.name;
+         allNotes.push({ time: note.time, pitch, instrument, volume: note.velocity, midiNumber: note.midi });
       });
     });
+
+    allNotes.sort((a, b) => a.time - b.time);
+
+    const chords: { notes: typeof allNotes }[] = [];
+    let currentChord: typeof allNotes = [];
+    let lastTime = -1;
+
+    for (const note of allNotes) {
+        if (lastTime === -1 || Math.abs(note.time - lastTime) < 0.05) {
+            currentChord.push(note);
+            lastTime = note.time;
+        } else {
+            chords.push({ notes: currentChord });
+            currentChord = [note];
+            lastTime = note.time;
+        }
+    }
+    if (currentChord.length > 0) {
+        chords.push({ notes: currentChord });
+    }
+
+    const uniqueChordsMap = new Map<string, { notes: typeof allNotes }>();
+    for (const chord of chords) {
+        const sortedNotes = [...chord.notes].sort((a, b) => b.midiNumber - a.midiNumber);
+        const key = sortedNotes.map(n => `${n.pitch}-${n.instrument}`).join('|');
+        if (!uniqueChordsMap.has(key)) {
+            uniqueChordsMap.set(key, { notes: sortedNotes });
+        }
+    }
+
+    const uniqueChords = Array.from(uniqueChordsMap.values());
     
-    // Add all blocks
-    // Since addBlock generates an ID, let's just add them one by one or create a new action.
-    // To be efficient, we can update the store directly or just call addBlock.
-    // Calling addBlock in a loop is fine for a few hundred notes. For thousands, a batch action is better.
-    // Let's do it batch by updating state directly.
+    const newBlocks: typeof state.blocks = [];
+    const newGroupRects: typeof state.groupRects = [];
+    const newGroups: typeof state.groups = [];
     const generateId = () => Math.random().toString(36).substring(2, 9);
+    
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    const localCenterX = (centerX - state.camera.x) / state.camera.zoom;
+    const localCenterY = (centerY - state.camera.y) / state.camera.zoom;
+
+    const cols = 8;
+    const rows = Math.ceil(uniqueChords.length / cols);
+    const spacingX = 150;
+    const spacingY_row = 400; 
+    const spacingY_note = 80;
+
+    const startX = localCenterX - (Math.min(cols, uniqueChords.length) * spacingX) / 2 + spacingX / 2;
+    const overallStartY = localCenterY - (rows * spacingY_row) / 2 + spacingY_row / 2;
+
+    uniqueChords.forEach((chord, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = startX + col * spacingX;
+        const notes = chord.notes;
+        
+        const startY = overallStartY + row * spacingY_row - (notes.length * spacingY_note) / 2;
+        
+        let groupId: string | undefined = undefined;
+        if (notes.length > 1) {
+            groupId = generateId();
+            const groupRectId = generateId();
+            newGroups.push({ id: groupId, name: `Chord Group ${i + 1}` });
+            newGroupRects.push({
+                id: groupRectId,
+                name: `Chord ${i + 1}`,
+                x: x - 20,
+                y: startY - 20,
+                w: 100, 
+                h: (notes.length - 1) * spacingY_note + 100,
+                enabled: true,
+                groupId: groupId
+            });
+        }
+
+        notes.forEach((note, j) => {
+            const y = startY + j * spacingY_note;
+            newBlocks.push({
+                id: generateId(),
+                x,
+                y,
+                pitch: note.pitch,
+                instrument: note.instrument,
+                volume: note.volume,
+                playedAt: Date.now(),
+                playedVolumeMultiplier: 1,
+                groupId
+            });
+        });
+    });
+
     useStore.setState(s => ({
-       blocks: [
-         ...s.blocks, 
-         ...newBlocks.map(b => ({ ...b, id: generateId(), playedAt: Date.now(), playedVolumeMultiplier: 1 }))
-       ]
+       blocks: [...s.blocks, ...newBlocks],
+       groupRects: [...s.groupRects, ...newGroupRects],
+       groups: [...s.groups, ...newGroups]
     }));
 };
 

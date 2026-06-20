@@ -81,12 +81,12 @@ const TrailRenderer: React.FC<{
 
 export const Canvas: React.FC = () => {
   const { blocks, camera, updateCamera, showGrid, theme, mode, latestPerformHit } = useStore();
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef({ x: 0, y: 0 });
   const [selectionBox, setSelectionBox] = useState<{x: number, y: number, w: number, h: number} | null>(null);
-  const [selectionStart, setSelectionStart] = useState<{x: number, y: number} | null>(null);
+  const selectionStartRef = useRef<{x: number, y: number} | null>(null);
   const [groupDrawBox, setGroupDrawBox] = useState<{x: number, y: number, w: number, h: number} | null>(null);
-  const [groupDrawStart, setGroupDrawStart] = useState<{x: number, y: number} | null>(null);
+  const groupDrawStartRef = useRef<{x: number, y: number} | null>(null);
   const groupDrawBoxRef = useRef<{x: number, y: number, w: number, h: number} | null>(null);
   const containerRef = useRef<PIXI.Container>(null);
   const activeStrokesRef = useRef<TrailStroke[]>([]);
@@ -101,7 +101,7 @@ export const Canvas: React.FC = () => {
       groupDrawBoxRef.current = null;
     }
     setGroupDrawBox(null);
-    setGroupDrawStart(null);
+    groupDrawStartRef.current = null;
   }, []);
   const nextStrokeId = useRef(0);
   const currentStrokeId = useRef<number | null>(null);
@@ -113,8 +113,8 @@ export const Canvas: React.FC = () => {
 
   useEffect(() => {
     const handleGlobalUp = (e: PointerEvent) => {
-      setIsPanning(false);
-      setSelectionStart(null);
+      isPanningRef.current = false;
+      selectionStartRef.current = null;
       setSelectionBox(null);
       
       finishGroupDraw();
@@ -389,9 +389,9 @@ export const Canvas: React.FC = () => {
     }
     const button = e.button;
     if (button === 1) { // Middle click to pan
-      setIsPanning(true);
+      isPanningRef.current = true;
       const pos = e.global;
-      setPanStart({ x: pos.x - camera.x, y: pos.y - camera.y });
+      panStartRef.current = { x: pos.x - camera.x, y: pos.y - camera.y };
     } else if (button === 0) {
       const state = useStore.getState();
 
@@ -404,7 +404,7 @@ export const Canvas: React.FC = () => {
             state.setActiveTrackId(trackId);
           }
           const nodeId = state.addTrackNode(trackId, { x: pos.x, y: pos.y });
-          state.setActiveNodeDrag({ trackId, nodeId });
+          state.setActiveNodeDrag({ trackId, nodeId, isNewNode: true });
           if (e.pointerId !== undefined && e.target.setPointerCapture) {
             e.target.setPointerCapture(e.pointerId);
           }
@@ -439,7 +439,7 @@ export const Canvas: React.FC = () => {
           lastClickTimeRef.current = now;
           lastClickPosRef.current = { x: pos.x, y: pos.y };
 
-          setGroupDrawStart({ x: pos.x, y: pos.y });
+          groupDrawStartRef.current = { x: pos.x, y: pos.y };
           const newBox = { x: pos.x, y: pos.y, w: 0, h: 0 };
           setGroupDrawBox(newBox);
           groupDrawBoxRef.current = newBox;
@@ -556,7 +556,7 @@ export const Canvas: React.FC = () => {
         }
         // Start marquee selection on left click
         const pos = e.currentTarget.toLocal(e.global);
-        setSelectionStart({ x: pos.x, y: pos.y });
+        selectionStartRef.current = { x: pos.x, y: pos.y };
         setSelectionBox({ x: pos.x, y: pos.y, w: 0, h: 0 });
         if (e.pointerId !== undefined && e.target.setPointerCapture) {
           e.target.setPointerCapture(e.pointerId);
@@ -590,43 +590,56 @@ export const Canvas: React.FC = () => {
 
   const handlePointerMove = (e: any) => {
     if (useStore.getState().mode === 'play') return;
-    if (isPanning) {
+    if (isPanningRef.current) {
       const pos = e.global;
       updateCamera({
-        x: pos.x - panStart.x,
-        y: pos.y - panStart.y,
+        x: pos.x - panStartRef.current.x,
+        y: pos.y - panStartRef.current.y,
       });
-    } else if (groupDrawStart && groupDrawBoxRef.current) {
+    } else if (groupDrawStartRef.current && groupDrawBoxRef.current) {
       const pos = e.currentTarget.toLocal(e.global);
-      const x = Math.min(groupDrawStart.x, pos.x);
-      const y = Math.min(groupDrawStart.y, pos.y);
-      const w = Math.abs(pos.x - groupDrawStart.x);
-      const h = Math.abs(pos.y - groupDrawStart.y);
+      const start = groupDrawStartRef.current;
+      const x = Math.min(start.x, pos.x);
+      const y = Math.min(start.y, pos.y);
+      const w = Math.abs(pos.x - start.x);
+      const h = Math.abs(pos.y - start.y);
       const newBox = { x, y, w, h };
       setGroupDrawBox(newBox);
       groupDrawBoxRef.current = newBox;
-    } else if (selectionStart) {
+    } else if (selectionStartRef.current) {
       const pos = e.currentTarget.toLocal(e.global);
-      const x = Math.min(selectionStart.x, pos.x);
-      const y = Math.min(selectionStart.y, pos.y);
-      const w = Math.abs(pos.x - selectionStart.x);
-      const h = Math.abs(pos.y - selectionStart.y);
+      const start = selectionStartRef.current;
+      const x = Math.min(start.x, pos.x);
+      const y = Math.min(start.y, pos.y);
+      const w = Math.abs(pos.x - start.x);
+      const h = Math.abs(pos.y - start.y);
       setSelectionBox({ x, y, w, h });
       
       const blocks = useStore.getState().blocks;
-      const selectedIds = blocks.filter(b => {
-        return b.x < x + w && b.x + 60 > x && b.y < y + h && b.y + 60 > y;
-      }).map(b => b.id);
-      
       const tracks = useStore.getState().tracks;
-      const selectedTIds = tracks.filter(t => {
-        return t.nodes.some(n => n.x >= x && n.x <= x + w && n.y >= y && n.y <= y + h);
-      }).map(t => t.id);
-
       const groupRects = useStore.getState().groupRects;
-      const selectedGIds = groupRects.filter(g => {
+
+      const directlySelectedBlocks = blocks.filter(b => {
+        return b.x < x + w && b.x + 60 > x && b.y < y + h && b.y + 60 > y;
+      });
+      
+      const directlySelectedTracks = tracks.filter(t => {
+        return t.nodes.some(n => n.x >= x && n.x <= x + w && n.y >= y && n.y <= y + h);
+      });
+
+      const directlySelectedGroupRects = groupRects.filter(g => {
         return g.x < x + w && g.x + g.w > x && g.y < y + h && g.y + g.h > y;
-      }).map(g => g.id);
+      });
+
+      const activeGroupIds = new Set([
+        ...directlySelectedBlocks.filter(b => b.groupId).map(b => b.groupId as string),
+        ...directlySelectedTracks.filter(t => t.groupId).map(t => t.groupId as string),
+        ...directlySelectedGroupRects.filter(g => g.groupId).map(g => g.groupId as string)
+      ]);
+
+      const selectedIds = blocks.filter(b => directlySelectedBlocks.includes(b) || (b.groupId && activeGroupIds.has(b.groupId))).map(b => b.id);
+      const selectedTIds = tracks.filter(t => directlySelectedTracks.includes(t) || (t.groupId && activeGroupIds.has(t.groupId))).map(t => t.id);
+      const selectedGIds = groupRects.filter(g => directlySelectedGroupRects.includes(g) || (g.groupId && activeGroupIds.has(g.groupId))).map(g => g.id);
       
       useStore.setState({ selectedBlockIds: selectedIds, selectedTrackIds: selectedTIds, selectedGroupRectIds: selectedGIds });
     } else if (e.buttons === 2) {
@@ -644,8 +657,8 @@ export const Canvas: React.FC = () => {
 
   const handlePointerUp = (e: any) => {
     if (useStore.getState().mode === 'play') return;
-    setIsPanning(false);
-    setSelectionStart(null);
+    isPanningRef.current = false;
+    selectionStartRef.current = null;
     setSelectionBox(null);
     
     finishGroupDraw();

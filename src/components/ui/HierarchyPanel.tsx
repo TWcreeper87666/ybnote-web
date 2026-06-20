@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
-import { Search, Music, LayoutList, GitBranch, Square, X, ChevronRight, ChevronDown, Keyboard, Check, CheckSquare } from 'lucide-react';
+import { Search, Music, LayoutList, GitBranch, Square, X, ChevronRight, ChevronDown, Keyboard, Check, CheckSquare, Play, Pause } from 'lucide-react';
 
 // Smooth camera animation helper
 const animateCameraTo = (targetX: number, targetY: number, duration = 300) => {
@@ -95,7 +95,10 @@ export const HierarchyPanel: React.FC = () => {
       });
 
       setTimeout(() => {
-        const elId = id.startsWith('groupRect:') ? `outliner-item-groupRect-${id.split(':')[1]}` : `outliner-item-${id}`;
+        let elId;
+        if (id.startsWith('groupRect:')) elId = `outliner-item-groupRect-${id.split(':')[1]}`;
+        else if (id.startsWith('track:')) elId = `outliner-item-track-${id.split(':')[1]}`;
+        else elId = `outliner-item-${id}`;
         const el = document.getElementById(elId);
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -637,6 +640,11 @@ const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftCli
   const [editName, setEditName] = useState('');
   const wasSelectedRef = useRef(false);
 
+  const isPlaying = useStore(state => state.isPlaying);
+  const playbackStatus = useStore(state => state.trackPlaybackStatus[track.id]);
+  const isTrackPlaying = playbackStatus === 'playing' || (isPlaying && track.enabled !== false);
+  const isTrackPaused = playbackStatus === 'paused' && !isPlaying;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F2' && selected && !isEditing) {
@@ -707,9 +715,11 @@ const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftCli
           autoFocus
         />
       ) : (
-        <span className="flex-1 truncate select-none" style={{ fontSize: '14px' }}>
-          {track.name || label}
-        </span>
+        <div className="flex-1 truncate select-none" style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span className="truncate">{track.name || label}</span>
+          {isTrackPlaying && <Play size={12} fill="currentColor" style={{ color: '#22c55e' }} />}
+          {isTrackPaused && <Pause size={12} fill="currentColor" style={{ color: '#eab308' }} />}
+        </div>
       )}
       <span style={{ fontSize: '11px', opacity: 0.5 }}>
         {track.nodes.length} nodes

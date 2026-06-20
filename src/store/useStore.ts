@@ -34,6 +34,7 @@ export interface GroupRect {
   volume?: number; // 0.0 to 1.0, master volume for group
   keyBinding?: string;
   enabled?: boolean;
+  groupId?: string;
 }
 
 interface CameraState {
@@ -55,6 +56,7 @@ interface Track {
   bpm: number;
   loop: boolean | 'restart';
   enabled?: boolean;
+  groupId?: string;
 }
 
 interface Runner {
@@ -117,10 +119,11 @@ interface AppState {
 
   hoveredBlockId: string | null;
   hoveredGroupRectId: string | null;
-  activeNodeDrag: { trackId: string, nodeId: string } | null;
+  activeNodeDrag: { trackId: string, nodeId: string, isNewNode?: boolean } | null;
 
   // Playback & Mode
   isPlaying: boolean;
+  trackPlaybackStatus: Record<string, 'playing' | 'paused'>;
   mode: Mode;
   editingTrackId: string | null;
   activeTrackId: string | null;
@@ -135,7 +138,7 @@ interface AppState {
   lastSelectedType: 'block' | 'groupRect' | 'track' | null;
 
   // Actions
-  addBlock: (block: Omit<Block, 'id'>) => void;
+  addBlock: (block: Omit<Block, 'id'>) => string;
   removeBlock: (id: string) => void;
   updateBlock: (id: string, updates: Partial<Block>) => void;
   updateBlocks: (updates: { id: string, updates: Partial<Block> }[]) => void;
@@ -194,10 +197,13 @@ interface AppState {
   deleteTrack: (id: string) => void;
   togglePlay: () => void;
   stopPlay: () => void;
+  playTrack: (id: string) => void;
+  pauseTrack: (id: string) => void;
+  stopTrack: (id: string) => void;
   setMode: (mode: Mode) => void;
   setEditingTrackId: (id: string | null) => void;
   setActiveTrackId: (id: string | null) => void;
-  setActiveNodeDrag: (state: { trackId: string, nodeId: string } | null) => void;
+  setActiveNodeDrag: (state: { trackId: string, nodeId: string, isNewNode?: boolean } | null) => void;
   addTrackNode: (trackId: string, node: Omit<TrackNode, 'id'>) => string;
   insertTrackNode: (trackId: string, index: number, node: Omit<TrackNode, 'id'>) => string;
   removeTrackNode: (trackId: string, nodeId: string) => void;
@@ -281,6 +287,7 @@ export const useStore = create<AppState>()(
         activeNodeDrag: null,
 
         isPlaying: false,
+        trackPlaybackStatus: {},
         mode: 'select',
         editingTrackId: null,
         activeTrackId: null,
@@ -309,9 +316,13 @@ export const useStore = create<AppState>()(
         
         toastMessage: null,
 
-        addBlock: (block) => set((state) => ({
-          blocks: [...state.blocks, { ...block, playedAt: Date.now(), playedVolumeMultiplier: 1, id: generateId() }]
-        })),
+        addBlock: (block) => {
+          const id = generateId();
+          set((state) => ({
+            blocks: [...state.blocks, { ...block, playedAt: Date.now(), playedVolumeMultiplier: 1, id }]
+          }));
+          return id;
+        },
 
         removeBlock: (id) => set((state) => ({
           blocks: state.blocks.filter((b) => b.id !== id),
@@ -360,51 +371,84 @@ export const useStore = create<AppState>()(
         })),
 
         selectBlock: (id, multi) => set((state) => {
-          const block = state.blocks.find(b => b.id === id);
-          const targetIds = block?.groupId ? state.blocks.filter(b => b.groupId === block.groupId).map(b => b.id) : [id];
+          const item = state.blocks.find(b => b.id === id);
+          const groupId = item?.groupId;
+          const targetBlockIds = groupId ? state.blocks.filter(b => b.groupId === groupId).map(b => b.id) : [id];
+          const targetTrackIds = groupId ? state.tracks.filter(t => t.groupId === groupId).map(t => t.id) : [];
+          const targetGroupRectIds = groupId ? state.groupRects.filter(g => g.groupId === groupId).map(g => g.id) : [];
 
           if (multi) {
             const isSelected = state.selectedBlockIds.includes(id);
             return {
               selectedBlockIds: isSelected
-                ? state.selectedBlockIds.filter((selId) => !targetIds.includes(selId))
-                : [...new Set([...state.selectedBlockIds, ...targetIds])],
+                ? state.selectedBlockIds.filter((selId) => !targetBlockIds.includes(selId))
+                : [...new Set([...state.selectedBlockIds, ...targetBlockIds])],
+              selectedTrackIds: isSelected
+                ? state.selectedTrackIds.filter((selId) => !targetTrackIds.includes(selId))
+                : [...new Set([...state.selectedTrackIds, ...targetTrackIds])],
+              selectedGroupRectIds: isSelected
+                ? state.selectedGroupRectIds.filter((selId) => !targetGroupRectIds.includes(selId))
+                : [...new Set([...state.selectedGroupRectIds, ...targetGroupRectIds])],
               activeTrackId: null,
               editingTrackId: null,
               lastSelectedId: id,
               lastSelectedType: 'block'
             };
           }
-          return { selectedBlockIds: targetIds, selectedTrackIds: [], selectedGroupRectIds: [], activeTrackId: null, editingTrackId: null, lastSelectedId: id, lastSelectedType: 'block' };
+          return { selectedBlockIds: targetBlockIds, selectedTrackIds: targetTrackIds, selectedGroupRectIds: targetGroupRectIds, activeTrackId: null, editingTrackId: null, lastSelectedId: id, lastSelectedType: 'block' };
         }),
 
         selectTrack: (id, multi) => set((state) => {
+          const item = state.tracks.find(t => t.id === id);
+          const groupId = item?.groupId;
+          const targetBlockIds = groupId ? state.blocks.filter(b => b.groupId === groupId).map(b => b.id) : [];
+          const targetTrackIds = groupId ? state.tracks.filter(t => t.groupId === groupId).map(t => t.id) : [id];
+          const targetGroupRectIds = groupId ? state.groupRects.filter(g => g.groupId === groupId).map(g => g.id) : [];
+
           if (multi) {
             const isSelected = state.selectedTrackIds.includes(id);
             return {
+              selectedBlockIds: isSelected
+                ? state.selectedBlockIds.filter(selId => !targetBlockIds.includes(selId))
+                : [...new Set([...state.selectedBlockIds, ...targetBlockIds])],
               selectedTrackIds: isSelected
-                ? state.selectedTrackIds.filter(tId => tId !== id)
-                : [...new Set([...state.selectedTrackIds, id])],
+                ? state.selectedTrackIds.filter(tId => !targetTrackIds.includes(tId))
+                : [...new Set([...state.selectedTrackIds, ...targetTrackIds])],
+              selectedGroupRectIds: isSelected
+                ? state.selectedGroupRectIds.filter(selId => !targetGroupRectIds.includes(selId))
+                : [...new Set([...state.selectedGroupRectIds, ...targetGroupRectIds])],
               activeTrackId: id,
               lastSelectedId: id,
               lastSelectedType: 'track'
             };
           }
-          return { selectedTrackIds: [id], selectedBlockIds: [], selectedGroupRectIds: [], activeTrackId: id, lastSelectedId: id, lastSelectedType: 'track' };
+          return { selectedTrackIds: targetTrackIds, selectedBlockIds: targetBlockIds, selectedGroupRectIds: targetGroupRectIds, activeTrackId: id, lastSelectedId: id, lastSelectedType: 'track' };
         }),
 
         selectGroupRect: (id, multi) => set((state) => {
+          const item = state.groupRects.find(g => g.id === id);
+          const groupId = item?.groupId;
+          const targetBlockIds = groupId ? state.blocks.filter(b => b.groupId === groupId).map(b => b.id) : [];
+          const targetTrackIds = groupId ? state.tracks.filter(t => t.groupId === groupId).map(t => t.id) : [];
+          const targetGroupRectIds = groupId ? state.groupRects.filter(g => g.groupId === groupId).map(g => g.id) : [id];
+
           if (multi) {
             const isSelected = state.selectedGroupRectIds.includes(id);
             return {
+              selectedBlockIds: isSelected
+                ? state.selectedBlockIds.filter(selId => !targetBlockIds.includes(selId))
+                : [...new Set([...state.selectedBlockIds, ...targetBlockIds])],
+              selectedTrackIds: isSelected
+                ? state.selectedTrackIds.filter(selId => !targetTrackIds.includes(selId))
+                : [...new Set([...state.selectedTrackIds, ...targetTrackIds])],
               selectedGroupRectIds: isSelected
-                ? state.selectedGroupRectIds.filter(gId => gId !== id)
-                : [...new Set([...state.selectedGroupRectIds, id])],
+                ? state.selectedGroupRectIds.filter(gId => !targetGroupRectIds.includes(gId))
+                : [...new Set([...state.selectedGroupRectIds, ...targetGroupRectIds])],
               lastSelectedId: id,
               lastSelectedType: 'groupRect'
             };
           }
-          return { selectedGroupRectIds: [id], selectedBlockIds: [], selectedTrackIds: [], lastSelectedId: id, lastSelectedType: 'groupRect' };
+          return { selectedGroupRectIds: targetGroupRectIds, selectedBlockIds: targetBlockIds, selectedTrackIds: targetTrackIds, lastSelectedId: id, lastSelectedType: 'groupRect' };
         }),
 
         selectAll: () => set((state) => ({
@@ -465,26 +509,43 @@ export const useStore = create<AppState>()(
         },
 
         groupSelected: () => set((state) => {
-          if (state.selectedBlockIds.length < 2) return state;
+          if (state.selectedBlockIds.length + state.selectedTrackIds.length + state.selectedGroupRectIds.length < 2) return state;
           const groupId = generateId();
           const newGroup: Group = { id: groupId, name: `Group ${state.groups.length + 1}` };
+          get().showToast('已建立群組 (Group Created)');
           return {
             groups: [...state.groups, newGroup],
             blocks: state.blocks.map(b =>
               state.selectedBlockIds.includes(b.id) ? { ...b, groupId } : b
+            ),
+            tracks: state.tracks.map(t =>
+              state.selectedTrackIds.includes(t.id) ? { ...t, groupId } : t
+            ),
+            groupRects: state.groupRects.map(g =>
+              state.selectedGroupRectIds.includes(g.id) ? { ...g, groupId } : g
             )
           };
         }),
 
         ungroupSelected: () => set((state) => {
-          // Find groups of selected blocks
-          const groupIdsToRemove = new Set(
-            state.blocks.filter(b => state.selectedBlockIds.includes(b.id) && b.groupId).map(b => b.groupId)
-          );
+          // Find groups of selected objects
+          const groupIdsToRemove = new Set([
+            ...state.blocks.filter(b => state.selectedBlockIds.includes(b.id) && b.groupId).map(b => b.groupId),
+            ...state.tracks.filter(t => state.selectedTrackIds.includes(t.id) && t.groupId).map(t => t.groupId),
+            ...state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id) && g.groupId).map(g => g.groupId)
+          ]);
           if (groupIdsToRemove.size === 0) return state;
+          
+          get().showToast('已解散群組 (Group Dissolved)');
           return {
             blocks: state.blocks.map(b =>
               b.groupId && groupIdsToRemove.has(b.groupId) ? { ...b, groupId: undefined } : b
+            ),
+            tracks: state.tracks.map(t =>
+              t.groupId && groupIdsToRemove.has(t.groupId) ? { ...t, groupId: undefined } : t
+            ),
+            groupRects: state.groupRects.map(g =>
+              g.groupId && groupIdsToRemove.has(g.groupId) ? { ...g, groupId: undefined } : g
             ),
             groups: state.groups.filter(g => !groupIdsToRemove.has(g.id))
           };
@@ -601,14 +662,34 @@ export const useStore = create<AppState>()(
              newState.lastSelectedId = id;
              newState.lastSelectedType = 'track';
           }
+          if (updates.enabled === false) {
+             const newStatus = { ...state.trackPlaybackStatus };
+             delete newStatus[id];
+             newState.trackPlaybackStatus = newStatus;
+             newState.runners = state.runners.filter(r => r.trackId !== id);
+          }
           return newState as AppState;
         }),
-        deleteTrack: (id) => set((state) => ({
-          tracks: state.tracks.filter(t => t.id !== id),
-          runners: state.runners.filter(r => r.trackId !== id)
-        })),
+        deleteTrack: (id) => set((state) => {
+          const newState: Partial<AppState> = {
+            tracks: state.tracks.filter(t => t.id !== id),
+            runners: state.runners.filter(r => r.trackId !== id)
+          };
+          if (state.activeTrackId === id) newState.activeTrackId = null;
+          return newState as AppState;
+        }),
         togglePlay: () => set((state) => ({ isPlaying: !state.isPlaying })),
-        stopPlay: () => set({ isPlaying: false, runners: [] }),
+        stopPlay: () => set({ isPlaying: false, trackPlaybackStatus: {}, runners: [] }),
+        playTrack: (id) => set((state) => ({ trackPlaybackStatus: { ...state.trackPlaybackStatus, [id]: 'playing' } })),
+        pauseTrack: (id) => set((state) => ({ trackPlaybackStatus: { ...state.trackPlaybackStatus, [id]: 'paused' } })),
+        stopTrack: (id) => set((state) => {
+          const newStatus = { ...state.trackPlaybackStatus };
+          delete newStatus[id];
+          return {
+            trackPlaybackStatus: newStatus,
+            runners: state.runners.filter(r => r.trackId !== id)
+          };
+        }),
         setMode: (mode) => set((state) => {
           const updates: Partial<AppState> = {
             mode,
@@ -667,7 +748,7 @@ export const useStore = create<AppState>()(
         }),
         setEditingTrackId: (editingTrackId) => set({ editingTrackId }),
         setActiveTrackId: (activeTrackId) => set({ activeTrackId, selectedBlockIds: [], selectedTrackIds: activeTrackId ? [activeTrackId] : [], selectedGroupRectIds: [] }),
-        setActiveNodeDrag: (activeNodeDrag) => set({ activeNodeDrag }),
+        setActiveNodeDrag: (activeNodeDrag) => set({ activeNodeDrag: activeNodeDrag }),
         addTrackNode: (trackId, node) => {
           let id = generateId();
           set((state) => ({
@@ -708,14 +789,21 @@ export const useStore = create<AppState>()(
           return id;
         },
         removeTrackNode: (trackId, nodeId) => set((state) => {
+          let trackBecameEmpty = false;
           const tracks = state.tracks.map(t => {
             if (t.id === trackId) {
-              return { ...t, nodes: t.nodes.filter(n => n.id !== nodeId) };
+              const newNodes = t.nodes.filter(n => n.id !== nodeId);
+              if (newNodes.length === 0) trackBecameEmpty = true;
+              return { ...t, nodes: newNodes };
             }
             return t;
           });
-          // Also check if any track has 0 nodes and remove it? Let's leave them or delete if 0
-          return { tracks: tracks.filter(t => t.nodes.length > 0) };
+          
+          const newState: Partial<AppState> = { tracks: tracks.filter(t => t.nodes.length > 0) };
+          if (trackBecameEmpty && state.activeTrackId === trackId) {
+            newState.activeTrackId = null;
+          }
+          return newState as AppState;
         }),
         updateTrackNode: (trackId, nodeId, updates) => set((state) => ({
           tracks: state.tracks.map(t => t.id === trackId ? {
@@ -777,8 +865,27 @@ export const useStore = create<AppState>()(
     {
       partialize: (state) => ({ blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks, gameBlocks: state.gameBlocks }), // track history
       equality: (pastState, currentState) => {
-        if (pastState.groups !== currentState.groups) return false;
-        if (pastState.tracks !== currentState.tracks) return false;
+        if (pastState.groups !== currentState.groups) {
+          return false;
+        }
+        if (pastState.tracks !== currentState.tracks) {
+          // Deep compare tracks to avoid duplicate history entries from unrelated state updates
+          if (pastState.tracks.length !== currentState.tracks.length) return false;
+          for (let i = 0; i < pastState.tracks.length; i++) {
+            const pt = pastState.tracks[i];
+            const ct = currentState.tracks[i];
+            if (pt === ct) continue;
+            if (pt.id !== ct.id || pt.name !== ct.name || pt.bpm !== ct.bpm ||
+                pt.loop !== ct.loop || pt.enabled !== ct.enabled) return false;
+            if (pt.nodes.length !== ct.nodes.length) return false;
+            for (let j = 0; j < pt.nodes.length; j++) {
+              const pn = pt.nodes[j];
+              const cn = ct.nodes[j];
+              if (pn === cn) continue;
+              if (pn.id !== cn.id || pn.x !== cn.x || pn.y !== cn.y) return false;
+            }
+          }
+        }
         
         if (pastState.groupRects !== currentState.groupRects) {
           if (pastState.groupRects.length !== currentState.groupRects.length) return false;
@@ -835,7 +942,8 @@ export const undoAction = () => {
   }
   const past = temporal.pastStates[temporal.pastStates.length - 1];
   const current = useStore.getState();
-  
+
+
   let msg = 'Undo: Modify Object';
   if ((past.blocks?.length || 0) < (current.blocks?.length || 0)) msg = 'Undo: Add Note';
   else if ((past.blocks?.length || 0) > (current.blocks?.length || 0)) msg = 'Undo: Delete Note';

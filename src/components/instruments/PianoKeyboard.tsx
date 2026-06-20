@@ -86,12 +86,13 @@ export const PianoKeyboard: React.FC = () => {
             newY = Math.round(newY / snapSize) * snapSize;
           }
           
-          state.addBlock({
+          const newBlockId = state.addBlock({
             pitch,
             x: newX,
             y: newY,
             instrument: instrument
           });
+          state.selectBlock(newBlockId, false);
         }
       };
 

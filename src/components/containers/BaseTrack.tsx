@@ -1,6 +1,7 @@
 import React, { useCallback } from 'react';
 import * as PIXI from 'pixi.js';
 import { computeTrackControlPoints } from '../../utils/spline';
+import { useStore } from '../../store/useStore';
 
 const TrackHandle: React.FC<{
   x: number;
@@ -8,7 +9,9 @@ const TrackHandle: React.FC<{
   color: number;
   onDragStart: (e: PIXI.FederatedPointerEvent) => void;
   onRightClick: (e: PIXI.FederatedPointerEvent) => void;
-}> = ({ x, y, color, onDragStart, onRightClick }) => {
+  onDoubleClick?: (e: PIXI.FederatedPointerEvent) => void;
+}> = ({ x, y, color, onDragStart, onRightClick, onDoubleClick }) => {
+  const lastClickTimeRef = React.useRef(0);
   const draw = useCallback((g: PIXI.Graphics) => {
     g.clear();
     g.circle(0, 0, 8);
@@ -29,8 +32,24 @@ const TrackHandle: React.FC<{
       cursor="pointer"
       onPointerDown={(e: PIXI.FederatedPointerEvent) => { 
         e.stopPropagation(); 
-        if (e.button === 0) onDragStart(e); 
-        else if (e.button === 2) onRightClick(e);
+        if (e.button === 0) {
+          const now = Date.now();
+          if (now - lastClickTimeRef.current < 300) {
+            onDoubleClick?.(e);
+            lastClickTimeRef.current = 0;
+          } else {
+            onDragStart(e); 
+            lastClickTimeRef.current = now;
+          }
+        } 
+        else if (e.button === 2) { 
+          onRightClick(e); 
+        } 
+      }}
+      onPointerEnter={(e: PIXI.FederatedPointerEvent) => {
+        if (e.buttons === 2 && !useStore.getState().activeNodeDrag) {
+          onRightClick(e);
+        }
       }}
     />
   );
@@ -111,6 +130,7 @@ export interface BaseTrackProps {
   onTrackPointerDown?: (e: PIXI.FederatedPointerEvent) => void;
   onNodeDragStart?: (nodeId: string, e: PIXI.FederatedPointerEvent) => void;
   onNodeRightClick?: (nodeId: string, e: PIXI.FederatedPointerEvent) => void;
+  onNodeDoubleClick?: (nodeId: string, e: PIXI.FederatedPointerEvent) => void;
 }
 
 export const BaseTrack: React.FC<BaseTrackProps> = ({
@@ -120,7 +140,8 @@ export const BaseTrack: React.FC<BaseTrackProps> = ({
   isInteractive = true,
   onTrackPointerDown,
   onNodeDragStart,
-  onNodeRightClick
+  onNodeRightClick,
+  onNodeDoubleClick
 }) => {
   return (
     <pixiContainer zIndex={isSelected ? 102 : 20}>
@@ -160,6 +181,7 @@ export const BaseTrack: React.FC<BaseTrackProps> = ({
             x={node.x} y={node.y} color={0x6366f1} 
             onDragStart={(e) => onNodeDragStart && onNodeDragStart(node.id, e)}
             onRightClick={(e) => onNodeRightClick && onNodeRightClick(node.id, e)}
+            onDoubleClick={(e) => onNodeDoubleClick && onNodeDoubleClick(node.id, e)}
           />
         </React.Fragment>
       ))}

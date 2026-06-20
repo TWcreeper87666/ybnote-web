@@ -70,6 +70,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
         if (!isSelected) {
           selectBlock(id, false);
         }
+        // Allow drag even if already selected (deselect/solo handled on pointerUp if no drag)
         shouldDrag = true;
       }
       
@@ -87,9 +88,11 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
     if (e.button === 0 && clickStartPosRef.current) {
       const dx = e.clientX - clickStartPosRef.current.x;
       const dy = e.clientY - clickStartPosRef.current.y;
-      if (Math.sqrt(dx*dx + dy*dy) < 5) {
+      const isClick = Math.sqrt(dx*dx + dy*dy) < 5;
+      if (isClick) {
         const now = Date.now();
         if (now - lastClickTimeRef.current < 300) {
+          // Double-click → open context menu
           if (!e.ctrlKey && !e.shiftKey) {
             useStore.getState().openContextMenu({
               x: e.clientX, y: e.clientY, blockId: id
@@ -98,6 +101,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
           lastClickTimeRef.current = 0;
         } else {
           lastClickTimeRef.current = now;
+          // Single click: no deselect behaviour
         }
       }
     }

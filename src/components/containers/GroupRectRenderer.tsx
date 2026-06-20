@@ -165,6 +165,7 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
         if (!isSelected) {
           selectGroupRect(rect.id, false);
         }
+        // Allow drag even if already selected (deselect/solo handled on pointerUp if no drag)
         shouldDrag = true;
       }
 
@@ -274,7 +275,8 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
     if (e.button === 0 && clickStartPosRef.current) {
       const dx = e.clientX - clickStartPosRef.current.x;
       const dy = e.clientY - clickStartPosRef.current.y;
-      if (Math.hypot(dx, dy) < 5) {
+      const isClick = Math.hypot(dx, dy) < 5;
+      if (isClick) {
         const now = Date.now();
         if (now - lastClickTimeRef.current < 300) {
           if (!e.ctrlKey && !e.shiftKey) {
@@ -285,6 +287,7 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
           lastClickTimeRef.current = 0;
         } else {
           lastClickTimeRef.current = now;
+          // Single click: no deselect behaviour
         }
       }
     }

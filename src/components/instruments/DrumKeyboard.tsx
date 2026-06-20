@@ -86,12 +86,13 @@ export const DrumKeyboard: React.FC = () => {
             newY = Math.round(newY / snapSize) * snapSize;
           }
           
-          state.addBlock({
+          const newBlockId = state.addBlock({
             pitch,
             x: newX,
             y: newY,
             instrument: 'percussion'
           });
+          state.selectBlock(newBlockId, false);
         }
       };
 
@@ -146,7 +147,7 @@ export const DrumKeyboard: React.FC = () => {
           top: draggedDrum.y - 30,
           width: 60, height: 60,
           backgroundColor: getPitchColorHex(draggedDrum.pitch, 36),
-          borderRadius: 8,
+          borderRadius: '50%',
           pointerEvents: 'none',
           zIndex: 9999,
           opacity: 0.8,

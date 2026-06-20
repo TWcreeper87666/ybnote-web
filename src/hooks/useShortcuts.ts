@@ -128,6 +128,12 @@ export const useShortcuts = () => {
           if (state.selectedBlockIds.length > 0 || state.selectedTrackIds.length > 0 || state.selectedGroupRectIds.length > 0) {
             state.deleteSelected();
           }
+        } else if (e.key === 'Escape') {
+          if (state.mode !== 'select') {
+            state.setMode('select');
+          } else {
+            state.clearSelection();
+          }
         }
       }
     };

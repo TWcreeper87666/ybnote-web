@@ -110,6 +110,28 @@ export const TrackRenderer: React.FC = () => {
     
     let hasPaused = false;
 
+    // When a brand-new node was just created (isNewNode flag), absorb that creation
+    // history entry so that click+drag becomes ONE atomic undo action.
+    // For existing nodes being dragged, use the normal pause/resume path.
+    if (activeNodeDrag.isNewNode) {
+      const temporal = useStore.temporal.getState();
+      if (temporal.pastStates.length > 0) {
+        const preCreationSnapshot = temporal.pastStates[temporal.pastStates.length - 1];
+        // Pop the entry added by addTrackNode/insertTrackNode
+        useStore.temporal.setState(s => ({
+          pastStates: s.pastStates.slice(0, -1),
+          futureStates: []
+        }));
+        // Re-push the pre-creation snapshot as the baseline, then pause
+        useStore.temporal.setState(s => ({
+          pastStates: [...s.pastStates, preCreationSnapshot],
+          futureStates: []
+        }));
+        useStore.temporal.getState().pause();
+        hasPaused = true;
+      }
+    }
+
     const handleGlobalMove = (e: PointerEvent) => {
        const state = useStore.getState();
        const camera = state.camera;
@@ -151,12 +173,14 @@ export const TrackRenderer: React.FC = () => {
     };
   }, [activeNodeDrag, setActiveNodeDrag]);
 
+
+
   const visualTracks = tracks;
 
   return (
     <>
       {visualTracks.map(track => {
-        const isSelected = selectedTrackIds.includes(track.id);
+        const isSelected = selectedTrackIds.includes(track.id) || (mode === 'draw_track' && activeTrackId === track.id);
         const isActive = activeTrackId === track.id || mode === 'draw_track' || isSelected;
         
         return (
@@ -217,13 +241,31 @@ export const TrackRenderer: React.FC = () => {
                   }
                   
                   const newId = state.insertTrackNode(track.id, insertIdx, { x, y });
-                  state.setActiveNodeDrag({ trackId: track.id, nodeId: newId });
+                  state.setActiveNodeDrag({ trackId: track.id, nodeId: newId, isNewNode: true });
                 }
             }}
             onNodeDragStart={(nodeId) => {
                 setActiveNodeDrag({ trackId: track.id, nodeId: nodeId });
             }}
+            onNodeDoubleClick={(nodeId) => {
+              const nodeIndex = track.nodes.findIndex((n: any) => n.id === nodeId);
+              if (nodeIndex !== -1) {
+                const state = useStore.getState();
+                const updatedRunners = [...state.runners];
+                const runnerIndex = updatedRunners.findIndex(r => r.trackId === track.id);
+                if (runnerIndex !== -1) {
+                  updatedRunners[runnerIndex] = { ...updatedRunners[runnerIndex], progress: nodeIndex };
+                } else {
+                  updatedRunners.push({ id: Math.random().toString(), trackId: track.id, progress: nodeIndex });
+                }
+                state.setRunners(updatedRunners);
+              }
+            }}
             onNodeRightClick={(nodeId) => {
+                const state = useStore.getState();
+                if (!state.selectedTrackIds.includes(track.id)) {
+                  state.selectTrack(track.id, false);
+                }
                 removeTrackNode(track.id, nodeId);
             }}
           />

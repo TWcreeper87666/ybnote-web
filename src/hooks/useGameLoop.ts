@@ -32,23 +32,28 @@ export function useGameLoop() {
       const deltaTime = (time - lastTimeRef.current) / 1000; // in seconds
       const state = useStore.getState();
 
-      if (state.isPlaying) {
+      const activeTracks = state.tracks.filter(t => 
+        t.enabled !== false && (
+          state.isPlaying || 
+          state.trackPlaybackStatus[t.id] === 'playing' || 
+          state.trackPlaybackStatus[t.id] === 'paused'
+        )
+      );
+
+      if (activeTracks.length > 0) {
         let updatedRunners = [...state.runners];
         let hasChanges = false;
         const currentBlocks = state.blocks;
         const currentGroupRects = state.groupRects;
-
-        // Ensure we have a runner for each enabled track
-        const enabledTracks = state.tracks.filter(t => t.enabled !== false);
         
-        // Remove runners for disabled tracks
+        // Remove runners for inactive tracks
         const previousRunnerCount = updatedRunners.length;
-        updatedRunners = updatedRunners.filter(r => enabledTracks.some(t => t.id === r.trackId));
+        updatedRunners = updatedRunners.filter(r => activeTracks.some(t => t.id === r.trackId));
         if (updatedRunners.length !== previousRunnerCount) {
           hasChanges = true;
         }
 
-        enabledTracks.forEach(track => {
+        activeTracks.forEach(track => {
           if (!updatedRunners.find(r => r.trackId === track.id)) {
             updatedRunners.push({ id: Math.random().toString(), trackId: track.id, progress: 0 });
             hasChanges = true;
@@ -59,6 +64,14 @@ export function useGameLoop() {
         updatedRunners = updatedRunners.map(runner => {
           const track = state.tracks.find(t => t.id === runner.trackId);
           if (!track || track.nodes.length < 2) return runner;
+
+          const isGloballyPlaying = state.isPlaying && track.enabled !== false;
+          const isIndividuallyPlaying = state.trackPlaybackStatus[track.id] === 'playing';
+          
+          // If paused individually and not globally playing, don't move
+          if (!isGloballyPlaying && !isIndividuallyPlaying) {
+            return runner;
+          }
 
           const isCircular = track.loop === true;
           const isRestart = track.loop === 'restart';
@@ -158,6 +171,9 @@ export function useGameLoop() {
       } else {
         // Not playing, clear triggers
         triggeredBlocksRef.current.clear();
+        if (state.runners.length > 0) {
+          useStore.setState({ runners: [] });
+        }
       }
     }
     
