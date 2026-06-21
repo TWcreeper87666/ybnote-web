@@ -95,7 +95,6 @@ export const GameCanvas: React.FC = () => {
   }, [endPan, endSelection]);
 
   useCanvasCamera({
-    isMobile,
     isPlayMode: gameState === 'play',
     isActive: gameState === 'arrange' || gameState === 'play',
     onWheelIntercept: (e) => {
@@ -109,7 +108,10 @@ export const GameCanvas: React.FC = () => {
   useEffect(() => {
     if (gameState !== 'play') return;
     
-    if (!isMobile) {
+    const state = useStore.getState();
+    const currentMode = state.mobileControlMode;
+
+    if (!isMobile && currentMode === 'crosshair') {
       document.body.requestPointerLock().catch(err => {
         console.error("Pointer lock failed", err);
       });
@@ -133,7 +135,7 @@ export const GameCanvas: React.FC = () => {
       const newCamX = state.camera.x - pendingMovementX * (isMobile ? state.mouseSensitivity * 2 : state.mouseSensitivity);
       const newCamY = state.camera.y - pendingMovementY * (isMobile ? state.mouseSensitivity * 2 : state.mouseSensitivity);
       
-      if (buttonsPressed > 0) {
+      if (buttonsPressed > 0 && state.mobileControlMode === 'crosshair') {
         const centerX = window.innerWidth / 2;
         const centerY = window.innerHeight / 2;
         
@@ -149,28 +151,54 @@ export const GameCanvas: React.FC = () => {
       
       pendingMovementX = 0;
       pendingMovementY = 0;
-      if (!isMobile) buttonsPressed = 0; // Mouse resets per move event if dragging, but actually let's keep buttonsPressed handled by mouseup/down
+      if (!isMobile) buttonsPressed = 0;
       rafId = null;
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      pendingMovementX += e.movementX;
-      pendingMovementY += e.movementY;
-      buttonsPressed = e.buttons;
+      const state = useStore.getState();
+      const mode = state.mobileControlMode;
 
-      if (!rafId) {
-        rafId = requestAnimationFrame(applyMovement);
+      if (mode === 'crosshair') {
+        pendingMovementX += e.movementX;
+        pendingMovementY += e.movementY;
+        buttonsPressed = e.buttons;
+
+        if (!rafId) {
+          rafId = requestAnimationFrame(applyMovement);
+        }
+      } else {
+        if (e.buttons > 0) {
+          const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
+          const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+          const localX = (e.clientX - rect.left - state.camera.x) / state.camera.zoom;
+          const localY = (e.clientY - rect.top - state.camera.y) / state.camera.zoom;
+          updateTrail(localX, localY, (p1, p2) => {
+             checkTrailIntersection(p1.x, p1.y, p2.x, p2.y);
+          });
+        }
       }
     };
 
-    const handleMouseDown = () => {
+    const handleMouseDown = (e?: MouseEvent) => {
       const state = useStore.getState();
+      const mode = state.mobileControlMode;
       const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
       const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
-      const centerX = rect.width / 2;
-      const centerY = rect.height / 2;
-      const localX = (centerX - state.camera.x) / state.camera.zoom;
-      const localY = (centerY - state.camera.y) / state.camera.zoom;
+      
+      let localX: number, localY: number;
+
+      if (mode === 'crosshair') {
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        localX = (centerX - state.camera.x) / state.camera.zoom;
+        localY = (centerY - state.camera.y) / state.camera.zoom;
+      } else if (e) {
+        localX = (e.clientX - rect.left - state.camera.x) / state.camera.zoom;
+        localY = (e.clientY - rect.top - state.camera.y) / state.camera.zoom;
+      } else {
+        return;
+      }
       
       startTrail(localX, localY);
       intersectedBlocksRef.current.clear();
@@ -188,19 +216,50 @@ export const GameCanvas: React.FC = () => {
       const isCanvas = (e.target as HTMLElement)?.tagName?.toLowerCase() === 'canvas';
       if (!isCanvas) return;
       e.preventDefault();
+      const state = useStore.getState();
+      const mode = state.mobileControlMode;
+      const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
+      const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+
       for (let i = 0; i < e.changedTouches.length; i++) {
         const touch = e.changedTouches[i];
-        if (touch.clientX < window.innerWidth / 2) {
-          if (leftTouchId === null) {
-            leftTouchId = touch.identifier;
-            buttonsPressed = 1;
-            handleMouseDown();
-          }
+        if (mode === 'crosshair') {
+           if (touch.clientX < window.innerWidth / 2) {
+             if (leftTouchId === null) {
+               leftTouchId = touch.identifier;
+               buttonsPressed = 1;
+               handleMouseDown();
+             }
+           } else {
+             if (rightTouchId === null) {
+               rightTouchId = touch.identifier;
+               lastRightTouchPos = { x: touch.clientX, y: touch.clientY };
+             }
+           }
         } else {
-          if (rightTouchId === null) {
-            rightTouchId = touch.identifier;
-            lastRightTouchPos = { x: touch.clientX, y: touch.clientY };
-          }
+           if (e.touches.length === 1) {
+              if (leftTouchId === null) {
+                leftTouchId = touch.identifier;
+                const localX = (touch.clientX - rect.left - state.camera.x) / state.camera.zoom;
+                const localY = (touch.clientY - rect.top - state.camera.y) / state.camera.zoom;
+                startTrail(localX, localY);
+                intersectedBlocksRef.current.clear();
+                checkTrailIntersection(localX, localY, localX, localY);
+              }
+           } else if (e.touches.length >= 2) {
+              if (leftTouchId !== null) {
+                 endTrail();
+                 leftTouchId = null;
+              }
+              const dx = e.touches[0].clientX - e.touches[1].clientX;
+              const dy = e.touches[0].clientY - e.touches[1].clientY;
+              playPinchDist = Math.sqrt(dx*dx + dy*dy);
+              playInitZoom = state.camera.zoom;
+              const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+              const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+              playInitLocalX = (centerX - rect.left - state.camera.x) / state.camera.zoom;
+              playInitLocalY = (centerY - rect.top - state.camera.y) / state.camera.zoom;
+           }
         }
       }
     };
@@ -209,55 +268,79 @@ export const GameCanvas: React.FC = () => {
       const isCanvas = (e.target as HTMLElement)?.tagName?.toLowerCase() === 'canvas';
       if (!isCanvas) return;
       e.preventDefault();
+      const state = useStore.getState();
+      const mode = state.mobileControlMode;
+      const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
+      const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
 
-      let rightTouches = [];
-      for (let i = 0; i < e.touches.length; i++) {
-        if (e.touches[i].clientX >= window.innerWidth / 2) {
-          rightTouches.push(e.touches[i]);
-        }
-      }
+      if (mode === 'crosshair') {
+         let rightTouches = [];
+         for (let i = 0; i < e.touches.length; i++) {
+           if (e.touches[i].clientX >= window.innerWidth / 2) {
+             rightTouches.push(e.touches[i]);
+           }
+         }
 
-      if (rightTouches.length === 2) {
-        const dist = Math.sqrt(Math.pow(rightTouches[0].clientX - rightTouches[1].clientX, 2) + Math.pow(rightTouches[0].clientY - rightTouches[1].clientY, 2));
-        if (playPinchDist === 0) {
-          playPinchDist = dist;
-          playInitZoom = useStore.getState().camera.zoom;
-          const centerX = (rightTouches[0].clientX + rightTouches[1].clientX) / 2;
-          const centerY = (rightTouches[0].clientY + rightTouches[1].clientY) / 2;
-          const state = useStore.getState();
-          playInitLocalX = (centerX - state.camera.x) / state.camera.zoom;
-          playInitLocalY = (centerY - state.camera.y) / state.camera.zoom;
-        } else {
-          const state = useStore.getState();
-          const zoomFactor = dist / playPinchDist;
-          let newZoom = playInitZoom * zoomFactor;
-          newZoom = Math.min(Math.max(newZoom, 0.1), 5);
-          
-          const centerX = (rightTouches[0].clientX + rightTouches[1].clientX) / 2;
-          const centerY = (rightTouches[0].clientY + rightTouches[1].clientY) / 2;
-          
-          const newCameraX = centerX - playInitLocalX * newZoom;
-          const newCameraY = centerY - playInitLocalY * newZoom;
-          
-          state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
-        }
-        lastRightTouchPos = null; // Prevent jump after pinch
-        return;
+         if (rightTouches.length >= 2) {
+           const dist = Math.sqrt(Math.pow(rightTouches[0].clientX - rightTouches[1].clientX, 2) + Math.pow(rightTouches[0].clientY - rightTouches[1].clientY, 2));
+           if (playPinchDist === 0) {
+             playPinchDist = dist;
+             playInitZoom = state.camera.zoom;
+             const centerX = (rightTouches[0].clientX + rightTouches[1].clientX) / 2;
+             const centerY = (rightTouches[0].clientY + rightTouches[1].clientY) / 2;
+             playInitLocalX = (centerX - rect.left - state.camera.x) / state.camera.zoom;
+             playInitLocalY = (centerY - rect.top - state.camera.y) / state.camera.zoom;
+           } else {
+             const zoomFactor = dist / playPinchDist;
+             let newZoom = playInitZoom * zoomFactor;
+             newZoom = Math.min(Math.max(newZoom, 0.1), 5);
+             const centerX = (rightTouches[0].clientX + rightTouches[1].clientX) / 2;
+             const centerY = (rightTouches[0].clientY + rightTouches[1].clientY) / 2;
+             const newCameraX = (centerX - rect.left) - playInitLocalX * newZoom;
+             const newCameraY = (centerY - rect.top) - playInitLocalY * newZoom;
+             state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+           }
+           lastRightTouchPos = null;
+         } else {
+           playPinchDist = 0;
+         }
+
+         for (let i = 0; i < e.changedTouches.length; i++) {
+           const touch = e.changedTouches[i];
+           if (touch.identifier === rightTouchId && rightTouches.length < 2 && lastRightTouchPos) {
+             pendingMovementX += (touch.clientX - lastRightTouchPos.x);
+             pendingMovementY += (touch.clientY - lastRightTouchPos.y);
+             lastRightTouchPos = { x: touch.clientX, y: touch.clientY };
+             if (!rafId) rafId = requestAnimationFrame(applyMovement);
+           }
+         }
       } else {
-        playPinchDist = 0;
-      }
-
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const touch = e.changedTouches[i];
-        if (touch.identifier === rightTouchId && lastRightTouchPos) {
-          pendingMovementX += (touch.clientX - lastRightTouchPos.x);
-          pendingMovementY += (touch.clientY - lastRightTouchPos.y);
-          lastRightTouchPos = { x: touch.clientX, y: touch.clientY };
-          
-          if (!rafId) {
-             rafId = requestAnimationFrame(applyMovement);
-          }
-        }
+         if (e.touches.length >= 2 && playPinchDist > 0) {
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            const zoomFactor = dist / playPinchDist;
+            let newZoom = playInitZoom * zoomFactor;
+            newZoom = Math.min(Math.max(newZoom, 0.1), 5);
+            
+            const currentCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            const currentCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            
+            const newCameraX = (currentCenterX - rect.left) - playInitLocalX * newZoom;
+            const newCameraY = (currentCenterY - rect.top) - playInitLocalY * newZoom;
+            state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+         } else if (e.touches.length === 1 && leftTouchId !== null) {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+               const touch = e.changedTouches[i];
+               if (touch.identifier === leftTouchId) {
+                 const localX = (touch.clientX - rect.left - state.camera.x) / state.camera.zoom;
+                 const localY = (touch.clientY - rect.top - state.camera.y) / state.camera.zoom;
+                 updateTrail(localX, localY, (p1, p2) => {
+                   checkTrailIntersection(p1.x, p1.y, p2.x, p2.y);
+                 });
+               }
+            }
+         }
       }
     };
 
@@ -265,24 +348,58 @@ export const GameCanvas: React.FC = () => {
       const isCanvas = (e.target as HTMLElement)?.tagName?.toLowerCase() === 'canvas';
       if (!isCanvas) return;
       e.preventDefault();
-      
-      let rightTouchesCount = 0;
-      for (let i = 0; i < e.touches.length; i++) {
-        if (e.touches[i].clientX >= window.innerWidth / 2) rightTouchesCount++;
-      }
-      if (rightTouchesCount < 2) playPinchDist = 0;
+      const state = useStore.getState();
+      const mode = state.mobileControlMode;
 
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const touch = e.changedTouches[i];
-        if (touch.identifier === leftTouchId) {
-          leftTouchId = null;
-          buttonsPressed = 0;
-          intersectedBlocksRef.current.clear();
-          currentStrokeId.current = null;
-        } else if (touch.identifier === rightTouchId) {
-          rightTouchId = null;
-          lastRightTouchPos = null;
-        }
+      if (mode === 'crosshair') {
+         let rightTouchesCount = 0;
+         for (let i = 0; i < e.touches.length; i++) {
+           if (e.touches[i].clientX >= window.innerWidth / 2) rightTouchesCount++;
+         }
+         if (rightTouchesCount < 2) playPinchDist = 0;
+
+         for (let i = 0; i < e.changedTouches.length; i++) {
+           const touch = e.changedTouches[i];
+           if (touch.identifier === leftTouchId) {
+             leftTouchId = null;
+             buttonsPressed = 0;
+             intersectedBlocksRef.current.clear();
+             endTrail();
+           }
+           if (touch.identifier === rightTouchId) {
+             if (rightTouchesCount === 1) {
+                const remainingRightTouch = Array.from(e.touches).find(t => t.clientX >= window.innerWidth / 2);
+                if (remainingRightTouch) {
+                   rightTouchId = remainingRightTouch.identifier;
+                   lastRightTouchPos = { x: remainingRightTouch.clientX, y: remainingRightTouch.clientY };
+                } else {
+                   rightTouchId = null;
+                }
+             } else {
+                rightTouchId = null;
+             }
+           }
+         }
+      } else {
+         if (e.touches.length < 2) playPinchDist = 0;
+         for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            if (touch.identifier === leftTouchId) {
+               leftTouchId = null;
+               intersectedBlocksRef.current.clear();
+               endTrail();
+            }
+         }
+         if (e.touches.length === 1 && playPinchDist === 0) {
+            leftTouchId = e.touches[0].identifier;
+            const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
+            const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+            const localX = (e.touches[0].clientX - rect.left - state.camera.x) / state.camera.zoom;
+            const localY = (e.touches[0].clientY - rect.top - state.camera.y) / state.camera.zoom;
+            startTrail(localX, localY);
+            intersectedBlocksRef.current.clear();
+            checkTrailIntersection(localX, localY, localX, localY);
+         }
       }
     };
 
@@ -383,7 +500,14 @@ export const GameCanvas: React.FC = () => {
           setGameStats(newStats);
           setActiveCirclesState([...activeCirclesRef.current]);
       } else {
-          // Break combo for hitting wrong block or too early? Osu usually doesn't break on empty hits, but let's leave it.
+          const state = useStore.getState();
+          const newScore = Math.max(0, state.gameScore - 50);
+          setGameStats({
+              gameScore: newScore,
+              gameCombo: 0,
+              wrongCount: state.wrongCount + 1,
+              latestHit: { type: 'Wrong', offset: 0, time: Date.now(), color: b?.pitch ? getPitchColorNumber(b.pitch, 36) : 0xffffff }
+          });
       }
   };
 
@@ -408,8 +532,10 @@ export const GameCanvas: React.FC = () => {
 
     if (gameState !== 'play') return;
     
-    gameTimeRef.current += delta;
+    const speed = useStore.getState().gameSpeed;
+    gameTimeRef.current += delta * speed;
     const elapsedTime = gameTimeRef.current;
+    (window as any).__currentGameTime = Math.max(0, elapsedTime);
 
     while (pendingEventsRef.current.length > 0) {
       const nextEvent = pendingEventsRef.current[0];
@@ -705,7 +831,7 @@ export const GameCanvas: React.FC = () => {
             e.target.setPointerCapture(e.pointerId);
           }
         }
-      } else if (e.button === 2 && e.target && e.target.label === 'background') { // Right click
+      } else if (e.button === 2) { // Right click
         useStore.getState().closeContextMenu();
         useStore.getState().clearSelection();
         const state = useStore.getState();

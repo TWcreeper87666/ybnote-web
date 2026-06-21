@@ -1,11 +1,16 @@
 # bug
 audio delay when no interaction
 
-## level-editor:
+# level-editor:
 - ctrl+A no response
 - group not working
-
 - export loading icon
+- track instrument type
+
+# game
+- do wrong notes play sound?
+- key binding in game?
+- import midi, aks player order type(pitch,newest)
 
 # making
 record mode
@@ -19,10 +24,13 @@ new object: trigger
 use same template for arrangement and level-editor
 proper readme
 
+# should I
+mobile landspace
+
 # optimize
 
 my ToolbarDivider is kinda useless
-
+css seperate
 
 ## components:
 虛擬樂器面板的拖曳邏輯 (Piano / Drum Keyboard)

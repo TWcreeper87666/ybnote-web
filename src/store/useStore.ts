@@ -69,7 +69,7 @@ export type Theme = 'light' | 'dark';
 export type Mode = 'select' | 'draw_track' | 'piano' | 'drum' | 'draw_group' | 'play';
 
 export interface HitEvent {
-  type: 'Perfect' | 'Good' | 'Bad' | 'Miss';
+  type: 'Perfect' | 'Good' | 'Bad' | 'Miss' | 'Wrong';
   offset: number; // in ms
   time: number; // Date.now() timestamp
   color: number;
@@ -222,7 +222,7 @@ interface AppState {
   clearRecordedEvents: () => void;
 
   // Game Mode State
-  gameState: 'upload' | 'arrange' | 'countdown' | 'play' | 'paused' | 'result';
+  gameState: 'upload' | 'arrange' | 'play' | 'paused' | 'result';
   gameFileName: string | null;
   gameBlocks: Block[];
   gameSpeed: number;
@@ -233,6 +233,7 @@ interface AppState {
   goodCount: number;
   badCount: number;
   missCount: number;
+  wrongCount: number;
   maxCombo: number;
   gameResetCount: number;
   setGameState: (state: AppState['gameState']) => void;
@@ -240,8 +241,10 @@ interface AppState {
   setGameBlocks: (blocks: Block[]) => void;
   updateGameBlock: (id: string, updates: Partial<Block>) => void;
   setGameEvents: (events: AppState['gameEvents']) => void;
-  setGameStats: (stats: Partial<{ gameScore: number, gameCombo: number, perfectCount: number, goodCount: number, badCount: number, missCount: number, maxCombo: number, latestHit: HitEvent | null }>) => void;
+  setGameStats: (stats: Partial<{ gameScore: number, gameCombo: number, perfectCount: number, goodCount: number, badCount: number, missCount: number, wrongCount: number, maxCombo: number, latestHit: HitEvent | null }>) => void;
   setGameSpeed: (speed: number) => void;
+  mobileControlMode: 'crosshair' | 'touch';
+  setMobileControlMode: (mode: 'crosshair' | 'touch') => void;
   resetGamePlay: () => void;
   latestHit: HitEvent | null;
 
@@ -331,8 +334,10 @@ export const useStore = create<AppState>()(
         goodCount: 0,
         badCount: 0,
         missCount: 0,
+        wrongCount: 0,
         maxCombo: 0,
         gameResetCount: 0,
+        mobileControlMode: 'touch',
         
         toastMessage: null,
 
@@ -963,7 +968,8 @@ export const useStore = create<AppState>()(
         setGameEvents: (gameEvents) => set({ gameEvents }),
         setGameStats: (stats) => set(state => ({ ...state, ...stats })),
         setGameSpeed: (gameSpeed) => set({ gameSpeed }),
-        resetGamePlay: () => set(s => ({ gameResetCount: s.gameResetCount + 1, gameScore: 0, gameCombo: 0, perfectCount: 0, goodCount: 0, badCount: 0, missCount: 0, maxCombo: 0, latestHit: null })),
+        setMobileControlMode: (mobileControlMode) => set({ mobileControlMode }),
+        resetGamePlay: () => set(s => ({ gameResetCount: s.gameResetCount + 1, gameScore: 0, gameCombo: 0, perfectCount: 0, goodCount: 0, badCount: 0, missCount: 0, wrongCount: 0, maxCombo: 0, latestHit: null })),
         latestHit: null,
 
         latestPerformHit: null,
@@ -989,6 +995,7 @@ export const useStore = create<AppState>()(
           showBlockPitch: state.showBlockPitch,
           showBlockVolume: state.showBlockVolume,
           showBlockInstrument: state.showBlockInstrument,
+          mobileControlMode: state.mobileControlMode,
           camera: state.camera,
           recordedEvents: state.recordedEvents
         }), // only persist these fields

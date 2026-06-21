@@ -12,7 +12,7 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
 
   const handlePointerDown = (e: any) => {
     const state = useStore.getState();
-    if (state.gameState === 'play' || state.gameState === 'countdown') return;
+    if (state.gameState === 'play') return;
     const button = e.button; 
     const isMultiSelect = e.ctrlKey || e.shiftKey;
     

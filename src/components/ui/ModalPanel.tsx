@@ -20,7 +20,7 @@ export const ModalPanel: React.FC<ModalPanelProps> = ({ title, isOpen, onClose, 
     <div 
       className={`settings-panel glass-panel ${className}`}
       style={{
-        ...(isMobile ? { position: 'fixed', top: '10%', left: '5%', width: '90%', maxWidth: 'none', right: 'auto', zIndex: 1000 } : {}),
+        ...(isMobile ? { position: 'fixed', top: '10%', left: '5%', width: '90%', maxWidth: 'none', right: 'auto', zIndex: 1000 } : { width: '450px', maxWidth: '90vw' }),
         ...style
       }}
       onWheel={(e) => e.stopPropagation()}

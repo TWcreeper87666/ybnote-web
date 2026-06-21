@@ -63,7 +63,6 @@ export const Canvas: React.FC = () => {
   }, [endPan, endSelection, endTrail, finishGroupDraw]);
 
   useCanvasCamera({
-    isMobile: /Mobi|Android/i.test(navigator.userAgent),
     isPlayMode: mode === 'play',
     isActive: true,
     onWheelIntercept: useCallback((e: WheelEvent) => {

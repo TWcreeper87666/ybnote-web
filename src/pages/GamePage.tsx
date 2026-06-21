@@ -8,10 +8,35 @@ import { ModalPanel } from '../components/ui/ModalPanel';
 import { playNote } from '../utils/audio';
 import { useStore, undoAction, redoAction } from '../store/useStore';
 import { useIsMobile } from '../hooks/useIsMobile';
+const ProgressBar: React.FC = () => {
+  const barRef = useRef<HTMLDivElement>(null);
+  const events = useStore.getState().gameEvents;
+  const totalTime = events.length > 0 ? events[events.length - 1].time : 1;
+
+  useEffect(() => {
+    let rafId: number;
+    const tick = () => {
+      if (barRef.current) {
+        const current = (window as any).__currentGameTime || 0;
+        const progress = Math.max(0, Math.min(1, current / totalTime));
+        barRef.current.style.width = `${progress * 100}%`;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [totalTime]);
+
+  return (
+     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 6, background: 'rgba(255,255,255,0.1)', zIndex: 50, pointerEvents: 'none' }}>
+        <div ref={barRef} style={{ height: '100%', background: 'rgba(99, 102, 241, 0.8)', width: '0%', transition: 'width 0.1s linear', boxShadow: '0 0 10px rgba(99, 102, 241, 0.5)' }} />
+     </div>
+  );
+};
+
 export const GamePage: React.FC = () => {
-  const { theme, gameState, setGameState, setGameBlocks, setGameEvents, gameScore, gameCombo, perfectCount, goodCount, badCount, missCount, maxCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, toggleSettings, isTutorialOpen, toggleTutorial, latestHit } = useStore();
+  const { theme, gameState, setGameState, setGameBlocks, setGameEvents, gameScore, gameCombo, perfectCount, goodCount, badCount, missCount, wrongCount, maxCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, toggleSettings, isTutorialOpen, toggleTutorial, latestHit, mobileControlMode, setMobileControlMode } = useStore();
   const isMobile = useIsMobile();
-  const [countdownTime, setCountdownTime] = useState(3);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
   const [previewVolume, setPreviewVolume] = useState(1);
@@ -19,6 +44,26 @@ export const GamePage: React.FC = () => {
   const previewStartTimeRef = useRef(Date.now());
   const previewTimeOffsetRef = useRef(0);
   const lastPlayedEventIndexRef = useRef(0);
+  
+  const [isResuming, setIsResuming] = useState(false);
+  const [resumeCount, setResumeCount] = useState(3);
+  const isResumingRef = useRef(false);
+
+  useEffect(() => {
+     isResumingRef.current = isResuming;
+  }, [isResuming]);
+
+  useEffect(() => {
+    if (isResuming) {
+      if (resumeCount > 0) {
+        const timer = setTimeout(() => setResumeCount(resumeCount - 1), 500);
+        return () => clearTimeout(timer);
+      } else {
+        setIsResuming(false);
+        setGameState('play');
+      }
+    }
+  }, [isResuming, resumeCount, setGameState]);
 
   const requestFullscreen = () => {
     try {
@@ -42,8 +87,9 @@ export const GamePage: React.FC = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         const state = useStore.getState().gameState;
-        if (state === 'play' || state === 'countdown') {
+        if (state === 'play' || isResumingRef.current) {
            useStore.getState().setGameState('paused');
+           if (isResumingRef.current) setIsResuming(false);
            if (document.pointerLockElement) {
              document.exitPointerLock();
            }
@@ -88,23 +134,6 @@ export const GamePage: React.FC = () => {
     };
   }, [gameState, isMobile]);
 
-  // Countdown timer logic
-  useEffect(() => {
-    if (gameState === 'countdown') {
-      setCountdownTime(3);
-      const timer = setInterval(() => {
-        setCountdownTime(prev => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            setGameState('play');
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      return () => clearInterval(timer);
-    }
-  }, [gameState, setGameState]);
 
   // Preview Player Logic
   useEffect(() => {
@@ -168,6 +197,12 @@ export const GamePage: React.FC = () => {
      setGameStats({ gameScore: 0, gameCombo: 0 });
      return () => setGameState('upload');
   }, [setGameState, setGameStats]);
+
+  useEffect(() => {
+    if (gameState === 'play') {
+       useStore.setState({ isTutorialOpen: false, isSettingsOpen: false, isHelpOpen: false } as any);
+    }
+  }, [gameState]);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -234,7 +269,7 @@ export const GamePage: React.FC = () => {
       <div className="main-wrapper">
         
         {/* Render Canvas */}
-        {['arrange', 'countdown', 'play', 'paused'].includes(gameState) && (
+        {['arrange', 'play', 'paused'].includes(gameState) && (
            <GameCanvas />
         )}
 
@@ -281,12 +316,21 @@ export const GamePage: React.FC = () => {
                   <option value="2">2.0x</option>
                 </select>
 
+                   <select 
+                     value={mobileControlMode} 
+                     onChange={(e) => setMobileControlMode(e.target.value as 'crosshair' | 'touch')}
+                     style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8, fontSize: 16, cursor: 'pointer', outline: 'none', backdropFilter: 'blur(4px)' }}
+                   >
+                     <option value="crosshair">Crosshair Mode</option>
+                     <option value="touch">Normal Mode</option>
+                   </select>
+
                 <button 
                   onClick={() => {
                      resetGamePlay();
                      useStore.getState().clearSelection();
                      setPreviewPlaying(false);
-                     setGameState('countdown');
+                     setGameState('play');
                      if (isMobile) requestFullscreen();
                   }}
                   className="primary-btn"
@@ -365,6 +409,7 @@ export const GamePage: React.FC = () => {
         {/* Play Overlay */}
         {gameState === 'play' && (
            <>
+             <ProgressBar />
              {latestHit && latestHit.type !== 'Miss' && (
                  <div 
                    key={`bg-${latestHit.time}`}
@@ -390,20 +435,22 @@ export const GamePage: React.FC = () => {
              />
              
              {/* Crosshair */}
-             <div
-               style={{
-                 position: 'absolute',
-                 top: '50%',
-                 left: '50%',
-                 transform: 'translate(-50%, -50%)',
-                 pointerEvents: 'none',
-                 opacity: 0.5,
-                 color: 'white',
-                 zIndex: 11
-               }}
-             >
-               <Plus size={32} strokeWidth={1.5} />
-             </div>
+             {mobileControlMode === 'crosshair' && (
+               <div
+                 style={{
+                   position: 'absolute',
+                   top: '50%',
+                   left: '50%',
+                   transform: 'translate(-50%, -50%)',
+                   pointerEvents: 'none',
+                   opacity: 0.5,
+                   color: 'white',
+                   zIndex: 11
+                 }}
+               >
+                 <Plus size={32} strokeWidth={1.5} />
+               </div>
+             )}
 
               {/* Score and Combo */}
              <div style={{ position: 'absolute', top: 20, right: 40, color: 'white', textAlign: 'right', pointerEvents: 'none', zIndex: 10 }}>
@@ -418,7 +465,7 @@ export const GamePage: React.FC = () => {
              </div>
 
              {/* Hit Result Popup */}
-             <div style={{ position: 'absolute', top: isMobile ? 80 : 160, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', pointerEvents: 'none', zIndex: 10 }}>
+             <div style={{ position: 'absolute', top: isMobile ? 20 : 160, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', pointerEvents: 'none', zIndex: 10 }}>
                 {latestHit && Date.now() - latestHit.time < 1000 && (
                    <div 
                       key={latestHit.time} 
@@ -427,7 +474,8 @@ export const GamePage: React.FC = () => {
                          fontWeight: 'bold', 
                          color: latestHit.type === 'Miss' ? '#ef4444' : 
                                 latestHit.type === 'Perfect' ? '#60a5fa' : 
-                                latestHit.type === 'Good' ? '#4ade80' : '#facc15',
+                                latestHit.type === 'Good' ? '#4ade80' : 
+                                latestHit.type === 'Wrong' ? '#c084fc' : '#facc15',
                          textShadow: '0 0 10px rgba(0,0,0,0.8)',
                          animation: 'popAndFade 1s forwards'
                       }}
@@ -486,86 +534,103 @@ export const GamePage: React.FC = () => {
            </>
         )}
 
-        {/* Countdown Overlay */}
-        {gameState === 'countdown' && (
-           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', zIndex: 30, pointerEvents: 'none' }}>
-              <div style={{ fontSize: 120, fontWeight: 'bold', color: 'white', textShadow: '0 4px 20px rgba(0,0,0,0.8)' }}>
-                 {countdownTime}
-              </div>
-           </div>
-        )}
 
         {/* Pause Overlay */}
         {gameState === 'paused' && (
            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.8)', zIndex: 40 }}>
-              <h2 style={{ color: 'white', fontSize: 48, marginBottom: 40 }}>Paused</h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                 <button 
-                    onClick={() => setGameState('play')}
-                    style={{ padding: '12px 32px', fontSize: 20, cursor: 'pointer', borderRadius: 8, background: '#6366f1', color: 'white', border: 'none' }}
-                 >
-                    Resume
-                 </button>
-                 <button 
-                    onClick={() => {
-                       resetGamePlay();
-                       setGameState('countdown');
-                    }}
-                    style={{ padding: '12px 32px', fontSize: 20, cursor: 'pointer', borderRadius: 8, background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.3)' }}
-                 >
-                    Restart
-                 </button>
-                 <button 
-                    onClick={() => {
-                       resetGamePlay();
-                       setPreviewPlaying(false);
-                       setGameState('arrange');
-                    }}
-                    style={{ padding: '12px 32px', fontSize: 20, cursor: 'pointer', borderRadius: 8, background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.3)' }}
-                 >
-                    Back to Arrange
-                 </button>
-              </div>
+              {isResuming ? (
+                 <div key={resumeCount} style={{ color: 'white', fontSize: 120, fontWeight: 'bold', animation: 'zoomIn 0.5s ease-out forwards', textShadow: '0 0 20px rgba(99, 102, 241, 0.8)' }}>
+                    {resumeCount}
+                 </div>
+              ) : (
+                 <>
+                    <h2 style={{ color: 'white', fontSize: 48, marginBottom: 40 }}>Paused</h2>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                       <button 
+                          onClick={() => {
+                             setIsResuming(true);
+                             setResumeCount(3);
+                          }}
+                          style={{ padding: '12px 32px', fontSize: 20, cursor: 'pointer', borderRadius: 8, background: '#6366f1', color: 'white', border: 'none' }}
+                       >
+                          Resume
+                       </button>
+                       <button 
+                          onClick={() => {
+                             resetGamePlay();
+                             setIsResuming(true);
+                             setResumeCount(3);
+                          }}
+                          style={{ padding: '12px 32px', fontSize: 20, cursor: 'pointer', borderRadius: 8, background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.3)' }}
+                       >
+                          Restart
+                       </button>
+                       <button 
+                          onClick={() => {
+                             resetGamePlay();
+                             setPreviewPlaying(false);
+                             setGameState('arrange');
+                          }}
+                          style={{ padding: '12px 32px', fontSize: 20, cursor: 'pointer', borderRadius: 8, background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.3)' }}
+                       >
+                          Back to Arrange
+                       </button>
+                    </div>
+                 </>
+              )}
            </div>
         )}
 
         {/* Result Overlay */}
         {gameState === 'result' && (
            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.9)', zIndex: 40, animation: 'fadeIn 0.5s forwards' }}>
-              <h2 style={{ color: 'white', fontSize: isMobile ? 36 : 56, marginBottom: isMobile ? 8 : 10, textShadow: '0 4px 20px rgba(99,102,241,0.5)', animation: 'slideInUp 0.5s forwards' }}>Level Cleared</h2>
-              <div style={{ color: '#a5b4fc', fontSize: isMobile ? 18 : 24, marginBottom: isMobile ? 20 : 40, animation: 'slideInUp 0.5s forwards', animationDelay: '0.1s', opacity: 0, animationFillMode: 'forwards' }}>
+              <h2 style={{ color: 'white', fontSize: isMobile ? 28 : 56, marginBottom: isMobile ? 4 : 10, textShadow: '0 4px 20px rgba(99,102,241,0.5)', animation: 'slideInUp 0.5s forwards' }}>Level Cleared</h2>
+              <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: isMobile ? 12 : 18, marginBottom: isMobile ? 8 : 24, animation: 'slideInUp 0.5s forwards', animationDelay: '0.05s', opacity: 0, animationFillMode: 'forwards', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                 <div>{gameFileName || 'Unknown Level'}</div>
+                 <div>Speed: {gameSpeed}x</div>
+                 <div>Mode: {mobileControlMode === 'crosshair' ? 'Crosshair' : 'Normal'}</div>
+              </div>
+              <div style={{ color: '#a5b4fc', fontSize: isMobile ? 16 : 24, marginBottom: isMobile ? 8 : 40, animation: 'slideInUp 0.5s forwards', animationDelay: '0.1s', opacity: 0, animationFillMode: 'forwards' }}>
                  Score: <span style={{ color: 'white', fontWeight: 'bold' }}>{gameScore}</span>
               </div>
               
-              <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : 12, width: isMobile ? '240px' : '300px', marginBottom: isMobile ? 24 : 40 }}>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 16 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.2s', opacity: 0, animationFillMode: 'forwards' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 4 : 12, width: isMobile ? '220px' : '300px', marginBottom: isMobile ? 16 : 40 }}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 14 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.2s', opacity: 0, animationFillMode: 'forwards' }}>
                     <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>Perfect</span>
                     <span style={{ color: 'white' }}>{perfectCount}</span>
                  </div>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 16 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.3s', opacity: 0, animationFillMode: 'forwards' }}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 14 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.3s', opacity: 0, animationFillMode: 'forwards' }}>
                     <span style={{ color: '#4ade80', fontWeight: 'bold' }}>Good</span>
                     <span style={{ color: 'white' }}>{goodCount}</span>
                  </div>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 16 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.4s', opacity: 0, animationFillMode: 'forwards' }}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 14 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.4s', opacity: 0, animationFillMode: 'forwards' }}>
                     <span style={{ color: '#facc15', fontWeight: 'bold' }}>Bad</span>
                     <span style={{ color: 'white' }}>{badCount}</span>
                  </div>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 16 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.5s', opacity: 0, animationFillMode: 'forwards' }}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 14 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.5s', opacity: 0, animationFillMode: 'forwards' }}>
                     <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Miss</span>
                     <span style={{ color: 'white' }}>{missCount}</span>
                  </div>
-                 <div style={{ height: 1, background: 'rgba(255,255,255,0.2)', margin: isMobile ? '4px 0' : '8px 0', animation: 'slideInUp 0.5s forwards', animationDelay: '0.6s', opacity: 0, animationFillMode: 'forwards' }} />
-                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 16 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.7s', opacity: 0, animationFillMode: 'forwards' }}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 14 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.55s', opacity: 0, animationFillMode: 'forwards' }}>
+                    <span style={{ color: '#c084fc', fontWeight: 'bold' }}>Wrong</span>
+                    <span style={{ color: 'white' }}>{wrongCount}</span>
+                 </div>
+                 <div style={{ height: 1, background: 'rgba(255,255,255,0.2)', margin: isMobile ? '2px 0' : '8px 0', animation: 'slideInUp 0.5s forwards', animationDelay: '0.6s', opacity: 0, animationFillMode: 'forwards' }} />
+                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 14 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.7s', opacity: 0, animationFillMode: 'forwards' }}>
                     <span style={{ color: '#c084fc', fontWeight: 'bold' }}>Max Combo</span>
                     <span style={{ color: 'white' }}>{maxCombo}</span>
                  </div>
               </div>
 
-              <div style={{ display: 'flex', gap: isMobile ? 12 : 16, animation: 'slideInUp 0.5s forwards', animationDelay: '0.9s', opacity: 0, animationFillMode: 'forwards' }}>
+              <div style={{ display: 'flex', gap: isMobile ? 8 : 16, animation: 'slideInUp 0.5s forwards', animationDelay: '0.9s', opacity: 0, animationFillMode: 'forwards' }}>
                  <button 
                     onClick={() => {
                        resetGamePlay();
-                       setGameState('countdown');
+                       setGameState('paused');
+                       setTimeout(() => {
+                         setIsResuming(true);
+                         setResumeCount(3);
+                       }, 0);
                     }}
                     style={{ padding: isMobile ? '10px 24px' : '12px 32px', fontSize: isMobile ? 16 : 20, cursor: 'pointer', borderRadius: 8, background: '#6366f1', color: 'white', border: 'none', fontWeight: 'bold' }}
                  >
@@ -593,15 +658,16 @@ export const GamePage: React.FC = () => {
         {/* Tutorial Overlay */}
         <ModalPanel title="How to Play" isOpen={isTutorialOpen} onClose={toggleTutorial} className="tutorial-overlay">
            <ul style={{ color: 'var(--settings-text-muted)', lineHeight: 1.6, paddingLeft: 20 }}>
-               <li><b>Arrange Phase:</b> Drag blocks to map out the song. You can zoom and pan the canvas.</li>
-               <li style={{ marginTop: 8 }}><b>Continuous Drawing:</b> Long press on a block (or right click) to start drawing a continuous trail of blocks.</li>
-               <li style={{ marginTop: 8 }}><b>Play Phase:</b> You control the camera! On PC, move your mouse to look around and click to hit. On Mobile, drag on the right half of the screen to look around, and tap the left half to hit blocks when they align with the crosshair.</li>
-               <li style={{ marginTop: 8 }}><b>Scoring:</b> Accuracy determines your hit result (Perfect, Good, Bad, Miss) and your combo multiplier.</li>
+               <li><b>Arrange Phase:</b> Drag blocks to map out the song. You can zoom (scroll/pinch) and pan (middle-click/drag).</li>
+               <li style={{ marginTop: 8 }}><b>Preview:</b> Right-click and drag (or long press and drag on mobile) to draw a particle trail to preview notes.</li>
+               <li style={{ marginTop: 8 }}><b>Play Phase (Normal Mode):</b> Click/Tap and drag to slash through the notes as they appear. You can freely zoom using the scroll wheel or pinch gesture.</li>
+               <li style={{ marginTop: 8 }}><b>Play Phase (Crosshair Mode):</b> On PC, your mouse aims the center crosshair (like an FPS). On Mobile, drag on the right side of the screen to aim, and tap the left side to hit.</li>
+               <li style={{ marginTop: 8 }}><b>Scoring:</b> Hit the blocks exactly when the shrinking square aligns with them! Better accuracy gives higher points and combo multipliers.</li>
            </ul>
         </ModalPanel>
 
         {/* Mobile Fullscreen Button */}
-        {isMobile && !isFullscreen && gameState !== 'play' && gameState !== 'countdown' && (
+        {isMobile && !isFullscreen && gameState !== 'play' && (
           <button 
             onClick={requestFullscreen}
             style={{ position: 'absolute', top: 20, left: 20, zIndex: 100, padding: '12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}
