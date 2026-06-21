@@ -52,10 +52,7 @@ export const LevelEditorToolbar: React.FC = () => {
       const arrayBuffer = await file.arrayBuffer();
       const midi = new Midi(arrayBuffer);
 
-      let bpm = 120;
-      if (midi.header.tempos.length > 0) {
-        bpm = midi.header.tempos[0].bpm;
-      }
+      let bpm = 120; // Hardcode to 120 as per user request
 
       const tracks: EditorTrack[] = [];
       midi.tracks.forEach((track, index) => {
@@ -167,6 +164,26 @@ export const LevelEditorToolbar: React.FC = () => {
   // --- Export .yblevel ---
   const handleExport = async () => {
     setIsExporting(true);
+
+    // Sync gameEvents one last time before export
+    const gameEvents: typeof mainStore.gameEvents = [];
+    if (store.midiData) {
+      for (const track of store.midiData.tracks) {
+        for (const note of track.notes) {
+          const block = mainStore.gameBlocks.find(b => b.pitch === note.name && b.instrument === track.instrument);
+          if (block) {
+            gameEvents.push({
+              time: note.timeStart * 1000,
+              pitch: note.name,
+              instrument: track.instrument,
+              blockId: block.id,
+            });
+          }
+        }
+      }
+      gameEvents.sort((a, b) => a.time - b.time);
+    }
+
     try {
       const blob = await exportLevel({
         bpm: store.bpm,
@@ -176,7 +193,7 @@ export const LevelEditorToolbar: React.FC = () => {
         audioBuffer: store.audioBuffer,
         midiData: store.midiData,
         gameBlocks: mainStore.gameBlocks,
-        gameEvents: mainStore.gameEvents,
+        gameEvents: gameEvents,
       });
 
       const url = URL.createObjectURL(blob);
@@ -200,27 +217,7 @@ export const LevelEditorToolbar: React.FC = () => {
     }
   };
 
-  // --- Settings popover values ---
-  const [localBpm, setLocalBpm] = useState(store.bpm);
-  const [localOffset, setLocalOffset] = useState(store.offset);
-  const [localTrimStart, setLocalTrimStart] = useState(store.trimStart);
-  const [localTrimEnd, setLocalTrimEnd] = useState(store.trimEnd);
 
-  const openSettings = () => {
-    setLocalBpm(store.bpm);
-    setLocalOffset(store.offset);
-    setLocalTrimStart(store.trimStart);
-    setLocalTrimEnd(store.trimEnd);
-    setShowSettings(true);
-  };
-
-  const applySettings = () => {
-    store.setBpm(localBpm);
-    store.setOffset(localOffset);
-    store.setTrimStart(localTrimStart);
-    store.setTrimEnd(localTrimEnd);
-    setShowSettings(false);
-  };
 
   return (
     <>
@@ -367,6 +364,9 @@ export const LevelEditorToolbar: React.FC = () => {
             value={store.zoomLevel} 
             onChange={(e) => store.setZoomLevel(Number(e.target.value))}
             style={{ width: 60, accentColor: '#a5b4fc' }}
+            tabIndex={-1}
+            onFocus={(e) => e.target.blur()}
+            onKeyDown={(e) => e.preventDefault()}
           />
         </div>
 
@@ -379,6 +379,9 @@ export const LevelEditorToolbar: React.FC = () => {
             value={store.audioVolume} 
             onChange={(e) => store.setAudioVolume(Number(e.target.value))}
             style={{ width: 50, accentColor: '#4ae2a8' }}
+            tabIndex={-1}
+            onFocus={(e) => e.target.blur()}
+            onKeyDown={(e) => e.preventDefault()}
           />
         </div>
         <div className="le-toolbar-btn" style={{ cursor: 'default' }} title="MIDI Volume">
@@ -389,6 +392,9 @@ export const LevelEditorToolbar: React.FC = () => {
             value={store.midiVolume} 
             onChange={(e) => store.setMidiVolume(Number(e.target.value))}
             style={{ width: 50, accentColor: '#a5b4fc' }}
+            tabIndex={-1}
+            onFocus={(e) => e.target.blur()}
+            onKeyDown={(e) => e.preventDefault()}
           />
         </div>
 
@@ -407,6 +413,9 @@ export const LevelEditorToolbar: React.FC = () => {
           style={{ appearance: 'none', paddingRight: 24, cursor: 'pointer' }}
           title="Track Instrument"
           disabled={!store.midiData}
+          tabIndex={-1}
+          onFocus={(e) => e.target.blur()}
+          onKeyDown={(e) => e.preventDefault()}
         >
           <option value="piano">Piano</option>
           <option value="bass">Bass</option>
@@ -414,10 +423,6 @@ export const LevelEditorToolbar: React.FC = () => {
           <option value="percussion">Drums</option>
         </select>
 
-        {/* Settings */}
-        <button className="le-toolbar-btn" onClick={openSettings} title="Settings">
-          <Settings size={18} />
-        </button>
 
         <div className="le-toolbar-divider" />
         
@@ -436,72 +441,10 @@ export const LevelEditorToolbar: React.FC = () => {
         )}
         {store.midiData && (
           <div className="le-status-badge">
-            🎹 {store.midiData.tracks.length} track{store.midiData.tracks.length !== 1 ? 's' : ''} · {Math.round(store.bpm)} BPM
+            🎹 {store.midiData.tracks.length} track{store.midiData.tracks.length !== 1 ? 's' : ''}
           </div>
         )}
       </div>
-
-      {/* Settings Popover */}
-      {showSettings && (
-        <div className="le-settings-popover glass-panel">
-          <div className="le-settings-header">
-            <h3>Level Settings</h3>
-            <button className="icon-btn" onClick={() => setShowSettings(false)}>
-              <X size={18} />
-            </button>
-          </div>
-
-          <div className="le-settings-body">
-            <label className="le-settings-row">
-              <span>BPM</span>
-              <input
-                type="number"
-                value={localBpm}
-                onChange={(e) => setLocalBpm(parseFloat(e.target.value) || 120)}
-                min={20}
-                max={400}
-                step={1}
-              />
-            </label>
-
-            <label className="le-settings-row">
-              <span>Offset (ms)</span>
-              <input
-                type="number"
-                value={localOffset}
-                onChange={(e) => setLocalOffset(parseFloat(e.target.value) || 0)}
-                step={10}
-              />
-            </label>
-
-            <label className="le-settings-row">
-              <span>Trim Start (s)</span>
-              <input
-                type="number"
-                value={localTrimStart}
-                onChange={(e) => setLocalTrimStart(parseFloat(e.target.value) || 0)}
-                min={0}
-                step={0.1}
-              />
-            </label>
-
-            <label className="le-settings-row">
-              <span>Trim End (s)</span>
-              <input
-                type="number"
-                value={localTrimEnd}
-                onChange={(e) => setLocalTrimEnd(parseFloat(e.target.value) || 0)}
-                min={0}
-                step={0.1}
-              />
-            </label>
-
-            <button className="le-settings-apply" onClick={applySettings}>
-              Apply
-            </button>
-          </div>
-        </div>
-      )}
 
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
     </>

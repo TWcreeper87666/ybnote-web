@@ -20,10 +20,11 @@ export interface DrumBlockProps {
   onPointerUp?: (e: PIXI.FederatedPointerEvent) => void;
   onPointerEnter?: (e: PIXI.FederatedPointerEvent) => void;
   onPointerLeave?: (e: PIXI.FederatedPointerEvent) => void;
+  isInvalid?: boolean;
 }
 
 export const DrumBlock: React.FC<DrumBlockProps> = ({
-  x, y, pitch, instrument, volume = 1, isInteractive = true, blockColor, onPointerDown, onPointerUp, onPointerEnter, onPointerLeave, opacity = 1, showPitch, showInstrument, showVolume, playedAt, isSelected = false
+  x, y, pitch, instrument, volume = 1, isInteractive = true, blockColor, onPointerDown, onPointerUp, onPointerEnter, onPointerLeave, opacity = 1, showPitch, showInstrument, showVolume, playedAt, isSelected = false, isInvalid = false
 }) => {
   const graphicsRef = useRef<PIXI.Graphics>(null);
   const ripplesRef = useRef<{id: number, progress: number}[]>([]);
@@ -55,7 +56,12 @@ export const DrumBlock: React.FC<DrumBlockProps> = ({
 
     g.circle(30, 30, 30); // Circular block
     g.fill({ color: blockColor, alpha: opacity });
-    g.stroke({ width: isSelected ? 3 : 2, color: isSelected ? 0x4f46e5 : 0xffffff, alpha: isSelected ? 1 : 0.4 });
+    
+    if (isInvalid) {
+      g.stroke({ width: 4, color: 0xff3333, alpha: 1 });
+    } else {
+      g.stroke({ width: isSelected ? 3 : 2, color: isSelected ? 0x4f46e5 : 0xffffff, alpha: isSelected ? 1 : 0.4 });
+    }
 
     // Draw volume bar (curved arc)
     if (showVolume) {
@@ -88,7 +94,7 @@ export const DrumBlock: React.FC<DrumBlockProps> = ({
         g.fill({ color: 0xffffff, alpha: 0.9 });
       }
     }
-  }, [blockColor, opacity, showVolume, volume, isSelected]);
+  }, [blockColor, opacity, showVolume, volume, isSelected, isInvalid]);
 
   useEffect(() => {
     let animationFrameId: number;

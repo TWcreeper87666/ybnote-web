@@ -8,7 +8,101 @@ import { WaveformView } from '../components/editor/WaveformView';
 import { TrackPanel } from '../components/editor/TrackPanel';
 import { VelocityTab } from '../components/editor/VelocityTab';
 import { parseMidiFile } from '../utils/midiImport';
-import { FileDown } from 'lucide-react';
+import { FileDown, Play, Pause, Volume2 } from 'lucide-react';
+import { Toolbar } from '../components/ui/Toolbar';
+import { SettingsPanel } from '../components/ui/SettingsPanel';
+import { SelectionPropertiesHud } from '../components/ui/SelectionPropertiesHud';
+import { ContextMenu } from '../components/ui/ContextMenu';
+import { HelpPanel } from '../components/ui/HelpPanel';
+import { HierarchyPanel } from '../components/ui/HierarchyPanel';
+import { useShortcuts } from '../hooks/useShortcuts';
+
+const ShortcutsEnabler = () => {
+  useShortcuts();
+  return null;
+};
+
+const BlocksPlaybackSync = () => {
+  React.useEffect(() => {
+    let rafId: number;
+    let lastPlayedIndex = 0;
+    
+    const tick = () => {
+      const state = useLevelEditorStore.getState();
+      if (state.isPlaying) {
+        const events = useStore.getState().gameEvents;
+        const currentMs = state.playbackPosition * 1000;
+        
+        // Handle seek backwards or wrap around
+        if (lastPlayedIndex > 0 && events[lastPlayedIndex - 1]?.time > currentMs) {
+          lastPlayedIndex = events.findIndex(e => e.time >= currentMs);
+          if (lastPlayedIndex === -1) lastPlayedIndex = events.length;
+        }
+        
+        while (lastPlayedIndex < events.length && events[lastPlayedIndex].time <= currentMs) {
+          const ev = events[lastPlayedIndex];
+          // Update gameBlock visual state (NoteBlock.tsx will flash)
+          useStore.getState().updateGameBlock(ev.blockId, { playedAt: Date.now() });
+          lastPlayedIndex++;
+        }
+      } else {
+        const events = useStore.getState().gameEvents;
+        const currentMs = state.playbackPosition * 1000;
+        const idx = events.findIndex(e => e.time >= currentMs);
+        lastPlayedIndex = idx !== -1 ? idx : events.length;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+  
+  return null;
+};
+
+const MiniPlayerSlider = () => {
+  const store = useLevelEditorStore();
+  const wasPlayingRef = React.useRef(false);
+  const [localVal, setLocalVal] = React.useState<number | null>(null);
+
+  const handlePointerDown = () => {
+    wasPlayingRef.current = useLevelEditorStore.getState().isPlaying;
+    if (wasPlayingRef.current) {
+      store.stopPlayback();
+    }
+    setLocalVal(store.playbackPosition);
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    setLocalVal(val);
+    store.setPlaybackAnchor(val);
+  };
+
+  const handlePointerUp = () => {
+    setLocalVal(null);
+    if (wasPlayingRef.current && !useLevelEditorStore.getState().isPlaying) {
+      store.togglePlayback();
+    }
+  };
+
+  return (
+    <input 
+      type="range"
+      min="0"
+      max={store.chartEndPosition || 100}
+      step="0.1"
+      value={localVal !== null ? localVal : store.playbackPosition}
+      onChange={handleChange}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onFocus={(e) => e.target.blur()}
+      onKeyDown={(e) => e.preventDefault()}
+      tabIndex={-1}
+      style={{ flex: 1, accentColor: '#6366f1', cursor: 'pointer' }}
+    />
+  );
+};
 
 export const LevelEditorPage: React.FC = () => {
   const { activeTab } = useLevelEditorStore();
@@ -23,12 +117,85 @@ export const LevelEditorPage: React.FC = () => {
   const [isDragging, setIsDragging] = React.useState(false);
   const dragState = React.useRef<{ type: string; startX: number; startY: number; initialW: number; initialH: number } | null>(null);
 
+  const generateMissingBlocks = React.useCallback(() => {
+    const midiData = useLevelEditorStore.getState().midiData;
+    const mainState = useStore.getState();
+    if (!midiData) return;
+
+    const uniqueNotes = new Map<string, { pitch: string; instrument: string }>();
+
+    for (const track of midiData.tracks) {
+      for (const note of track.notes) {
+        const pitchName = note.name;
+        const key = `${pitchName}-${track.instrument}`;
+        if (!uniqueNotes.has(key)) {
+          uniqueNotes.set(key, { pitch: pitchName, instrument: track.instrument });
+        }
+      }
+    }
+
+    const currentBlocks = [...mainState.gameBlocks];
+    let added = false;
+    
+    // Spawn new blocks nicely in a grid
+    let i = 0;
+    const cols = 8;
+    const camera = mainState.camera;
+    const centerX = window.innerWidth / 2;
+    const localCenterX = (centerX - camera.x) / camera.zoom;
+    const startX = localCenterX - (cols * 80) / 2;
+    const localStartY = (100 - camera.y) / camera.zoom;
+
+    for (const [key, info] of uniqueNotes.entries()) {
+      const exists = currentBlocks.some(b => b.pitch === info.pitch && b.instrument === info.instrument);
+      if (!exists) {
+        const id = Math.random().toString(36).substring(2, 9);
+        currentBlocks.push({
+          id,
+          x: startX + (i % cols) * 80,
+          y: localStartY + Math.floor(i / cols) * 80,
+          pitch: info.pitch,
+          instrument: info.instrument,
+          volume: 1,
+        });
+        added = true;
+      }
+      // increment i even for existing blocks to maintain grid structure for newly added ones
+      i++; 
+    }
+    
+    // Sync gameEvents to match current midiData
+    const gameEvents: typeof mainState.gameEvents = [];
+    for (const track of midiData.tracks) {
+      for (const note of track.notes) {
+        const block = currentBlocks.find(b => b.pitch === note.name && b.instrument === track.instrument);
+        if (block) {
+          gameEvents.push({
+            time: note.timeStart * 1000,
+            pitch: note.name,
+            instrument: track.instrument,
+            blockId: block.id,
+          });
+        }
+      }
+    }
+    gameEvents.sort((a, b) => a.time - b.time);
+    mainState.setGameEvents(gameEvents);
+    
+    if (added) {
+      mainState.setGameBlocks(currentBlocks);
+    }
+  }, []);
+
   // Ensure game is in arrange mode for block arrangement
   useEffect(() => {
-    if (activeTab === 'blocks' && gameState !== 'arrange') {
-      setGameState('arrange');
+    if (activeTab === 'blocks') {
+      if (gameState !== 'arrange') {
+        setGameState('arrange');
+      }
+      generateMissingBlocks();
     }
-  }, [activeTab, gameState, setGameState]);
+  }, [activeTab, gameState, setGameState, generateMissingBlocks]);
 
   // Prevent global browser zoom via Ctrl+Wheel
   useEffect(() => {
@@ -155,31 +322,84 @@ export const LevelEditorPage: React.FC = () => {
           <div className="le-resizer le-resizer-horizontal" onMouseDown={(e) => startResize(e, 'track')} />
           
           <div className="le-workspace">
-            {activeTab === 'pianoroll' && (
-              <div className="le-synced-views">
-                <div style={{ height: waveformHeight, flexShrink: 0, display: 'flex' }}>
-                  <WaveformView />
-                </div>
-                <div className="le-resizer le-resizer-vertical" onMouseDown={(e) => startResize(e, 'waveform')} />
-                <div className="le-pr-canvas-area">
-                  <PianoRoll />
-                </div>
-                {store.showVelocityTab && <div className="le-resizer le-resizer-vertical" onMouseDown={(e) => startResize(e, 'velocity')} />}
-                {store.showVelocityTab && (
-                  <div style={{ height: velocityHeight, flexShrink: 0, display: 'flex' }}>
-                    <VelocityTab />
-                  </div>
-                )}
+            <div className="le-synced-views" style={{ display: activeTab === 'pianoroll' ? 'flex' : 'none' }}>
+              <div style={{ height: waveformHeight, flexShrink: 0, display: 'flex' }}>
+                <WaveformView />
               </div>
-            )}
-            {activeTab === 'blocks' && (
-              <div className="le-blocks-container">
+              <div className="le-resizer le-resizer-vertical" onMouseDown={(e) => startResize(e, 'waveform')} />
+              <div className="le-pr-canvas-area">
+                <PianoRoll />
+              </div>
+              {store.showVelocityTab && <div className="le-resizer le-resizer-vertical" onMouseDown={(e) => startResize(e, 'velocity')} />}
+              {store.showVelocityTab && (
+                <div style={{ height: velocityHeight, flexShrink: 0, display: 'flex' }}>
+                  <VelocityTab />
+                </div>
+              )}
+            </div>
+            <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          visibility: activeTab === 'blocks' ? 'visible' : 'hidden',
+          pointerEvents: activeTab === 'blocks' ? 'auto' : 'none'
+        }}>
+          <div className="le-blocks-container" style={{ position: 'relative', width: '100%', height: '100%' }}>
+                <ShortcutsEnabler />
+                <BlocksPlaybackSync />
                 <GameCanvas />
                 <div className="le-blocks-hint">
                   Drag blocks to arrange your beatmap layout
                 </div>
+                
+                {/* Editor UI overlays for blocks mode */}
+                <div className="ui-overlay" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10 }}>
+                  <div 
+                    className="ui-pointer-events"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      if (e.nativeEvent) e.nativeEvent.stopImmediatePropagation();
+                    }}
+                  >
+                    <Toolbar />
+                    <HierarchyPanel />
+                    <SettingsPanel />
+                    <HelpPanel />
+                    <SelectionPropertiesHud />
+                    <ContextMenu />
+                  </div>
+                </div>
+                
+                {/* Bottom Mini Player */}
+                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 24px', background: 'linear-gradient(to top, rgba(0,0,0,0.9), transparent)', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                   <div style={{ color: 'white', fontSize: 14, opacity: 0.8 }}>Preview Playback</div>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                      <button 
+                        onClick={() => store.togglePlayback()}
+                        style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}
+                      >
+                        {store.isPlaying ? <Pause size={28} /> : <Play size={28} />}
+                      </button>
+                      
+                      <MiniPlayerSlider />
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                         <Volume2 size={20} color="white" />
+                         <input 
+                           type="range"
+                           min="0"
+                           max="100"
+                           step="1"
+                           value={store.audioVolume}
+                           onChange={(e) => store.setAudioVolume(parseFloat(e.target.value))}
+                           style={{ width: 80, accentColor: '#6366f1', cursor: 'pointer' }}
+                           tabIndex={-1}
+                           onFocus={(e) => e.target.blur()}
+                           onKeyDown={(e) => e.preventDefault()}
+                         />
+                      </div>
+                   </div>
+                </div>
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>

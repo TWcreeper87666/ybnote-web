@@ -4,7 +4,7 @@ import * as PIXI from 'pixi.js';
 import { useStore } from '../../store/useStore';
 import { getPitchColorNumber } from '../../utils/colors';
 import { playNote } from '../../utils/audio';
-import { BaseBlock } from '../blocks/BaseBlock';
+import { NoteBlock } from '../blocks/NoteBlock';
 
 const APPROACH_TIME = 800; // ms before the event that the circle appears
 const HIT_WINDOW = 200; // ms window for perfect hit
@@ -112,12 +112,12 @@ export const GameCanvas: React.FC = () => {
   const tickCounter = useRef(0);
 
   // Arrangement state
-  const [dragBlockId, setDragBlockId] = useState<string | null>(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const hasPausedRef = useRef(false);
   const initialGameBlocksRef = useRef<any[]>([]);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [selectionBox, setSelectionBox] = useState<{x: number, y: number, w: number, h: number} | null>(null);
+  const selectionStartRef = useRef<{x: number, y: number} | null>(null);
 
   // Play state camera and trails
   const activeStrokesRef = useRef<TrailStroke[]>([]);
@@ -140,7 +140,8 @@ export const GameCanvas: React.FC = () => {
   useEffect(() => {
     const handleGlobalUp = () => {
       setIsPanning(false);
-      setDragBlockId(null);
+      selectionStartRef.current = null;
+      setSelectionBox(null);
       if (hasPausedRef.current) {
           useStore.temporal.getState().resume();
           hasPausedRef.current = false;
@@ -160,8 +161,10 @@ export const GameCanvas: React.FC = () => {
       let newZoom = oldZoom * direction;
       newZoom = Math.min(Math.max(newZoom, 0.1), 5);
       
-      const globalX = state.gameState === 'play' ? window.innerWidth / 2 : e.clientX;
-      const globalY = state.gameState === 'play' ? window.innerHeight / 2 : e.clientY;
+      const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
+      const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+      const globalX = state.gameState === 'play' ? window.innerWidth / 2 : e.clientX - rect.left;
+      const globalY = state.gameState === 'play' ? window.innerHeight / 2 : e.clientY - rect.top;
       const localX = (globalX - state.camera.x) / oldZoom;
       const localY = (globalY - state.camera.y) / oldZoom;
       
@@ -236,8 +239,10 @@ export const GameCanvas: React.FC = () => {
 
     const handleMouseDown = () => {
       const state = useStore.getState();
-      const centerX = window.innerWidth / 2;
-      const centerY = window.innerHeight / 2;
+      const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
+      const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
       const localX = (centerX - state.camera.x) / state.camera.zoom;
       const localY = (centerY - state.camera.y) / state.camera.zoom;
       
@@ -418,12 +423,23 @@ export const GameCanvas: React.FC = () => {
         setIsPanning(true);
         const pos = e.global;
         setPanStart({ x: pos.x - useStore.getState().camera.x, y: pos.y - useStore.getState().camera.y });
+      } else if (e.button === 0 && e.target && e.target.label === 'background') { // Left click
+        useStore.getState().closeContextMenu();
+        if (!e.ctrlKey && !e.shiftKey) {
+          useStore.getState().clearSelection();
+        }
+        const pos = e.currentTarget.toLocal(e.global);
+        selectionStartRef.current = { x: pos.x, y: pos.y };
+        setSelectionBox({ x: pos.x, y: pos.y, w: 0, h: 0 });
+        if (e.pointerId !== undefined && e.target.setPointerCapture) {
+          e.target.setPointerCapture(e.pointerId);
+        }
       } else if (e.button === 2) { // Right click
         const id = nextStrokeId.current++;
         currentStrokeId.current = id;
         activeStrokesRef.current.push({
           id,
-          points: [{ x: e.global.x, y: e.global.y, time: Date.now() }] // Global is fine for visual if we aren't panning, but trails expect local
+          points: [{ x: e.global.x, y: e.global.y, time: Date.now() }] 
         });
         intersectedBlocksRef.current.clear();
         
@@ -431,53 +447,28 @@ export const GameCanvas: React.FC = () => {
         const localX = (e.global.x - state.camera.x) / state.camera.zoom;
         const localY = (e.global.y - state.camera.y) / state.camera.zoom;
         
-        // Fix points to local
         activeStrokesRef.current[activeStrokesRef.current.length - 1].points[0] = { x: localX, y: localY, time: Date.now() };
 
         checkTrailIntersection(localX, localY, localX, localY);
       }
   };
 
-  const handleBlockPointerDown = (e: any, id: string, x: number, y: number) => {
-      if (gameState !== 'arrange') return;
-      if (e.button === 1 || e.button === 2) return; // Ignore middle and right click on blocks for dragging
-      setDragBlockId(id);
-      const pos = e.currentTarget.parent.toLocal(e.global);
-      setDragOffset({ x: pos.x - x, y: pos.y - y });
-      
-      hasPausedRef.current = false;
-      initialGameBlocksRef.current = useStore.getState().gameBlocks;
-      
-      if (e.target && e.target.setPointerCapture) e.target.setPointerCapture(e.pointerId);
-  };
-
   const handlePointerMove = (e: any) => {
-      if (gameState === 'arrange' && dragBlockId) {
+      if (gameState === 'arrange' && selectionStartRef.current) {
           const pos = e.currentTarget.toLocal(e.global);
-          let newX = pos.x - dragOffset.x;
-          let newY = pos.y - dragOffset.y;
+          const start = selectionStartRef.current;
+          const x = Math.min(start.x, pos.x);
+          const y = Math.min(start.y, pos.y);
+          const w = Math.abs(pos.x - start.x);
+          const h = Math.abs(pos.y - start.y);
+          setSelectionBox({ x, y, w, h });
           
-          const snapSize = useStore.getState().snapToGrid ? 20 : 1;
-          newX = Math.round(newX / snapSize) * snapSize;
-          newY = Math.round(newY / snapSize) * snapSize;
-
-          if (!hasPausedRef.current) {
-              const state = useStore.getState();
-              useStore.temporal.setState(s => ({
-                  pastStates: [...s.pastStates, { 
-                      blocks: state.blocks, 
-                      groups: state.groups, 
-                      groupRects: state.groupRects, 
-                      tracks: state.tracks, 
-                      gameBlocks: state.gameBlocks 
-                  }],
-                  futureStates: []
-              }));
-              useStore.temporal.getState().pause();
-              hasPausedRef.current = true;
-          }
-
-          useStore.getState().updateGameBlock(dragBlockId, { x: newX, y: newY });
+          const state = useStore.getState();
+          const directlySelectedGameBlocks = state.gameBlocks.filter(b => {
+            return b.x < x + w && b.x + 60 > x && b.y < y + h && b.y + 60 > y;
+          });
+          
+          useStore.setState({ selectedBlockIds: directlySelectedGameBlocks.map(b => b.id) });
       } else if (gameState === 'arrange' && e.buttons === 2) {
           const state = useStore.getState();
           const localX = (e.global.x - state.camera.x) / state.camera.zoom;
@@ -500,8 +491,9 @@ export const GameCanvas: React.FC = () => {
       }
   };
 
-  const handlePointerUp = () => {
-      setDragBlockId(null);
+  const handlePointerUp = (e: any) => {
+      selectionStartRef.current = null;
+      setSelectionBox(null);
       setIsPanning(false);
       currentStrokeId.current = null;
       intersectedBlocksRef.current.clear();
@@ -509,7 +501,19 @@ export const GameCanvas: React.FC = () => {
           useStore.temporal.getState().resume();
           hasPausedRef.current = false;
       }
+      if (e.pointerId !== undefined && e.target && e.target.releasePointerCapture) {
+        try { e.target.releasePointerCapture(e.pointerId); } catch (err) {}
+      }
   };
+
+  const drawSelectionBox = useCallback((g: PIXI.Graphics) => {
+    g.clear();
+    if (selectionBox) {
+      g.rect(selectionBox.x, selectionBox.y, selectionBox.w, selectionBox.h);
+      g.fill({ color: 0x6366f1, alpha: 0.2 });
+      g.stroke({ width: 1, color: 0x6366f1, alpha: 0.8 });
+    }
+  }, [selectionBox]);
 
   const drawGrid = useCallback((g: PIXI.Graphics) => {
     g.clear();
@@ -551,31 +555,19 @@ export const GameCanvas: React.FC = () => {
         onPointerUp={handlePointerUp}
         onPointerUpOutside={handlePointerUp}
       >
-        <pixiGraphics draw={drawGrid} eventMode="static" />
+        <pixiGraphics label="background" draw={drawGrid} eventMode="static" />
+        <pixiGraphics zIndex={200} draw={drawSelectionBox} eventMode="none" />
         
         {/* Draw Blocks */}
-        {gameBlocks.map(b => {
-            const blockColor = getPitchColorNumber(b.pitch, 36);
-            return (
-              <BaseBlock 
-                 key={b.id}
-                 id={b.id}
-                 x={b.x}
-                 y={b.y}
-                 pitch={b.pitch}
-                 instrument={b.instrument ?? 'piano'}
-                 volume={b.volume ?? 1}
-                 blockColor={blockColor} 
-                 onPointerDown={(e) => handleBlockPointerDown(e, b.id, b.x, b.y)}
-                 isInteractive={gameState === 'arrange'}
-                 showPitch={showBlockPitch}
-                 showInstrument={showBlockInstrument}
-                 showVolume={showBlockVolume}
-                 opacity={blockOpacity}
-                 playedAt={b.playedAt}
-              />
-            );
-        })}
+        {gameBlocks.map(b => (
+          <NoteBlock 
+             key={b.id}
+             id={b.id}
+             x={b.x}
+             y={b.y}
+             pitch={b.pitch}
+          />
+        ))}
 
         {/* Draw Approach Circles */}
         {gameState === 'play' && activeCirclesState.map(circle => (

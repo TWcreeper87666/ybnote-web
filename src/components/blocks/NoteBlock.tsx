@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { BaseBlock } from './BaseBlock';
 import { DrumBlock } from './DrumBlock';
+import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import { getPitchColorNumber } from '../../utils/colors';
 
 interface NoteBlockProps {
@@ -16,7 +17,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
   const blockOpacity = useStore(state => state.blockOpacity);
   const isSelected = selectedBlockIds.includes(id);
 
-  const block = useStore(state => state.blocks.find(b => b.id === id));
+  const block = useStore(state => state.blocks.find(b => b.id === id) || state.gameBlocks.find(b => b.id === id));
   const volume = block?.volume ?? 1;
   const instrument = block?.instrument ?? 'piano';
   const playedAt = block?.playedAt;
@@ -41,12 +42,25 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
   React.useEffect(() => {
     if (playedAt && playedAt !== lastPlayedRef.current) {
       lastPlayedRef.current = playedAt;
-      import('../../utils/audio').then(({ playNote }) => {
-          playNote(pitch, volume * playedVolumeMultiplier, instrument);
-          if (useStore.getState().mode === 'play') {
-             useStore.getState().setLatestPerformHit({ time: Date.now(), color: blockColor });
-          }
-      });
+      
+      const isLevelEditorPlaying = window.location.href.includes('editor') && 
+        (() => {
+           try {
+             const state = (window as any).levelEditorStore.getState();
+             return state.isPlaying;
+           } catch (e) {
+             return false;
+           }
+        })();
+
+      if (!isLevelEditorPlaying) {
+          import('../../utils/audio').then(({ playNote }) => {
+              playNote(pitch, volume * playedVolumeMultiplier, instrument);
+              if (useStore.getState().mode === 'play') {
+                 useStore.getState().setLatestPerformHit({ time: Date.now(), color: blockColor });
+              }
+          });
+      }
     }
   }, [playedAt, pitch, volume, instrument, playedVolumeMultiplier, blockColor]);
 
@@ -112,9 +126,12 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
 
     let hasPaused = false;
     const state = useStore.getState();
-    const selectedBlocks = state.blocks.filter(b => state.selectedBlockIds.includes(b.id));
+    const selectedBlocks = [
+      ...state.blocks.filter(b => state.selectedBlockIds.includes(b.id)),
+      ...state.gameBlocks.filter(b => state.selectedBlockIds.includes(b.id))
+    ];
     if (!selectedBlocks.find(b => b.id === id)) {
-      const thisBlock = state.blocks.find(b => b.id === id);
+      const thisBlock = state.blocks.find(b => b.id === id) || state.gameBlocks.find(b => b.id === id);
       if (thisBlock) selectedBlocks.push(thisBlock);
     }
     const selectedTracks = state.tracks.filter(t => state.selectedTrackIds.includes(t.id));
@@ -128,8 +145,11 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
       const state = useStore.getState();
       const camera = state.camera;
       
-      const localX = (e.clientX - camera.x) / camera.zoom;
-      const localY = (e.clientY - camera.y) / camera.zoom;
+      let canvas = document.querySelector('.le-blocks-container canvas');
+      if (!canvas) canvas = document.querySelector('canvas');
+      const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+      const localX = (e.clientX - rect.left - camera.x) / camera.zoom;
+      const localY = (e.clientY - rect.top - camera.y) / camera.zoom;
       
       let newX = localX - dragOffset.x;
       let newY = localY - dragOffset.y;
@@ -146,7 +166,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
       const deltaX = newX - thisInit.x;
       const deltaY = newY - thisInit.y;
       
-      const currentBlock = state.blocks.find(sb => sb.id === id);
+      const currentBlock = state.blocks.find(sb => sb.id === id) || state.gameBlocks.find(sb => sb.id === id);
       if (currentBlock && (thisInit.x + deltaX) === currentBlock.x && (thisInit.y + deltaY) === currentBlock.y) {
         return;
       }
@@ -211,6 +231,19 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
 
   const BlockComponent = instrument === 'percussion' ? DrumBlock : BaseBlock;
 
+  const isEditor = window.location.href.includes('editor');
+  const midiData = useLevelEditorStore((s) => isEditor ? s.midiData : null);
+
+  const isInvalid = React.useMemo(() => {
+    if (!isEditor || !midiData) return false;
+    for (const track of midiData.tracks) {
+      if (track.instrument === instrument) {
+        if (track.notes.some(n => n.name === pitch)) return false;
+      }
+    }
+    return true;
+  }, [pitch, instrument, midiData, isEditor]);
+
   return (
     <BlockComponent
       id={id}
@@ -231,6 +264,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
       onPointerUp={handlePointerUp}
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}
+      isInvalid={isInvalid}
     />
   );
 };

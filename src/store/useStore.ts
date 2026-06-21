@@ -333,9 +333,13 @@ export const useStore = create<AppState>()(
           if (updates.playedAt !== undefined) {
              get().recordEvent('block', id);
           }
-          return {
-            blocks: state.blocks.map(b => b.id === id ? { ...b, ...updates } : b)
-          };
+          if (state.blocks.some(b => b.id === id)) {
+            return { blocks: state.blocks.map(b => b.id === id ? { ...b, ...updates } : b) };
+          }
+          if (state.gameBlocks.some(b => b.id === id)) {
+            return { gameBlocks: state.gameBlocks.map(b => b.id === id ? { ...b, ...updates } : b) };
+          }
+          return state;
         }),
 
         updateBlocks: (updates) => set((state) => {
@@ -348,7 +352,8 @@ export const useStore = create<AppState>()(
           });
 
           const newState: Partial<AppState> = {
-            blocks: state.blocks.map(b => updateMap.has(b.id) ? { ...b, ...updateMap.get(b.id)! } : b)
+            blocks: state.blocks.map(b => updateMap.has(b.id) ? { ...b, ...updateMap.get(b.id)! } : b),
+            gameBlocks: state.gameBlocks.map(b => updateMap.has(b.id) ? { ...b, ...updateMap.get(b.id)! } : b)
           };
           if (updates.length === 1) {
             const u = updates[0].updates;
@@ -360,20 +365,74 @@ export const useStore = create<AppState>()(
           return newState as AppState;
         }),
 
-        deleteSelected: () => set((state) => ({
-          blocks: state.blocks.filter((b) => !state.selectedBlockIds.includes(b.id)),
-          selectedBlockIds: [],
-          tracks: state.tracks.filter(t => !state.selectedTrackIds.includes(t.id)),
-          runners: state.runners.filter(r => !state.selectedTrackIds.includes(r.trackId)),
-          selectedTrackIds: [],
-          groupRects: state.groupRects.filter(g => !state.selectedGroupRectIds.includes(g.id)),
-          selectedGroupRectIds: []
-        })),
+        deleteSelected: () => set((state) => {
+          const blocksToRemove = state.blocks.filter((b) => state.selectedBlockIds.includes(b.id));
+          let gameBlocksToRemove = state.gameBlocks.filter((b) => state.selectedBlockIds.includes(b.id));
+
+          // Condition: "只能刪有一個以上同樣音調的" (Only delete if > 1 block of same pitch), UNLESS it's invalid (not in MIDI)
+          if (gameBlocksToRemove.length > 0) {
+            const pitchCounts = new Map<string, number>();
+            state.gameBlocks.forEach(b => {
+              const key = `${b.pitch}-${b.instrument || 'piano'}`;
+              pitchCounts.set(key, (pitchCounts.get(key) || 0) + 1);
+            });
+            
+            // Try to get editor state to check validity
+            let editorState: any = null;
+            const isEditor = window.location.href.includes('editor');
+            if (isEditor) {
+              try {
+                editorState = (window as any).levelEditorStore.getState();
+              } catch (e) {}
+            }
+
+            gameBlocksToRemove = gameBlocksToRemove.filter(b => {
+              let isInvalid = false;
+              if (editorState && editorState.midiData) {
+                isInvalid = true;
+                const bInst = b.instrument || 'piano';
+                for (const track of editorState.midiData.tracks) {
+                  if (track.instrument === bInst) {
+                    if (track.notes.some((n: any) => n.name === b.pitch)) {
+                      isInvalid = false;
+                      break;
+                    }
+                  }
+                }
+              }
+
+              if (isInvalid) return true;
+
+              const key = `${b.pitch}-${b.instrument || 'piano'}`;
+              const count = pitchCounts.get(key) || 0;
+              if (count > 1) {
+                pitchCounts.set(key, count - 1);
+                return true;
+              }
+              return false;
+            });
+          }
+
+          const idsToRemove = [...blocksToRemove.map(b=>b.id), ...gameBlocksToRemove.map(b=>b.id)];
+
+          return {
+            blocks: state.blocks.filter((b) => !idsToRemove.includes(b.id)),
+            gameBlocks: state.gameBlocks.filter((b) => !idsToRemove.includes(b.id)),
+            selectedBlockIds: state.selectedBlockIds.filter(id => !idsToRemove.includes(id)),
+            tracks: state.tracks.filter(t => !state.selectedTrackIds.includes(t.id)),
+            runners: state.runners.filter(r => !state.selectedTrackIds.includes(r.trackId)),
+            selectedTrackIds: [],
+            groupRects: state.groupRects.filter(g => !state.selectedGroupRectIds.includes(g.id)),
+            selectedGroupRectIds: []
+          };
+        }),
 
         selectBlock: (id, multi) => set((state) => {
-          const item = state.blocks.find(b => b.id === id);
+          const item = state.blocks.find(b => b.id === id) || state.gameBlocks.find(b => b.id === id);
           const groupId = item?.groupId;
-          const targetBlockIds = groupId ? state.blocks.filter(b => b.groupId === groupId).map(b => b.id) : [id];
+          const targetBlockIds = groupId 
+            ? [...state.blocks.filter(b => b.groupId === groupId).map(b => b.id), ...state.gameBlocks.filter(b => b.groupId === groupId).map(b => b.id)] 
+            : [id];
           const targetTrackIds = groupId ? state.tracks.filter(t => t.groupId === groupId).map(t => t.id) : [];
           const targetGroupRectIds = groupId ? state.groupRects.filter(g => g.groupId === groupId).map(g => g.id) : [];
 
@@ -460,7 +519,7 @@ export const useStore = create<AppState>()(
         })),
 
         selectAllBlocks: () => set((state) => ({
-          selectedBlockIds: state.blocks.map(b => b.id),
+          selectedBlockIds: state.gameState === 'arrange' ? state.gameBlocks.map(b => b.id) : state.blocks.map(b => b.id),
           selectedTrackIds: [],
           selectedGroupRectIds: [],
           activeTrackId: null,
@@ -479,7 +538,7 @@ export const useStore = create<AppState>()(
           }
 
           const updates = finalTargetIds.map(id => {
-            const block = state.blocks.find(b => b.id === id);
+            const block = state.blocks.find(b => b.id === id) || state.gameBlocks.find(b => b.id === id);
             if (!block) return null;
             return { id, updates: mutator(block) };
           }).filter(Boolean) as { id: string, updates: Partial<Block> }[];
@@ -581,9 +640,10 @@ export const useStore = create<AppState>()(
         copySelected: () => {
           const state = get();
           const blocksToCopy = state.blocks.filter(b => state.selectedBlockIds.includes(b.id));
+          const gameBlocksToCopy = state.gameBlocks.filter(b => state.selectedBlockIds.includes(b.id));
           const tracksToCopy = state.tracks.filter(t => state.selectedTrackIds.includes(t.id));
           const groupRectsToCopy = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
-          set({ clipboardBlocks: blocksToCopy, clipboardTracks: tracksToCopy, clipboardGroupRects: groupRectsToCopy });
+          set({ clipboardBlocks: blocksToCopy.length > 0 ? blocksToCopy : gameBlocksToCopy, clipboardTracks: tracksToCopy, clipboardGroupRects: groupRectsToCopy });
         },
 
         pasteClipboard: () => set((state) => {
@@ -611,6 +671,14 @@ export const useStore = create<AppState>()(
             x: g.x + 20,
             y: g.y + 20
           }));
+          
+          if (state.gameState === 'arrange') {
+             return {
+               gameBlocks: [...state.gameBlocks, ...newBlocks],
+               selectedBlockIds: newBlocks.map(b => b.id),
+             };
+          }
+
           return {
             blocks: [...state.blocks, ...newBlocks],
             selectedBlockIds: newBlocks.map(b => b.id),

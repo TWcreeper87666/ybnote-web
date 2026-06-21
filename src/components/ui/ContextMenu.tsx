@@ -377,11 +377,11 @@ export const ContextMenu: React.FC = () => {
     );
   }
 
-  const block = blocks.find(b => b.id === actualId);
+  const block = blocks.find(b => b.id === actualId) || useStore.getState().gameBlocks.find(b => b.id === actualId);
   if (!block) return null;
 
   const targetBlocks = selectedBlockIds.length > 0 && selectedBlockIds.includes(block.id) 
-    ? blocks.filter(b => selectedBlockIds.includes(b.id))
+    ? [...blocks, ...useStore.getState().gameBlocks].filter(b => selectedBlockIds.includes(b.id))
     : [block];
 
   const tunePitch = (semitones: number) => {
@@ -590,6 +590,7 @@ export const ContextMenu: React.FC = () => {
         </div>
       )}
 
+      {useStore.getState().gameState !== 'arrange' && (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px' }}>
         <label style={{ fontSize: '12px', opacity: 0.8 }}>{block.instrument === 'percussion' ? 'Drum Type' : 'Pitch'}</label>
         {block.instrument === 'percussion' ? (
@@ -616,6 +617,7 @@ export const ContextMenu: React.FC = () => {
           </div>
         )}
       </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px' }}>
         <label style={{ fontSize: '12px', opacity: 0.8 }}>Volume: {Math.round((block.volume ?? 1) * 100)}%</label>

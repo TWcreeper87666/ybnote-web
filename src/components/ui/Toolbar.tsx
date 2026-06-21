@@ -5,7 +5,7 @@ import { exportRecordedEventsToMidi, importMidiToBlocks } from '../../utils/midi
 import { useNavigate } from 'react-router-dom';
 
 export const Toolbar: React.FC = () => {
-  const { toggleSettings, toggleHelp, toggleHierarchy, deleteSelected, selectedBlockIds, selectedTrackIds, selectedGroupRectIds, mode, setMode, isRecording, startRecording, stopRecording } = useStore();
+  const { toggleSettings, toggleHelp, toggleHierarchy, deleteSelected, selectedBlockIds, selectedTrackIds, selectedGroupRectIds, mode, setMode, isRecording, startRecording, stopRecording, gameState } = useStore();
   const navigate = useNavigate();
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -18,6 +18,7 @@ export const Toolbar: React.FC = () => {
 
   return (
     <>
+      {gameState !== 'arrange' && (
       <div className="top-toolbar glass-panel" style={{ gap: '8px' }}>
         <button 
           className={`toolbar-btn ${mode === 'piano' ? 'primary-btn' : ''}`}
@@ -82,6 +83,7 @@ export const Toolbar: React.FC = () => {
           <input type="file" accept=".mid,.midi" style={{ display: 'none' }} onChange={handleImport} />
         </label>
       </div>
+      )}
 
       <div className="toolbar glass-panel">
 
@@ -117,6 +119,7 @@ export const Toolbar: React.FC = () => {
         <LayoutList size={24} />
       </button>
 
+      {gameState !== 'arrange' && (
       <button 
         className="toolbar-btn"
         onClick={() => navigate('/game')}
@@ -124,6 +127,7 @@ export const Toolbar: React.FC = () => {
       >
         <Gamepad2 size={24} />
       </button>
+      )}
 
       <button 
         className="toolbar-btn"

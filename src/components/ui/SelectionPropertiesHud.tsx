@@ -24,7 +24,7 @@ export const SelectionPropertiesHud: React.FC = () => {
       {totalSelected === 1 ? (
         <div className="hud-content">
           {selectedBlockIds.length === 1 && (() => {
-            const block = blocks.find(b => b.id === selectedBlockIds[0]);
+            const block = blocks.find(b => b.id === selectedBlockIds[0]) || useStore.getState().gameBlocks.find(b => b.id === selectedBlockIds[0]);
             if (!block) return null;
             return (
               <>

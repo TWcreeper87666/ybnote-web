@@ -464,6 +464,7 @@ export const PianoRoll: React.FC = () => {
   }, []);
 
   // --- Mouse handlers ---
+  const wasPlayingRef = useRef(false);
 
   const handleMouseDown = useCallback((e: MouseEvent) => {
     const store = useLevelEditorStore.getState();
@@ -492,6 +493,8 @@ export const PianoRoll: React.FC = () => {
 
     if (target.type === 'timeline') {
       if (e.button === 0) {
+        wasPlayingRef.current = store.isPlaying;
+        if (store.isPlaying) store.stopPlayback();
         store.setPlaybackAnchor(x / store.zoomLevel);
         dragAction.current = 'scrub';
       }
@@ -759,6 +762,9 @@ export const PianoRoll: React.FC = () => {
     const store = useLevelEditorStore.getState();
 
     if (dragAction.current === 'scrub') {
+      if (wasPlayingRef.current && !useLevelEditorStore.getState().isPlaying) {
+        useLevelEditorStore.getState().togglePlayback();
+      }
       dragAction.current = 'none';
       return;
     }
@@ -950,6 +956,17 @@ export const PianoRoll: React.FC = () => {
 
   const store = useLevelEditorStore();
   const hasTrack = !!store.midiData && store.midiData.tracks.length > 0;
+
+  // Ensure canvases are resized when track is first loaded/created
+  useEffect(() => {
+    if (hasTrack) {
+      // Use timeout to allow React to flush DOM and attach refs
+      const timer = setTimeout(() => {
+        resizeCanvases();
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [hasTrack, resizeCanvases]);
 
   return (
     <div className="piano-roll-wrapper" ref={wrapperRef}>

@@ -20,10 +20,11 @@ export interface BaseBlockProps {
   onPointerUp?: (e: PIXI.FederatedPointerEvent) => void;
   onPointerEnter?: (e: PIXI.FederatedPointerEvent) => void;
   onPointerLeave?: (e: PIXI.FederatedPointerEvent) => void;
+  isInvalid?: boolean;
 }
 
 export const BaseBlock: React.FC<BaseBlockProps> = ({
-  x, y, pitch, instrument, volume = 1, isInteractive = true, blockColor, onPointerDown, onPointerUp, onPointerEnter, onPointerLeave, opacity = 1, showPitch, showInstrument, showVolume, playedAt, isSelected = false
+  x, y, pitch, instrument, volume = 1, isInteractive = true, blockColor, onPointerDown, onPointerUp, onPointerEnter, onPointerLeave, opacity = 1, showPitch, showInstrument, showVolume, playedAt, isSelected = false, isInvalid = false
 }) => {
   const graphicsRef = useRef<PIXI.Graphics>(null);
   const ripplesRef = useRef<{id: number, progress: number}[]>([]);
@@ -56,7 +57,12 @@ export const BaseBlock: React.FC<BaseBlockProps> = ({
 
     g.roundRect(0, 0, 60, 60, 8); // Square block
     g.fill({ color: blockColor, alpha: opacity });
-    g.stroke({ width: isSelected ? 3 : 2, color: isSelected ? 0x4f46e5 : 0xffffff, alpha: isSelected ? 1 : 0.4 });
+    
+    if (isInvalid) {
+      g.stroke({ width: 4, color: 0xff3333, alpha: 1 });
+    } else {
+      g.stroke({ width: isSelected ? 3 : 2, color: isSelected ? 0x4f46e5 : 0xffffff, alpha: isSelected ? 1 : 0.4 });
+    }
 
     // Draw volume bar
     if (showVolume) {
@@ -65,7 +71,7 @@ export const BaseBlock: React.FC<BaseBlockProps> = ({
       g.roundRect(4, 50, 52 * volume, 6, 3);
       g.fill({ color: 0xffffff, alpha: 0.8 });
     }
-  }, [blockColor, opacity, showVolume, volume, isSelected]);
+  }, [blockColor, opacity, showVolume, volume, isSelected, isInvalid]);
 
   useEffect(() => {
     let animationFrameId: number;

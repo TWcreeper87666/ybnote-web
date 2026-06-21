@@ -129,6 +129,10 @@ export const WaveformView: React.FC = () => {
     }
   }, [store.isPlaying, store.playbackPosition, store.playbackAnchor, store.audioStartTime, store.audioPlaybackRate, isLoaded, audioDuration]);
 
+  const isShiftDragging = useRef(false);
+  const isScrubbing = useRef(false);
+  const wasPlayingRef = useRef(false);
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 1) { // Middle click panning
       e.preventDefault();
@@ -146,13 +150,37 @@ export const WaveformView: React.FC = () => {
     const target = e.target as HTMLElement;
     if (target.closest('.rate-selector')) return;
     
-    setIsDragging(false);
-    dragStartX.current = e.clientX;
-    dragStartAudioTime.current = store.audioStartTime;
-    clickStart.current = Date.now();
-    
-    window.addEventListener('mousemove', handleWindowMouseMove);
-    window.addEventListener('mouseup', handleWindowMouseUp);
+    if (e.button === 0 && e.shiftKey) {
+      isShiftDragging.current = true;
+      setIsDragging(false);
+      dragStartX.current = e.clientX;
+      dragStartAudioTime.current = store.audioStartTime;
+      clickStart.current = Date.now();
+      
+      window.addEventListener('mousemove', handleWindowMouseMove);
+      window.addEventListener('mouseup', handleWindowMouseUp);
+    } else if (e.button === 0) {
+      isShiftDragging.current = false;
+      isScrubbing.current = true;
+      setIsDragging(false);
+      clickStart.current = Date.now();
+
+      wasPlayingRef.current = store.isPlaying;
+      if (store.isPlaying) store.stopPlayback();
+
+      if (wrapperRef.current) {
+        const contentEl = wrapperRef.current.querySelector('.waveform-content');
+        if (contentEl) {
+          const rect = contentEl.getBoundingClientRect();
+          const clickX = e.clientX - rect.left;
+          const clickedTime = Math.max(0, clickX / store.zoomLevel);
+          store.setPlaybackAnchor(clickedTime);
+        }
+      }
+      
+      window.addEventListener('mousemove', handleWindowMouseMove);
+      window.addEventListener('mouseup', handleWindowMouseUp);
+    }
   };
 
   const handleWindowMouseMove = (e: MouseEvent) => {
@@ -162,15 +190,27 @@ export const WaveformView: React.FC = () => {
       return;
     }
 
-    const dx = e.clientX - dragStartX.current;
-    if (Math.abs(dx) > 3) {
-      setIsDragging(true);
-      const dt = dx / store.zoomLevel;
-      store.setAudioStartTime(dragStartAudioTime.current + dt);
-      
-      if (wavesurferRef.current && !useLevelEditorStore.getState().isPlaying) {
-        const targetAudioTime = (store.playbackAnchor - store.audioStartTime) * store.audioPlaybackRate;
-        wavesurferRef.current.setTime(Math.max(0, targetAudioTime));
+    if (isShiftDragging.current) {
+      const dx = e.clientX - dragStartX.current;
+      if (Math.abs(dx) > 3) {
+        setIsDragging(true);
+        const dt = dx / store.zoomLevel;
+        store.setAudioStartTime(dragStartAudioTime.current + dt);
+        
+        if (wavesurferRef.current && !useLevelEditorStore.getState().isPlaying) {
+          const targetAudioTime = (store.playbackAnchor - store.audioStartTime) * store.audioPlaybackRate;
+          wavesurferRef.current.setTime(Math.max(0, targetAudioTime));
+        }
+      }
+    } else if (isScrubbing.current) {
+      if (wrapperRef.current) {
+        const contentEl = wrapperRef.current.querySelector('.waveform-content');
+        if (contentEl) {
+          const rect = contentEl.getBoundingClientRect();
+          const clickX = e.clientX - rect.left;
+          const clickedTime = Math.max(0, clickX / store.zoomLevel);
+          store.setPlaybackAnchor(clickedTime);
+        }
       }
     }
   };
@@ -185,19 +225,18 @@ export const WaveformView: React.FC = () => {
       return;
     }
 
-    if (!isDragging && Date.now() - clickStart.current < 300) {
-      // Treat as click for seeking
-      if (wrapperRef.current && wavesurferRef.current) {
-        const contentEl = wrapperRef.current.querySelector('.waveform-content');
-        if (contentEl) {
-          const rect = contentEl.getBoundingClientRect();
-          const clickX = e.clientX - rect.left;
-          const clickedTime = Math.max(0, clickX / store.zoomLevel);
-          store.setPlaybackAnchor(clickedTime);
-        }
+    if (isShiftDragging.current) {
+      if (isDragging) {
+        useLevelEditorStore.getState().commitHistory();
+      }
+      isShiftDragging.current = false;
+      setIsDragging(false);
+    } else if (isScrubbing.current) {
+      isScrubbing.current = false;
+      if (wasPlayingRef.current && !useLevelEditorStore.getState().isPlaying) {
+        useLevelEditorStore.getState().togglePlayback();
       }
     }
-    setIsDragging(false);
   };
 
   useEffect(() => {
@@ -266,6 +305,9 @@ export const WaveformView: React.FC = () => {
           value={store.audioPlaybackRate} 
           onChange={(e) => store.setAudioPlaybackRate(Number(e.target.value))}
           style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid #444', color: '#fff', padding: '2px 6px', borderRadius: 4, fontSize: '0.75rem', outline: 'none', cursor: 'pointer' }}
+          tabIndex={-1}
+          onFocus={(e) => e.target.blur()}
+          onKeyDown={(e) => e.preventDefault()}
         >
           <option value={0.5}>0.5x</option>
           <option value={0.75}>0.75x</option>

@@ -28,6 +28,7 @@ interface HistorySnapshot {
   notes: EditorNote[];
   selectedNoteIds: string[];
   chartEndPosition?: number;
+  audioStartTime?: number;
 }
 
 interface LevelEditorState {
@@ -419,10 +420,14 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
       notes: JSON.parse(JSON.stringify(track.notes)),
       selectedNoteIds: Array.from(s.selectedNoteIds),
       chartEndPosition: s.chartEndPosition,
+      audioStartTime: s.audioStartTime,
     };
     const newHistory = s.history.slice(0, s.historyIndex + 1);
     newHistory.push(snapshot);
-    set({ history: newHistory, historyIndex: newHistory.length - 1 });
+    set({
+      history: newHistory,
+      historyIndex: newHistory.length - 1
+    });
   },
 
   undo: () => {
@@ -438,6 +443,7 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
       historyIndex: newIndex,
       selectedNoteIds: new Set(snapshot.selectedNoteIds),
       ...(snapshot.chartEndPosition !== undefined && { chartEndPosition: snapshot.chartEndPosition }),
+      ...(snapshot.audioStartTime !== undefined && { audioStartTime: snapshot.audioStartTime }),
     });
   },
 
@@ -454,6 +460,7 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
       historyIndex: newIndex,
       selectedNoteIds: new Set(snapshot.selectedNoteIds),
       ...(snapshot.chartEndPosition !== undefined && { chartEndPosition: snapshot.chartEndPosition }),
+      ...(snapshot.audioStartTime !== undefined && { audioStartTime: snapshot.audioStartTime }),
     });
   },
 
@@ -512,3 +519,7 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
     });
   },
 }));
+
+if (typeof window !== 'undefined') {
+  (window as any).levelEditorStore = useLevelEditorStore;
+}
