@@ -1,6 +1,7 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
-import { X, Keyboard, Mouse } from 'lucide-react';
+import { Keyboard, Mouse } from 'lucide-react';
+import { ModalPanel } from './ModalPanel';
 
 export const HelpPanel: React.FC = () => {
   const { isHelpOpen, toggleHelp } = useStore();
@@ -8,20 +9,7 @@ export const HelpPanel: React.FC = () => {
   if (!isHelpOpen) return null;
 
   return (
-    <div 
-      className="settings-panel glass-panel" 
-      style={{ width: '380px' }}
-      onWheel={(e) => e.stopPropagation()}
-    >
-      <div className="settings-header">
-        <h2>Help & Shortcuts</h2>
-        <button onClick={toggleHelp} className="icon-btn icon-btn-round">
-          <X size={20} />
-        </button>
-      </div>
-
-      <div className="settings-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-        
+    <ModalPanel title="Help & Shortcuts" isOpen={isHelpOpen} onClose={toggleHelp}>
         <div className="settings-section">
           <h3><Mouse size={16} /> Mouse Controls</h3>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.9rem', lineHeight: '1.6' }}>
@@ -70,7 +58,6 @@ export const HelpPanel: React.FC = () => {
           </ul>
         </div>
 
-      </div>
-    </div>
+    </ModalPanel>
   );
 };

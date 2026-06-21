@@ -14,7 +14,7 @@ import { SettingsPanel } from '../components/ui/SettingsPanel';
 import { SelectionPropertiesHud } from '../components/ui/SelectionPropertiesHud';
 import { ContextMenu } from '../components/ui/ContextMenu';
 import { HelpPanel } from '../components/ui/HelpPanel';
-import { HierarchyPanel } from '../components/ui/HierarchyPanel';
+import { OutlinerPanel } from '../components/ui/OutlinerPanel';
 import { useShortcuts } from '../hooks/useShortcuts';
 
 const ShortcutsEnabler = () => {
@@ -146,7 +146,7 @@ export const LevelEditorPage: React.FC = () => {
     const startX = localCenterX - (cols * 80) / 2;
     const localStartY = (100 - camera.y) / camera.zoom;
 
-    for (const [key, info] of uniqueNotes.entries()) {
+    for (const info of uniqueNotes.values()) {
       const exists = currentBlocks.some(b => b.pitch === info.pitch && b.instrument === info.instrument);
       if (!exists) {
         const id = Math.random().toString(36).substring(2, 9);
@@ -360,7 +360,7 @@ export const LevelEditorPage: React.FC = () => {
                     }}
                   >
                     <Toolbar />
-                    <HierarchyPanel />
+                    <OutlinerPanel />
                     <SettingsPanel />
                     <HelpPanel />
                     <SelectionPropertiesHud />

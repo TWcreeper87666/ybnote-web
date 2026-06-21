@@ -222,7 +222,7 @@ export const LevelEditorToolbar: React.FC = () => {
   return (
     <>
       <div className="le-toolbar glass-panel">
-        <button className="le-toolbar-btn" onClick={() => navigate('/editor')} title="Back to Editor">
+        <button className="le-toolbar-btn" onClick={() => navigate('/playground')} title="Back to Playground">
           <ArrowLeft size={18} />
         </button>
 

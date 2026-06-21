@@ -4,6 +4,7 @@ import { BaseBlock } from './BaseBlock';
 import { DrumBlock } from './DrumBlock';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import { getPitchColorNumber } from '../../utils/colors';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 interface NoteBlockProps {
   id: string;
@@ -16,6 +17,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
   const { selectedBlockIds, selectBlock } = useStore();
   const blockOpacity = useStore(state => state.blockOpacity);
   const isSelected = selectedBlockIds.includes(id);
+  const isMobile = useIsMobile();
 
   const block = useStore(state => state.blocks.find(b => b.id === id) || state.gameBlocks.find(b => b.id === id));
   const volume = block?.volume ?? 1;
@@ -29,7 +31,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   
-  const clickStartPosRef = React.useRef<{x: number, y: number} | null>(null);
+  const clickStartPosRef = React.useRef<{x: number, y: number, pointerId?: number} | null>(null);
   const wasSelectedRef = React.useRef(false);
   const lastClickTimeRef = React.useRef(0);
 
@@ -43,7 +45,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
     if (playedAt && playedAt !== lastPlayedRef.current) {
       lastPlayedRef.current = playedAt;
       
-      const isLevelEditorPlaying = window.location.href.includes('editor') && 
+      const isLevelEditorPlaying = window.location.hash.includes('editor') && 
         (() => {
            try {
              const state = (window as any).levelEditorStore.getState();
@@ -65,6 +67,8 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
   }, [playedAt, pitch, volume, instrument, playedVolumeMultiplier, blockColor]);
 
   const handlePointerDown = (e: any) => {
+    const state = useStore.getState();
+    if (state.gameState === 'play' || state.gameState === 'countdown') return;
     const button = e.button; 
     const isMultiSelect = e.ctrlKey || e.shiftKey;
     
@@ -75,7 +79,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
       }
       e.stopPropagation(); // prevent canvas from handling left click box selection
       wasSelectedRef.current = isSelected;
-      clickStartPosRef.current = { x: e.clientX, y: e.clientY };
+      clickStartPosRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
       let shouldDrag = false;
       if (isMultiSelect) {
         selectBlock(id, true);
@@ -142,6 +146,15 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
     const initialGroupRects = new Map(selectedGroupRects.map(g => [g.id, { x: g.x, y: g.y }]));
 
     const handleGlobalMove = (e: PointerEvent) => {
+      if (clickStartPosRef.current && clickStartPosRef.current.pointerId !== undefined && e.pointerId !== clickStartPosRef.current.pointerId) {
+        return;
+      }
+      if (isMobile && (window as any).__activeTouches > 1) {
+        setIsDragging(false);
+        if (hasPaused) useStore.temporal.getState().resume();
+        useStore.getState().clearSelection();
+        return;
+      }
       const state = useStore.getState();
       const camera = state.camera;
       
@@ -206,6 +219,9 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
       if (hasPaused) {
         useStore.temporal.getState().resume();
       }
+      if (isMobile) {
+        useStore.getState().clearSelection();
+      }
     };
 
     window.addEventListener('pointermove', handleGlobalMove);
@@ -231,7 +247,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
 
   const BlockComponent = instrument === 'percussion' ? DrumBlock : BaseBlock;
 
-  const isEditor = window.location.href.includes('editor');
+  const isEditor = window.location.hash.includes('editor');
   const midiData = useLevelEditorStore((s) => isEditor ? s.midiData : null);
 
   const isInvalid = React.useMemo(() => {

@@ -10,8 +10,8 @@ export const useShortcuts = () => {
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
         if (e.ctrlKey && e.key.toLowerCase() === 'f') {
           e.preventDefault();
-          state.toggleHierarchy();
-          if (!state.isHierarchyOpen) {
+          state.toggleOutliner();
+          if (!state.isOutlinerOpen) {
             setTimeout(() => {
               const searchInput = document.getElementById('outliner-search-input') as HTMLInputElement;
               if (searchInput) searchInput.focus();
@@ -81,8 +81,8 @@ export const useShortcuts = () => {
             break;
           case 'f':
             e.preventDefault();
-            state.toggleHierarchy();
-            if (!state.isHierarchyOpen) {
+            state.toggleOutliner();
+            if (!state.isOutlinerOpen) {
               setTimeout(() => {
                 const searchInput = document.getElementById('outliner-search-input') as HTMLInputElement;
                 if (searchInput) searchInput.focus();

@@ -96,12 +96,13 @@ interface AppState {
   isPianoOpen: boolean;
   isSettingsOpen: boolean;
   isHelpOpen: boolean;
-  isHierarchyOpen: boolean;
+  isOutlinerOpen: boolean;
+  isTutorialOpen: boolean;
   uiStateBeforePlay?: {
     isPianoOpen: boolean;
     isSettingsOpen: boolean;
     isHelpOpen: boolean;
-    isHierarchyOpen: boolean;
+    isOutlinerOpen: boolean;
     isSearchOpen: boolean;
     selectedBlockIds: string[];
     selectedTrackIds: string[];
@@ -184,7 +185,8 @@ interface AppState {
   togglePiano: () => void;
   toggleSettings: () => void;
   toggleHelp: () => void;
-  toggleHierarchy: () => void;
+  toggleOutliner: () => void;
+  toggleTutorial: () => void;
   setSearchQuery: (query: string) => void;
   setSearchOpen: (isOpen: boolean) => void;
   setHoveredBlockId: (id: string | null) => void;
@@ -227,13 +229,18 @@ interface AppState {
   gameEvents: { time: number; pitch: string; instrument: string; blockId: string; }[];
   gameScore: number;
   gameCombo: number;
+  perfectCount: number;
+  goodCount: number;
+  badCount: number;
+  missCount: number;
+  maxCombo: number;
   gameResetCount: number;
   setGameState: (state: AppState['gameState']) => void;
   setGameFileName: (name: string | null) => void;
   setGameBlocks: (blocks: Block[]) => void;
   updateGameBlock: (id: string, updates: Partial<Block>) => void;
   setGameEvents: (events: AppState['gameEvents']) => void;
-  setGameStats: (stats: Partial<{ gameScore: number, gameCombo: number, latestHit: HitEvent | null }>) => void;
+  setGameStats: (stats: Partial<{ gameScore: number, gameCombo: number, perfectCount: number, goodCount: number, badCount: number, missCount: number, maxCombo: number, latestHit: HitEvent | null }>) => void;
   setGameSpeed: (speed: number) => void;
   resetGamePlay: () => void;
   latestHit: HitEvent | null;
@@ -246,6 +253,13 @@ interface AppState {
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
+
+const getSystemTheme = (): Theme => {
+  if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    return 'dark';
+  }
+  return 'light';
+};
 
 export const useStore = create<AppState>()(
   temporal(
@@ -267,13 +281,14 @@ export const useStore = create<AppState>()(
         clipboardTracks: [],
         clipboardGroupRects: [],
         camera: { x: 0, y: 0, zoom: 1 },
-        theme: 'dark',
+        theme: getSystemTheme(),
         showGrid: true,
         snapToGrid: true,
         isPianoOpen: false,
         isSettingsOpen: false,
         isHelpOpen: false,
-        isHierarchyOpen: false,
+        isOutlinerOpen: false,
+        isTutorialOpen: false,
         searchQuery: '',
         isSearchOpen: false,
 
@@ -312,6 +327,11 @@ export const useStore = create<AppState>()(
         gameEvents: [],
         gameScore: 0,
         gameCombo: 0,
+        perfectCount: 0,
+        goodCount: 0,
+        badCount: 0,
+        missCount: 0,
+        maxCombo: 0,
         gameResetCount: 0,
         
         toastMessage: null,
@@ -379,7 +399,7 @@ export const useStore = create<AppState>()(
             
             // Try to get editor state to check validity
             let editorState: any = null;
-            const isEditor = window.location.href.includes('editor');
+            const isEditor = window.location.hash.includes('editor');
             if (isEditor) {
               try {
                 editorState = (window as any).levelEditorStore.getState();
@@ -510,21 +530,64 @@ export const useStore = create<AppState>()(
           return { selectedGroupRectIds: targetGroupRectIds, selectedBlockIds: targetBlockIds, selectedTrackIds: targetTrackIds, lastSelectedId: id, lastSelectedType: 'groupRect' };
         }),
 
-        selectAll: () => set((state) => ({
-          selectedBlockIds: state.blocks.map(b => b.id),
-          selectedTrackIds: state.tracks.map(t => t.id),
-          selectedGroupRectIds: state.groupRects.map(g => g.id),
-          activeTrackId: null,
-          editingTrackId: null
-        })),
+        selectAll: () => set((state) => {
+          if (state.selectedGroupRectIds.length > 0) {
+            const selectedRects = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
+            
+            const isInside = (x: number, y: number, w: number = 60, h: number = 60) => {
+              return selectedRects.some(g => x < g.x + g.w && x + w > g.x && y < g.y + g.h && y + h > g.y);
+            };
 
-        selectAllBlocks: () => set((state) => ({
-          selectedBlockIds: state.gameState === 'arrange' ? state.gameBlocks.map(b => b.id) : state.blocks.map(b => b.id),
-          selectedTrackIds: [],
-          selectedGroupRectIds: [],
-          activeTrackId: null,
-          editingTrackId: null
-        })),
+            const blockIds = state.blocks.filter(b => isInside(b.x, b.y)).map(b => b.id);
+            const trackIds = state.tracks.filter(t => t.nodes.some(n => isInside(n.x, n.y, 10, 10))).map(t => t.id);
+            const groupRectIds = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id) || isInside(g.x, g.y, g.w, g.h)).map(g => g.id);
+
+            return {
+              selectedBlockIds: blockIds,
+              selectedTrackIds: trackIds,
+              selectedGroupRectIds: groupRectIds,
+              activeTrackId: null,
+              editingTrackId: null
+            };
+          }
+
+          return {
+            selectedBlockIds: state.blocks.map(b => b.id),
+            selectedTrackIds: state.tracks.map(t => t.id),
+            selectedGroupRectIds: state.groupRects.map(g => g.id),
+            activeTrackId: null,
+            editingTrackId: null
+          };
+        }),
+
+        selectAllBlocks: () => set((state) => {
+          if (state.selectedGroupRectIds.length > 0) {
+            const selectedRects = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
+            
+            const isInside = (x: number, y: number, w: number = 60, h: number = 60) => {
+              return selectedRects.some(g => x < g.x + g.w && x + w > g.x && y < g.y + g.h && y + h > g.y);
+            };
+
+            const targetBlocks = state.gameState === 'arrange' ? state.gameBlocks : state.blocks;
+            const blockIds = targetBlocks.filter(b => isInside(b.x, b.y)).map(b => b.id);
+
+            return {
+              selectedBlockIds: blockIds,
+              selectedTrackIds: [],
+              selectedGroupRectIds: state.selectedGroupRectIds,
+              activeTrackId: null,
+              editingTrackId: null
+            };
+          }
+
+          return {
+            selectedBlockIds: state.gameState === 'arrange' ? state.gameBlocks.map(b => b.id) : state.blocks.map(b => b.id),
+            selectedTrackIds: [],
+            selectedGroupRectIds: [],
+            activeTrackId: null,
+            editingTrackId: null
+          };
+        }),
 
         clearSelection: () => set({ selectedBlockIds: [], selectedTrackIds: [], selectedGroupRectIds: [], activeTrackId: null, editingTrackId: null }),
 
@@ -708,9 +771,10 @@ export const useStore = create<AppState>()(
         closeContextMenu: () => set({ contextMenu: null }),
         toggleContextMenu: (menu) => set((state) => ({ contextMenu: state.contextMenu?.blockId === menu.blockId ? null : menu })),
         togglePiano: () => set((state) => ({ isPianoOpen: !state.isPianoOpen })),
-        toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen, isHelpOpen: false })),
-        toggleHelp: () => set((state) => ({ isHelpOpen: !state.isHelpOpen, isSettingsOpen: false })),
-        toggleHierarchy: () => set((state) => ({ isHierarchyOpen: !state.isHierarchyOpen })),
+        toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen, isHelpOpen: false, isTutorialOpen: false })),
+        toggleHelp: () => set((state) => ({ isHelpOpen: !state.isHelpOpen, isSettingsOpen: false, isTutorialOpen: false })),
+        toggleOutliner: () => set((state) => ({ isOutlinerOpen: !state.isOutlinerOpen })),
+        toggleTutorial: () => set((state) => ({ isTutorialOpen: !state.isTutorialOpen, isSettingsOpen: false, isHelpOpen: false })),
         setSearchQuery: (searchQuery) => set({ searchQuery }),
         setSearchOpen: (isSearchOpen) => set({ isSearchOpen }),
         setHoveredBlockId: (hoveredBlockId) => set({ hoveredBlockId }),
@@ -775,7 +839,7 @@ export const useStore = create<AppState>()(
                      isPianoOpen: state.isPianoOpen,
                      isSettingsOpen: state.isSettingsOpen,
                      isHelpOpen: state.isHelpOpen,
-                     isHierarchyOpen: state.isHierarchyOpen,
+                     isOutlinerOpen: state.isOutlinerOpen,
                      isSearchOpen: state.isSearchOpen,
                      selectedBlockIds: state.selectedBlockIds,
                      selectedTrackIds: state.selectedTrackIds,
@@ -787,7 +851,7 @@ export const useStore = create<AppState>()(
              updates.isPianoOpen = false;
              updates.isSettingsOpen = false;
              updates.isHelpOpen = false;
-             updates.isHierarchyOpen = false;
+             updates.isOutlinerOpen = false;
              updates.isSearchOpen = false;
           } else {
              // Handle normal mode transitions
@@ -800,7 +864,7 @@ export const useStore = create<AppState>()(
                  updates.isPianoOpen = mode === 'piano' ? true : state.uiStateBeforePlay.isPianoOpen;
                  updates.isSettingsOpen = state.uiStateBeforePlay.isSettingsOpen;
                  updates.isHelpOpen = state.uiStateBeforePlay.isHelpOpen;
-                 updates.isHierarchyOpen = state.uiStateBeforePlay.isHierarchyOpen;
+                 updates.isOutlinerOpen = state.uiStateBeforePlay.isOutlinerOpen;
                  updates.isSearchOpen = state.uiStateBeforePlay.isSearchOpen;
                  
                  updates.selectedBlockIds = state.uiStateBeforePlay.selectedBlockIds;
@@ -899,7 +963,7 @@ export const useStore = create<AppState>()(
         setGameEvents: (gameEvents) => set({ gameEvents }),
         setGameStats: (stats) => set(state => ({ ...state, ...stats })),
         setGameSpeed: (gameSpeed) => set({ gameSpeed }),
-        resetGamePlay: () => set(s => ({ gameResetCount: s.gameResetCount + 1, gameScore: 0, gameCombo: 0, latestHit: null })),
+        resetGamePlay: () => set(s => ({ gameResetCount: s.gameResetCount + 1, gameScore: 0, gameCombo: 0, perfectCount: 0, goodCount: 0, badCount: 0, missCount: 0, maxCombo: 0, latestHit: null })),
         latestHit: null,
 
         latestPerformHit: null,

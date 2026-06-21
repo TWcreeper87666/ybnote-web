@@ -1,5 +1,6 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { EditorPage } from './pages/EditorPage';
+import { HomePage } from './pages/HomePage';
+import { PlaygroundPage } from './pages/PlaygroundPage';
 import { GamePage } from './pages/GamePage';
 import { LevelEditorPage } from './pages/LevelEditorPage';
 import { Toast } from './components/ui/Toast';
@@ -10,10 +11,11 @@ function App() {
     <>
       <HashRouter>
         <Routes>
-          <Route path="/editor" element={<EditorPage />} />
+          <Route path="/" element={<HomePage />} />
+          <Route path="/playground" element={<PlaygroundPage />} />
           <Route path="/game" element={<GamePage />} />
           <Route path="/level-editor" element={<LevelEditorPage />} />
-          <Route path="*" element={<Navigate to="/editor" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </HashRouter>
       <Toast />

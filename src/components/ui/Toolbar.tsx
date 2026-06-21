@@ -1,12 +1,10 @@
 import React from 'react';
 import { useStore, undoAction, redoAction } from '../../store/useStore';
-import { Settings, Music, Drum, Trash2, Undo2, Redo2, LayoutList, PenTool, HelpCircle, Square, Wand2, Circle, Download, Upload, Gamepad2 } from 'lucide-react';
+import { Settings, Music, Drum, Trash2, Undo2, Redo2, LayoutList, PenTool, HelpCircle, Square, Wand2, Circle, Download, Upload } from 'lucide-react';
 import { exportRecordedEventsToMidi, importMidiToBlocks } from '../../utils/midiUtils';
-import { useNavigate } from 'react-router-dom';
 
 export const Toolbar: React.FC = () => {
-  const { toggleSettings, toggleHelp, toggleHierarchy, deleteSelected, selectedBlockIds, selectedTrackIds, selectedGroupRectIds, mode, setMode, isRecording, startRecording, stopRecording, gameState } = useStore();
-  const navigate = useNavigate();
+  const { toggleSettings, toggleHelp, toggleOutliner, deleteSelected, selectedBlockIds, selectedTrackIds, selectedGroupRectIds, mode, setMode, isRecording, startRecording, stopRecording, gameState } = useStore();
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -113,21 +111,11 @@ export const Toolbar: React.FC = () => {
 
       <button 
         className="toolbar-btn"
-        onClick={toggleHierarchy}
-        title="Toggle Hierarchy"
+        onClick={toggleOutliner}
+        title="Toggle Outliner"
       >
         <LayoutList size={24} />
       </button>
-
-      {gameState !== 'arrange' && (
-      <button 
-        className="toolbar-btn"
-        onClick={() => navigate('/game')}
-        title="Enter Game Mode"
-      >
-        <Gamepad2 size={24} />
-      </button>
-      )}
 
       <button 
         className="toolbar-btn"

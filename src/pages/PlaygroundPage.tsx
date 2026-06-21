@@ -4,7 +4,7 @@ import { PianoKeyboard } from '../components/instruments/PianoKeyboard';
 import { DrumKeyboard } from '../components/instruments/DrumKeyboard';
 import { SettingsPanel } from '../components/ui/SettingsPanel';
 import { HelpPanel } from '../components/ui/HelpPanel';
-import { HierarchyPanel } from '../components/ui/HierarchyPanel';
+import { OutlinerPanel } from '../components/ui/OutlinerPanel';
 import { ContextMenu } from '../components/ui/ContextMenu';
 import { PlaybackControls } from '../components/ui/PlaybackControls';
 import { SelectionPropertiesHud } from '../components/ui/SelectionPropertiesHud';
@@ -12,7 +12,7 @@ import { useStore } from '../store/useStore';
 import { useShortcuts } from '../hooks/useShortcuts';
 import { useGameLoop } from '../hooks/useGameLoop';
 
-export function EditorPage() {
+export function PlaygroundPage() {
   const theme = useStore((state) => state.theme);
   
   // Initialize global shortcuts and game loop
@@ -41,7 +41,7 @@ export function EditorPage() {
           >
             <PlaybackControls />
             <Toolbar />
-            <HierarchyPanel />
+            <OutlinerPanel />
             <PianoKeyboard />
             <DrumKeyboard />
             <SettingsPanel />

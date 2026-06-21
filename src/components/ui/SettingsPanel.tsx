@@ -1,25 +1,12 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
-import { X, Moon, Sun, Grid } from 'lucide-react';
+import { Moon, Sun, Grid } from 'lucide-react';
+import { ModalPanel } from './ModalPanel';
 
 export const SettingsPanel: React.FC = () => {
   const { isSettingsOpen, toggleSettings, theme, setTheme, showGrid, snapToGrid, setGridConfig, blockOpacity, setBlockOpacity } = useStore();
-
-  if (!isSettingsOpen) return null;
-
   return (
-    <div 
-      className="settings-panel glass-panel"
-      onWheel={(e) => e.stopPropagation()}
-    >
-      <div className="settings-header">
-        <h2>Settings</h2>
-        <button onClick={toggleSettings} className="icon-btn icon-btn-round">
-          <X size={20} />
-        </button>
-      </div>
-
-      <div className="settings-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+    <ModalPanel title="Settings" isOpen={isSettingsOpen} onClose={toggleSettings}>
         {/* Theme Toggle */}
         <div className="settings-row">
           <span className="settings-label">
@@ -134,8 +121,9 @@ export const SettingsPanel: React.FC = () => {
           </label>
         </div>
 
-        {/* Actions */}
-        <div className="settings-actions">
+        {/* Actions - Hidden in Game Mode */}
+        {!window.location.hash.includes('/game') && (
+          <div className="settings-actions">
           <button 
             className="action-btn"
             onClick={() => {
@@ -177,8 +165,8 @@ export const SettingsPanel: React.FC = () => {
               }}
             />
           </label>
-        </div>
-      </div>
-    </div>
+          </div>
+        )}
+    </ModalPanel>
   );
 };

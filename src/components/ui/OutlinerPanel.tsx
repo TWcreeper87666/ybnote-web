@@ -28,10 +28,10 @@ const animateCameraTo = (targetX: number, targetY: number, duration = 300) => {
 
 type FilterState = { notes: boolean; groups: boolean; tracks: boolean; enable: boolean };
 
-export const HierarchyPanel: React.FC = () => {
+export const OutlinerPanel: React.FC = () => {
   const { 
     blocks, groupRects, tracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds,
-    isHierarchyOpen, 
+    isOutlinerOpen, 
     selectBlock, updateBlock, updateGroupRect, selectGroupRect, selectTrack,
     searchQuery, setSearchQuery,
     camera
@@ -48,8 +48,8 @@ export const HierarchyPanel: React.FC = () => {
     const handleFind = (e: any) => {
       const id = e.detail;
       
-      // Force open hierarchy panel if closed
-      useStore.setState({ isHierarchyOpen: true });
+      // Force open outliner panel if closed
+      useStore.setState({ isOutlinerOpen: true });
       
       // Determine if we need to expand a group and check if item is disabled
       const state = useStore.getState();
@@ -150,7 +150,7 @@ export const HierarchyPanel: React.FC = () => {
       return;
     }
 
-    const itemEls = Array.from(document.querySelectorAll('.hierarchy-item'));
+    const itemEls = Array.from(document.querySelectorAll('.outliner-item'));
     const getElId = (id: string, type: string) => 
       type === 'groupRect' ? `outliner-item-groupRect-${id}` :
       type === 'track' ? `outliner-item-track-${id}` :
@@ -198,7 +198,7 @@ export const HierarchyPanel: React.FC = () => {
     });
   };
 
-  if (!isHierarchyOpen) return null;
+  if (!isOutlinerOpen) return null;
 
   const query = searchQuery.toLowerCase();
 
@@ -271,12 +271,12 @@ export const HierarchyPanel: React.FC = () => {
 
   return (
     <div 
-      className="hierarchy-panel glass-panel"
+      className="outliner-panel glass-panel"
       style={{ left: position.x, top: position.y, margin: 0, position: 'absolute', resize: 'both', overflow: 'hidden', minWidth: '250px', minHeight: '400px', height: '400px' }}
       onWheel={(e) => e.stopPropagation()}
     >
       <div 
-        className="hierarchy-header select-none"
+        className="outliner-header select-none"
         style={{ cursor: 'move', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -285,7 +285,7 @@ export const HierarchyPanel: React.FC = () => {
         <h2 className="pointer-events-none" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}><LayoutList size={18} /> Outliner</h2>
         <button 
           className="icon-btn icon-btn-round" 
-          onClick={() => useStore.setState({ isHierarchyOpen: false })}
+          onClick={() => useStore.setState({ isOutlinerOpen: false })}
           onPointerDown={(e) => e.stopPropagation()} 
         >
           <X size={18} />
@@ -294,7 +294,7 @@ export const HierarchyPanel: React.FC = () => {
 
       {/* Filter Toggles */}
       <div 
-        className="hierarchy-filter-bar"
+        className="outliner-filter-bar"
         onWheel={(e) => {
           if (e.deltaY !== 0) {
             e.stopPropagation();
@@ -303,28 +303,28 @@ export const HierarchyPanel: React.FC = () => {
         }}
       >
         <button
-          className={`hierarchy-filter-btn ${filters.notes ? 'active' : ''}`}
+          className={`outliner-filter-btn ${filters.notes ? 'active' : ''}`}
           onClick={() => toggleFilter('notes')}
           title="Toggle Notes"
         >
           <Music size={14} /> Notes
         </button>
         <button
-          className={`hierarchy-filter-btn ${filters.groups ? 'active' : ''}`}
+          className={`outliner-filter-btn ${filters.groups ? 'active' : ''}`}
           onClick={() => toggleFilter('groups')}
           title="Toggle Groups"
         >
           <Square size={14} fill="currentColor" /> Groups
         </button>
         <button
-          className={`hierarchy-filter-btn ${filters.tracks ? 'active' : ''}`}
+          className={`outliner-filter-btn ${filters.tracks ? 'active' : ''}`}
           onClick={() => toggleFilter('tracks')}
           title="Toggle Tracks"
         >
           <GitBranch size={14} /> Tracks
         </button>
         <button
-          className={`hierarchy-filter-btn ${filters.enable ? 'active' : ''}`}
+          className={`outliner-filter-btn ${filters.enable ? 'active' : ''}`}
           onClick={() => toggleFilter('enable')}
           title="Toggle Enabled Only"
         >
@@ -332,7 +332,7 @@ export const HierarchyPanel: React.FC = () => {
         </button>
       </div>
       
-      <div className="hierarchy-search">
+      <div className="outliner-search">
         <Search size={16} className="search-icon" />
         <input 
           id="outliner-search-input"
@@ -344,7 +344,7 @@ export const HierarchyPanel: React.FC = () => {
         />
       </div>
 
-      <div className="hierarchy-content">
+      <div className="outliner-content">
         {/* GroupRects with their children */}
         {filters.groups && filteredGroupRects.map((gr, grIdx) => {
           const children = groupRectChildren.get(gr.id) || { blocks: [], tracks: [] };
@@ -450,10 +450,10 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
   };
 
   return (
-    <div className="hierarchy-group">
+    <div className="outliner-group">
       <div 
         id={`outliner-item-groupRect-${groupRect.id}`}
-        className={`hierarchy-item group-rect-item ${isSelected ? 'selected' : ''}`}
+        className={`outliner-item group-rect-item ${isSelected ? 'selected' : ''}`}
         style={{ opacity: groupRect.enabled === false && !isSelected ? 0.4 : 1 }}
         onPointerDown={() => wasSelectedRef.current = isSelected}
         onClick={(e) => {
@@ -474,7 +474,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
         }}
       >
         <button
-          className="hierarchy-collapse-btn"
+          className="outliner-collapse-btn"
           onClick={(e) => {
             e.stopPropagation();
             setIsCollapsed(!isCollapsed);
@@ -501,7 +501,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
                 e.stopPropagation();
               }
             }}
-            className="hierarchy-input font-semibold"
+            className="outliner-input font-semibold"
             onClick={(e) => e.stopPropagation()}
             autoFocus
           />
@@ -541,7 +541,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
           {isAllSelected ? <CheckSquare size={14} /> : <Square size={14} />}
         </button>
         <div 
-          className="hierarchy-key-badge"
+          className="outliner-key-badge"
           title={groupRect.keyBinding ? `Key bound: ${groupRect.keyBinding}` : "No key bound"}
         >
           <Keyboard size={12} />
@@ -551,7 +551,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
         </div>
       </div>
       {!isCollapsed && hasChildren && (
-        <div className="hierarchy-group-children">
+        <div className="outliner-group-children">
           {childBlocks.map((block: any) => (
             <BlockItem 
               key={block.id} 
@@ -594,7 +594,7 @@ const BlockItem = ({ block, selected, selectBlock, camera, handleShiftClick }: a
   return (
     <div 
       id={`outliner-item-${block.id}`}
-      className={`hierarchy-item block-item ${selected ? 'selected' : ''}`}
+      className={`outliner-item block-item ${selected ? 'selected' : ''}`}
       style={{ opacity: block.enabled === false && !selected ? 0.4 : 1 }}
       onPointerDown={() => wasSelectedRef.current = selected}
       onClick={(e) => {
@@ -621,7 +621,7 @@ const BlockItem = ({ block, selected, selectBlock, camera, handleShiftClick }: a
       </span>
 
       <div 
-        className="hierarchy-key-badge"
+        className="outliner-key-badge"
         title={block.keyBinding ? `Key bound: ${block.keyBinding}` : "No key bound"}
       >
         <Keyboard size={12} />
@@ -672,7 +672,7 @@ const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftCli
   return (
     <div 
       id={`outliner-item-track-${track.id}`}
-      className={`hierarchy-item track-item ${selected ? 'selected' : ''}`}
+      className={`outliner-item track-item ${selected ? 'selected' : ''}`}
       style={{ opacity: track.enabled === false && !selected ? 0.4 : 1 }}
       onPointerDown={() => wasSelectedRef.current = selected}
       onClick={(e) => {
@@ -710,7 +710,7 @@ const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftCli
               e.stopPropagation();
             }
           }}
-          className="hierarchy-input font-semibold"
+          className="outliner-input font-semibold"
           onClick={(e) => e.stopPropagation()}
           autoFocus
         />

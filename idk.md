@@ -2,15 +2,18 @@ record mode
 midi import/export
 export/ import icon??
 audio delay when no interaction
+new object: trigger
 
-game mode arrangement phase: add mutiple select
-level-editor same 
+ctrl+A in group
+use same template for arrangement and level-editor
+canvas
 
-level-editor, just like game mode arrangement, can play midi
+# game page:
+- esc when pause should resume
 
-level-editor ctrl+A no response
-ctrl+A in group 
-
+# level-editor:
+- ctrl+A no response
+- group not working
 
 failed when export .yblevel
 installHook.js:1 Export failed: ReferenceError: MPEGMode is not defined

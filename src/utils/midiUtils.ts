@@ -241,13 +241,10 @@ export const parseMidiForGame = async (file: File) => {
     let i = 0;
     const cols = 8;
     
-    // Place them relative to the current camera center so they are always visible
-    const centerX = window.innerWidth / 2;
-    const localCenterX = (centerX - state.camera.x) / state.camera.zoom;
-    const startX = localCenterX - (cols * 80) / 2;
-    
-    const localStartY = (100 - state.camera.y) / state.camera.zoom;
-    const startY = localStartY;
+    // Place them at the absolute center of the canvas (0, 0)
+    const numRows = Math.ceil(uniqueNotes.size / cols);
+    const startX = - (Math.min(cols, uniqueNotes.size) * 80) / 2 + 10;
+    const startY = - (numRows * 80) / 2 + 10;
 
     const blockIdMap = new Map<string, string>(); // Maps 'pitch-instrument' to blockId
 

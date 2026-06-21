@@ -12,6 +12,7 @@
   "dependencies": {
     "@pixi/react": "^8.0.5",
     "@tonejs/midi": "^2.0.28",
+    "framer-motion": "^12.40.0",
     "jszip": "^3.10.1",
     "lamejs": "^1.2.1",
     "lucide-react": "^1.18.0",

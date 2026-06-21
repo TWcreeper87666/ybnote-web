@@ -5,6 +5,7 @@ import { useStore } from '../../store/useStore';
 import { getPitchColorNumber } from '../../utils/colors';
 import { playNote } from '../../utils/audio';
 import { NoteBlock } from '../blocks/NoteBlock';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 const APPROACH_TIME = 800; // ms before the event that the circle appears
 const HIT_WINDOW = 200; // ms window for perfect hit
@@ -102,7 +103,8 @@ const TrailRenderer: React.FC<{
 };
 
 export const GameCanvas: React.FC = () => {
-  const { gameBlocks, gameEvents, camera, theme, gameState, updateGameBlock, setGameStats, gameResetCount, showGrid, showBlockPitch, showBlockInstrument, showBlockVolume, blockOpacity } = useStore();
+  const { gameBlocks, gameEvents, camera, theme, gameState, updateGameBlock, setGameStats, gameResetCount, showGrid } = useStore();
+  const isMobile = useIsMobile();
   
   const gameTimeRef = useRef(-2000);
   const lastTickTimeRef = useRef(Date.now());
@@ -113,11 +115,12 @@ export const GameCanvas: React.FC = () => {
 
   // Arrangement state
   const hasPausedRef = useRef(false);
-  const initialGameBlocksRef = useRef<any[]>([]);
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef({ x: 0, y: 0 });
   const [selectionBox, setSelectionBox] = useState<{x: number, y: number, w: number, h: number} | null>(null);
   const selectionStartRef = useRef<{x: number, y: number} | null>(null);
+  const isMobileRightClickRef = useRef(false);
 
   // Play state camera and trails
   const activeStrokesRef = useRef<TrailStroke[]>([]);
@@ -139,7 +142,7 @@ export const GameCanvas: React.FC = () => {
   // Global pointer up and wheel zoom
   useEffect(() => {
     const handleGlobalUp = () => {
-      setIsPanning(false);
+      isPanningRef.current = false;
       selectionStartRef.current = null;
       setSelectionBox(null);
       if (hasPausedRef.current) {
@@ -151,6 +154,7 @@ export const GameCanvas: React.FC = () => {
     window.addEventListener('pointercancel', handleGlobalUp);
 
     const wheelHandler = (e: WheelEvent) => {
+      if ((e.target as HTMLElement)?.closest('.settings-panel, .tutorial-overlay')) return;
       const state = useStore.getState();
       if (state.gameState !== 'arrange' && state.gameState !== 'play') return;
       e.preventDefault();
@@ -187,14 +191,57 @@ export const GameCanvas: React.FC = () => {
   useEffect(() => {
     if (gameState !== 'play') return;
     
-    document.body.requestPointerLock().catch(err => {
-      console.error("Pointer lock failed", err);
-    });
+    if (!isMobile) {
+      document.body.requestPointerLock().catch(err => {
+        console.error("Pointer lock failed", err);
+      });
+    }
 
     let rafId: number | null = null;
     let pendingMovementX = 0;
     let pendingMovementY = 0;
     let buttonsPressed = 0;
+
+    let leftTouchId: number | null = null;
+    let rightTouchId: number | null = null;
+    let lastRightTouchPos: { x: number, y: number } | null = null;
+    let playPinchDist = 0;
+    let playInitZoom = 1;
+    let playInitLocalX = 0;
+    let playInitLocalY = 0;
+
+    const applyMovement = () => {
+      const state = useStore.getState();
+      const newCamX = state.camera.x - pendingMovementX * (isMobile ? state.mouseSensitivity * 2 : state.mouseSensitivity);
+      const newCamY = state.camera.y - pendingMovementY * (isMobile ? state.mouseSensitivity * 2 : state.mouseSensitivity);
+      
+      if (buttonsPressed > 0) {
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        
+        const oldLocalX = (centerX - state.camera.x) / state.camera.zoom;
+        const oldLocalY = (centerY - state.camera.y) / state.camera.zoom;
+        
+        const newLocalX = (centerX - newCamX) / state.camera.zoom;
+        const newLocalY = (centerY - newCamY) / state.camera.zoom;
+        
+        if (currentStrokeId.current !== null) {
+          const stroke = activeStrokesRef.current.find(s => s.id === currentStrokeId.current);
+          if (stroke) {
+            stroke.points.push({ x: newLocalX, y: newLocalY, time: Date.now() });
+          }
+        }
+        
+        checkTrailIntersection(oldLocalX, oldLocalY, newLocalX, newLocalY);
+      }
+      
+      useStore.getState().updateCamera({ x: newCamX, y: newCamY });
+      
+      pendingMovementX = 0;
+      pendingMovementY = 0;
+      if (!isMobile) buttonsPressed = 0; // Mouse resets per move event if dragging, but actually let's keep buttonsPressed handled by mouseup/down
+      rafId = null;
+    };
 
     const handleMouseMove = (e: MouseEvent) => {
       pendingMovementX += e.movementX;
@@ -202,45 +249,14 @@ export const GameCanvas: React.FC = () => {
       buttonsPressed = e.buttons;
 
       if (!rafId) {
-        rafId = requestAnimationFrame(() => {
-          const state = useStore.getState();
-          const newCamX = state.camera.x - pendingMovementX * state.mouseSensitivity;
-          const newCamY = state.camera.y - pendingMovementY * state.mouseSensitivity;
-          
-          if (buttonsPressed > 0) {
-            const centerX = window.innerWidth / 2;
-            const centerY = window.innerHeight / 2;
-            
-            const oldLocalX = (centerX - state.camera.x) / state.camera.zoom;
-            const oldLocalY = (centerY - state.camera.y) / state.camera.zoom;
-            
-            const newLocalX = (centerX - newCamX) / state.camera.zoom;
-            const newLocalY = (centerY - newCamY) / state.camera.zoom;
-            
-            if (currentStrokeId.current !== null) {
-              const stroke = activeStrokesRef.current.find(s => s.id === currentStrokeId.current);
-              if (stroke) {
-                stroke.points.push({ x: newLocalX, y: newLocalY, time: Date.now() });
-              }
-            }
-            
-            checkTrailIntersection(oldLocalX, oldLocalY, newLocalX, newLocalY);
-          }
-          
-          useStore.getState().updateCamera({ x: newCamX, y: newCamY });
-          
-          pendingMovementX = 0;
-          pendingMovementY = 0;
-          buttonsPressed = 0;
-          rafId = null;
-        });
+        rafId = requestAnimationFrame(applyMovement);
       }
     };
 
     const handleMouseDown = () => {
       const state = useStore.getState();
       const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
-      const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+      const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
       const centerX = rect.width / 2;
       const centerY = rect.height / 2;
       const localX = (centerX - state.camera.x) / state.camera.zoom;
@@ -263,19 +279,136 @@ export const GameCanvas: React.FC = () => {
       }
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mouseup', handleMouseUp);
-      if (document.pointerLockElement) {
-        document.exitPointerLock();
+    const handleTouchStart = (e: TouchEvent) => {
+      const isCanvas = (e.target as HTMLElement)?.tagName?.toLowerCase() === 'canvas';
+      if (!isCanvas) return;
+      e.preventDefault();
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.clientX < window.innerWidth / 2) {
+          if (leftTouchId === null) {
+            leftTouchId = touch.identifier;
+            buttonsPressed = 1;
+            handleMouseDown();
+          }
+        } else {
+          if (rightTouchId === null) {
+            rightTouchId = touch.identifier;
+            lastRightTouchPos = { x: touch.clientX, y: touch.clientY };
+          }
+        }
       }
     };
-  }, [gameState]);
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const isCanvas = (e.target as HTMLElement)?.tagName?.toLowerCase() === 'canvas';
+      if (!isCanvas) return;
+      e.preventDefault();
+
+      let rightTouches = [];
+      for (let i = 0; i < e.touches.length; i++) {
+        if (e.touches[i].clientX >= window.innerWidth / 2) {
+          rightTouches.push(e.touches[i]);
+        }
+      }
+
+      if (rightTouches.length === 2) {
+        const dist = Math.sqrt(Math.pow(rightTouches[0].clientX - rightTouches[1].clientX, 2) + Math.pow(rightTouches[0].clientY - rightTouches[1].clientY, 2));
+        if (playPinchDist === 0) {
+          playPinchDist = dist;
+          playInitZoom = useStore.getState().camera.zoom;
+          const centerX = (rightTouches[0].clientX + rightTouches[1].clientX) / 2;
+          const centerY = (rightTouches[0].clientY + rightTouches[1].clientY) / 2;
+          const state = useStore.getState();
+          playInitLocalX = (centerX - state.camera.x) / state.camera.zoom;
+          playInitLocalY = (centerY - state.camera.y) / state.camera.zoom;
+        } else {
+          const state = useStore.getState();
+          const zoomFactor = dist / playPinchDist;
+          let newZoom = playInitZoom * zoomFactor;
+          newZoom = Math.min(Math.max(newZoom, 0.1), 5);
+          
+          const centerX = (rightTouches[0].clientX + rightTouches[1].clientX) / 2;
+          const centerY = (rightTouches[0].clientY + rightTouches[1].clientY) / 2;
+          
+          const newCameraX = centerX - playInitLocalX * newZoom;
+          const newCameraY = centerY - playInitLocalY * newZoom;
+          
+          state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+        }
+        lastRightTouchPos = null; // Prevent jump after pinch
+        return;
+      } else {
+        playPinchDist = 0;
+      }
+
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.identifier === rightTouchId && lastRightTouchPos) {
+          pendingMovementX += (touch.clientX - lastRightTouchPos.x);
+          pendingMovementY += (touch.clientY - lastRightTouchPos.y);
+          lastRightTouchPos = { x: touch.clientX, y: touch.clientY };
+          
+          if (!rafId) {
+             rafId = requestAnimationFrame(applyMovement);
+          }
+        }
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      const isCanvas = (e.target as HTMLElement)?.tagName?.toLowerCase() === 'canvas';
+      if (!isCanvas) return;
+      e.preventDefault();
+      
+      let rightTouchesCount = 0;
+      for (let i = 0; i < e.touches.length; i++) {
+        if (e.touches[i].clientX >= window.innerWidth / 2) rightTouchesCount++;
+      }
+      if (rightTouchesCount < 2) playPinchDist = 0;
+
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.identifier === leftTouchId) {
+          leftTouchId = null;
+          buttonsPressed = 0;
+          intersectedBlocksRef.current.clear();
+          currentStrokeId.current = null;
+        } else if (touch.identifier === rightTouchId) {
+          rightTouchId = null;
+          lastRightTouchPos = null;
+        }
+      }
+    };
+
+    if (isMobile) {
+      window.addEventListener('touchstart', handleTouchStart, { passive: false });
+      window.addEventListener('touchmove', handleTouchMove, { passive: false });
+      window.addEventListener('touchend', handleTouchEnd, { passive: false });
+      window.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+    } else {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mousedown', handleMouseDown);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      if (isMobile) {
+        window.removeEventListener('touchstart', handleTouchStart);
+        window.removeEventListener('touchmove', handleTouchMove);
+        window.removeEventListener('touchend', handleTouchEnd);
+        window.removeEventListener('touchcancel', handleTouchEnd);
+      } else {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mousedown', handleMouseDown);
+        window.removeEventListener('mouseup', handleMouseUp);
+        if (document.pointerLockElement) {
+          document.exitPointerLock();
+        }
+      }
+    };
+  }, [gameState, isMobile]);
 
   const lineIntersectsRect = (x1: number, y1: number, x2: number, y2: number, rx: number, ry: number, rw: number, rh: number) => {
     if (x1 >= rx && x1 <= rx + rw && y1 >= ry && y1 <= ry + rh) return true;
@@ -330,11 +463,19 @@ export const GameCanvas: React.FC = () => {
           if (minTimeDiff < 50) { points = 300; type = 'Perfect'; }
           else if (minTimeDiff < 100) { points = 100; type = 'Good'; }
           
-          setGameStats({ 
-              gameScore: useStore.getState().gameScore + points, 
-              gameCombo: useStore.getState().gameCombo + 1,
+          const state = useStore.getState();
+          const newCombo = state.gameCombo + 1;
+          const newStats: any = { 
+              gameScore: state.gameScore + points, 
+              gameCombo: newCombo,
+              maxCombo: Math.max(state.maxCombo, newCombo),
               latestHit: { type, offset, time: Date.now(), color: hitCircle.color }
-          });
+          };
+          if (type === 'Perfect') newStats.perfectCount = state.perfectCount + 1;
+          else if (type === 'Good') newStats.goodCount = state.goodCount + 1;
+          else if (type === 'Bad') newStats.badCount = state.badCount + 1;
+          
+          setGameStats(newStats);
           setActiveCirclesState([...activeCirclesRef.current]);
       } else {
           // Break combo for hitting wrong block or too early? Osu usually doesn't break on empty hits, but let's leave it.
@@ -396,12 +537,22 @@ export const GameCanvas: React.FC = () => {
 
        if (elapsedTime > circle.eventTime + HIT_WINDOW) {
            activeCirclesRef.current.splice(i, 1);
+           const state = useStore.getState();
            setGameStats({ 
              gameCombo: 0,
+             missCount: state.missCount + 1,
              latestHit: { type: 'Miss', offset: HIT_WINDOW, time: Date.now(), color: circle.color }
            }); // Break combo
            stateChanged = true;
        }
+    }
+
+    if (pendingEventsRef.current.length === 0 && activeCirclesRef.current.length === 0) {
+        const lastEventTime = gameEvents.length > 0 ? gameEvents[gameEvents.length - 1].time : 0;
+        if (elapsedTime > lastEventTime + HIT_WINDOW + 1500) {
+            useStore.getState().setGameState('result');
+            return;
+        }
     }
 
     tickCounter.current++;
@@ -416,23 +567,257 @@ export const GameCanvas: React.FC = () => {
       return null;
   };
 
+  // Pinch Zoom for Arrange Mode
+  useEffect(() => {
+    if (!isMobile) return;
+    
+    let initialPinchDist = 0;
+    let initialZoom = 1;
+    let initialLocalX = 0;
+    let initialLocalY = 0;
+    
+    let longPressTimer: any;
+    let startX = 0; let startY = 0;
+
+    const trackTouches = (e: TouchEvent) => { 
+      if ((e.target as HTMLElement)?.closest('.settings-panel, .tutorial-overlay')) return;
+      (window as any).__activeTouches = e.touches.length; 
+      const isCanvas = (e.target as HTMLElement)?.tagName?.toLowerCase() === 'canvas';
+      
+      if (e.type === 'touchstart') {
+          if (e.touches.length === 1) {
+              startX = e.touches[0].clientX;
+              startY = e.touches[0].clientY;
+              longPressTimer = setTimeout(() => {
+                  if ((window as any).__activeTouches === 1) {
+                      window.dispatchEvent(new CustomEvent('mobile-long-press', { detail: { x: startX, y: startY } }));
+                  }
+              }, 500);
+
+              if (useStore.getState().gameState === 'arrange') {
+                 const state = useStore.getState();
+                 let canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
+                 const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+                 const localX = (startX - rect.left - state.camera.x) / state.camera.zoom;
+                 const localY = (startY - rect.top - state.camera.y) / state.camera.zoom;
+                 const hitBlock = state.gameBlocks.find(b => localX >= b.x && localX <= b.x + 60 && localY >= b.y && localY <= b.y + 60);
+                 if (!hitBlock) {
+                     (window as any).__panStart = { x: startX - state.camera.x, y: startY - state.camera.y };
+                 } else {
+                     (window as any).__panStart = null;
+                 }
+              }
+          } else {
+              clearTimeout(longPressTimer);
+          }
+          
+          if (e.touches.length >= 2 && useStore.getState().gameState === 'arrange') {
+              const dx = e.touches[0].clientX - e.touches[1].clientX;
+              const dy = e.touches[0].clientY - e.touches[1].clientY;
+              initialPinchDist = Math.sqrt(dx*dx + dy*dy);
+              const state = useStore.getState();
+              initialZoom = state.camera.zoom;
+              const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+              const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+              const rect = (e.target as HTMLElement).getBoundingClientRect?.() || { left: 0, top: 0 };
+              initialLocalX = (centerX - rect.left - state.camera.x) / state.camera.zoom;
+              initialLocalY = (centerY - rect.top - state.camera.y) / state.camera.zoom;
+          }
+      } else if (e.type === 'touchmove') {
+          if (isCanvas && e.cancelable) e.preventDefault(); // Prevents browser scrolling, guarantees continuous events!
+
+          if (e.touches.length === 1 && Math.hypot(e.touches[0].clientX - startX, e.touches[0].clientY - startY) > 10) {
+              clearTimeout(longPressTimer);
+          }
+
+          const state = useStore.getState();
+          if (e.touches.length === 1 && state.gameState === 'arrange') {
+              if (isMobileRightClickRef.current) {
+                  let canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
+                  const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+                  const localX = (e.touches[0].clientX - rect.left - state.camera.x) / state.camera.zoom;
+                  const localY = (e.touches[0].clientY - rect.top - state.camera.y) / state.camera.zoom;
+                  
+                  if (currentStrokeId.current !== null) {
+                      const stroke = activeStrokesRef.current.find(s => s.id === currentStrokeId.current);
+                      if (stroke && stroke.points.length > 0) {
+                          const prev = stroke.points[stroke.points.length - 1];
+                          if (Math.hypot(localX - prev.x, localY - prev.y) > 2) {
+                              stroke.points.push({ x: localX, y: localY, time: Date.now() });
+                              checkTrailIntersection(prev.x, prev.y, localX, localY);
+                          }
+                      }
+                  }
+              } else if ((window as any).__panStart && Math.hypot(e.touches[0].clientX - startX, e.touches[0].clientY - startY) > 5) {
+                  useStore.getState().updateCamera({
+                     x: e.touches[0].clientX - (window as any).__panStart.x,
+                     y: e.touches[0].clientY - (window as any).__panStart.y
+                  });
+              }
+          }
+          
+          if (e.touches.length >= 2 && initialPinchDist > 0 && useStore.getState().gameState === 'arrange') {
+              const dx = e.touches[0].clientX - e.touches[1].clientX;
+              const dy = e.touches[0].clientY - e.touches[1].clientY;
+              const dist = Math.sqrt(dx*dx + dy*dy);
+              const zoomFactor = dist / initialPinchDist;
+              let newZoom = initialZoom * zoomFactor;
+              newZoom = Math.min(Math.max(newZoom, 0.1), 5);
+              const currentCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+              const currentCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+              const rect = (e.target as HTMLElement).getBoundingClientRect?.() || { left: 0, top: 0 };
+              const newCameraX = (currentCenterX - rect.left) - initialLocalX * newZoom;
+              const newCameraY = (currentCenterY - rect.top) - initialLocalY * newZoom;
+              useStore.getState().updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+          }
+      } else {
+          clearTimeout(longPressTimer);
+          if (e.touches.length === 1) {
+              // User lifted a finger from a pinch, re-initialize panning for the remaining finger
+              startX = e.touches[0].clientX;
+              startY = e.touches[0].clientY;
+              if (useStore.getState().gameState === 'arrange') {
+                 const state = useStore.getState();
+                 (window as any).__panStart = { x: startX - state.camera.x, y: startY - state.camera.y };
+              }
+          }
+          if (e.touches.length < 2) initialPinchDist = 0;
+          if (e.touches.length === 0) {
+              (window as any).__panStart = null;
+              if (isMobileRightClickRef.current) {
+                  isMobileRightClickRef.current = false;
+                  currentStrokeId.current = null;
+                  intersectedBlocksRef.current.clear();
+              }
+          }
+      }
+    };
+    
+    window.addEventListener('touchstart', trackTouches, { passive: false });
+    window.addEventListener('touchmove', trackTouches, { passive: false });
+    window.addEventListener('touchend', trackTouches);
+    window.addEventListener('touchcancel', trackTouches);
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (useStore.getState().gameState !== 'arrange') return;
+      if (e.touches.length >= 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        initialPinchDist = Math.sqrt(dx*dx + dy*dy);
+        const state = useStore.getState();
+        initialZoom = state.camera.zoom;
+        
+        const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        
+        let canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
+        const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+        
+        initialLocalX = (centerX - rect.left - state.camera.x) / state.camera.zoom;
+        initialLocalY = (centerY - rect.top - state.camera.y) / state.camera.zoom;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const state = useStore.getState();
+      if (state.gameState !== 'arrange') return;
+      
+      if (e.touches.length >= 2 && initialPinchDist > 0) {
+        e.preventDefault();
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        const zoomFactor = dist / initialPinchDist;
+        let newZoom = initialZoom * zoomFactor;
+        newZoom = Math.min(Math.max(newZoom, 0.1), 5);
+        
+        const currentCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const currentCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        
+        let canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
+        const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+        
+        const newCameraX = (currentCenterX - rect.left) - initialLocalX * newZoom;
+        const newCameraY = (currentCenterY - rect.top) - initialLocalY * newZoom;
+        
+        state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        initialPinchDist = 0;
+      }
+    };
+
+    window.addEventListener('touchstart', handleTouchStart, { passive: false });
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+    
+    return () => {
+       window.removeEventListener('touchstart', trackTouches);
+       window.removeEventListener('touchmove', trackTouches);
+       window.removeEventListener('touchend', trackTouches);
+       window.removeEventListener('touchcancel', trackTouches);
+       window.removeEventListener('touchstart', handleTouchStart);
+       window.removeEventListener('touchmove', handleTouchMove);
+       window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isMobile]);
+
+  // Long Press Right Click Mode Listener
+  useEffect(() => {
+    if (!isMobile) return;
+    const onLongPress = (e: any) => {
+         if (useStore.getState().gameState !== 'arrange') return;
+         isMobileRightClickRef.current = true;
+         isPanningRef.current = false;
+         useStore.getState().clearSelection();
+         
+         let canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
+         const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+         const state = useStore.getState();
+         
+         const localX = (e.detail.x - rect.left - state.camera.x) / state.camera.zoom;
+         const localY = (e.detail.y - rect.top - state.camera.y) / state.camera.zoom;
+         
+         const id = nextStrokeId.current++;
+         currentStrokeId.current = id;
+         activeStrokesRef.current.push({
+             id,
+             points: [{ x: localX, y: localY, time: Date.now() }]
+         });
+         intersectedBlocksRef.current.clear();
+         
+         checkTrailIntersection(localX, localY, localX, localY);
+    };
+    window.addEventListener('mobile-long-press', onLongPress as EventListener);
+    return () => window.removeEventListener('mobile-long-press', onLongPress as EventListener);
+  }, [isMobile]);
+
   // Arrangement Phase Handlers
   const handlePointerDown = (e: any) => {
       if (gameState !== 'arrange') return;
       if (e.button === 1) { // Middle click
-        setIsPanning(true);
+        isPanningRef.current = true;
         const pos = e.global;
-        setPanStart({ x: pos.x - useStore.getState().camera.x, y: pos.y - useStore.getState().camera.y });
+        panStartRef.current = { x: pos.x - useStore.getState().camera.x, y: pos.y - useStore.getState().camera.y };
       } else if (e.button === 0 && e.target && e.target.label === 'background') { // Left click
         useStore.getState().closeContextMenu();
-        if (!e.ctrlKey && !e.shiftKey) {
-          useStore.getState().clearSelection();
-        }
-        const pos = e.currentTarget.toLocal(e.global);
-        selectionStartRef.current = { x: pos.x, y: pos.y };
-        setSelectionBox({ x: pos.x, y: pos.y, w: 0, h: 0 });
-        if (e.pointerId !== undefined && e.target.setPointerCapture) {
-          e.target.setPointerCapture(e.pointerId);
+        if (isMobile) {
+          isPanningRef.current = true;
+          const pos = e.global;
+          panStartRef.current = { x: pos.x - useStore.getState().camera.x, y: pos.y - useStore.getState().camera.y };
+        } else {
+          if (!e.ctrlKey && !e.shiftKey) {
+            useStore.getState().clearSelection();
+          }
+          const pos = e.currentTarget.toLocal(e.global);
+          selectionStartRef.current = { x: pos.x, y: pos.y };
+          setSelectionBox({ x: pos.x, y: pos.y, w: 0, h: 0 });
+          if (e.pointerId !== undefined && e.target.setPointerCapture) {
+            e.target.setPointerCapture(e.pointerId);
+          }
         }
       } else if (e.button === 2) { // Right click
         const id = nextStrokeId.current++;
@@ -482,11 +867,12 @@ export const GameCanvas: React.FC = () => {
                   checkTrailIntersection(prev.x, prev.y, localX, localY);
               }
           }
-      } else if (gameState === 'arrange' && isPanning) {
+      } else if (gameState === 'arrange' && isPanningRef.current) {
+          if (isMobile) return; // Handled natively in trackTouches
           const pos = e.global;
           useStore.getState().updateCamera({
-             x: pos.x - panStart.x,
-             y: pos.y - panStart.y,
+             x: pos.x - panStartRef.current.x,
+             y: pos.y - panStartRef.current.y,
           });
       }
   };
@@ -494,7 +880,8 @@ export const GameCanvas: React.FC = () => {
   const handlePointerUp = (e: any) => {
       selectionStartRef.current = null;
       setSelectionBox(null);
-      setIsPanning(false);
+      isPanningRef.current = false;
+      isMobileRightClickRef.current = false;
       currentStrokeId.current = null;
       intersectedBlocksRef.current.clear();
       if (hasPausedRef.current) {
@@ -511,9 +898,9 @@ export const GameCanvas: React.FC = () => {
     if (selectionBox) {
       g.rect(selectionBox.x, selectionBox.y, selectionBox.w, selectionBox.h);
       g.fill({ color: 0x6366f1, alpha: 0.2 });
-      g.stroke({ width: 1, color: 0x6366f1, alpha: 0.8 });
+      g.stroke({ width: 1 / camera.zoom, color: 0x6366f1, alpha: 0.8 });
     }
-  }, [selectionBox]);
+  }, [selectionBox, camera.zoom]);
 
   const drawGrid = useCallback((g: PIXI.Graphics) => {
     g.clear();
@@ -524,23 +911,26 @@ export const GameCanvas: React.FC = () => {
 
     const isDark = theme === 'dark';
     const gridColor = isDark ? 0xffffff : 0x000000;
-    const gridAlpha = isDark ? 0.05 : 0.02; 
+    const gridAlpha = isDark ? 0.1 : 0.05; 
     
     const gridSize = 60;
     const size = 5000;
     const startPos = Math.floor(-size / gridSize) * gridSize;
     const endPos = Math.ceil(size / gridSize) * gridSize;
     
-    for (let x = startPos; x <= endPos; x += gridSize) {
+    // Optimizing grid display when zoomed out
+    const step = camera.zoom < 0.3 ? gridSize * 4 : (camera.zoom < 0.6 ? gridSize * 2 : gridSize);
+    
+    for (let x = startPos; x <= endPos; x += step) {
       g.moveTo(x, startPos);
       g.lineTo(x, endPos);
     }
-    for (let y = startPos; y <= endPos; y += gridSize) {
+    for (let y = startPos; y <= endPos; y += step) {
       g.moveTo(startPos, y);
       g.lineTo(endPos, y);
     }
-    g.stroke({ width: 1, color: gridColor, alpha: gridAlpha });
-  }, [theme, showGrid]);
+    g.stroke({ width: 1 / camera.zoom, color: gridColor, alpha: gridAlpha });
+  }, [theme, showGrid, camera.zoom]);
 
   return (
     <Application backgroundAlpha={0} resizeTo={window} antialias={true}>

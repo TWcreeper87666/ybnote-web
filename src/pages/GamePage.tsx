@@ -3,24 +3,43 @@ import { useNavigate } from 'react-router-dom';
 import { GameCanvas } from '../components/canvas/GameCanvas';
 import { parseMidiForGame } from '../utils/midiUtils';
 import { importLevel } from '../utils/levelUtils';
-import { Upload, SkipForward, Plus, Undo2, Redo2, Settings, Play, Pause, Volume2 } from 'lucide-react';
+import { Upload, SkipForward, Plus, Undo2, Redo2, Settings, Play, Pause, Volume2, Maximize, HelpCircle } from 'lucide-react';
 import { SettingsPanel } from '../components/ui/SettingsPanel';
+import { ModalPanel } from '../components/ui/ModalPanel';
 import { playNote } from '../utils/audio';
 import { useStore, undoAction, redoAction } from '../store/useStore';
-
+import { useIsMobile } from '../hooks/useIsMobile';
 export const GamePage: React.FC = () => {
-  const navigate = useNavigate();
-  const { theme, gameState, setGameState, setGameBlocks, setGameEvents, gameScore, gameCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, toggleSettings, latestHit } = useStore();
+  const { theme, gameState, setGameState, setGameBlocks, setGameEvents, gameScore, gameCombo, perfectCount, goodCount, badCount, missCount, maxCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, toggleSettings, isTutorialOpen, toggleTutorial, latestHit } = useStore();
+  const isMobile = useIsMobile();
   const [countdownTime, setCountdownTime] = useState(3);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
   const [previewVolume, setPreviewVolume] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const previewStartTimeRef = useRef(Date.now());
   const previewTimeOffsetRef = useRef(0);
   const lastPlayedEventIndexRef = useRef(0);
 
+  const requestFullscreen = () => {
+    try {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.warn(`Error attempting to enable fullscreen: ${err.message}`);
+        });
+      }
+    } catch (e) {
+      console.warn("Fullscreen API not supported");
+    }
+  };
+
   // Keyboard and Pointer Lock listener for ESC to pause
   useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         const state = useStore.getState().gameState;
@@ -46,7 +65,7 @@ export const GamePage: React.FC = () => {
     };
 
     const handlePointerLockChange = () => {
-      if (!document.pointerLockElement) {
+      if (!isMobile && !document.pointerLockElement) {
         const state = useStore.getState().gameState;
         if (state === 'play') {
           useStore.getState().setGameState('paused');
@@ -54,13 +73,21 @@ export const GamePage: React.FC = () => {
       }
     };
 
+    const handleResize = () => {
+      // Logic for resizing if needed
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     document.addEventListener('pointerlockchange', handlePointerLockChange);
+    window.addEventListener('resize', handleResize);
+
     return () => {
-       window.removeEventListener('keydown', handleKeyDown);
-       document.removeEventListener('pointerlockchange', handlePointerLockChange);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('pointerlockchange', handlePointerLockChange);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleResize);
     };
-  }, []);
+  }, [gameState, isMobile]);
 
   // Countdown timer logic
   useEffect(() => {
@@ -86,10 +113,15 @@ export const GamePage: React.FC = () => {
 
      let rafId: number;
      const maxTime = gameEvents.length > 0 ? gameEvents[gameEvents.length - 1].time + 1000 : 0;
+     let lastTickTime = Date.now();
 
      const tick = () => {
          const now = Date.now();
-         const elapsed = previewTimeOffsetRef.current + (now - previewStartTimeRef.current) * useStore.getState().gameSpeed;
+         const delta = now - lastTickTime;
+         lastTickTime = now;
+         
+         previewTimeOffsetRef.current += delta * useStore.getState().gameSpeed;
+         const elapsed = previewTimeOffsetRef.current;
          
          if (elapsed >= maxTime) {
              setPreviewPlaying(false);
@@ -115,7 +147,7 @@ export const GamePage: React.FC = () => {
          rafId = requestAnimationFrame(tick);
      };
 
-     previewStartTimeRef.current = Date.now();
+     lastTickTime = Date.now();
      rafId = requestAnimationFrame(tick);
      
      return () => cancelAnimationFrame(rafId);
@@ -157,6 +189,7 @@ export const GamePage: React.FC = () => {
         })));
         setGameEvents(levelData.events);
         setGameState('arrange');
+        useStore.getState().updateCamera({ x: window.innerWidth / 2, y: window.innerHeight / 2, zoom: 1 });
       } else {
         // Import .mid/.midi
         const { gameBlocks, gameEvents } = await parseMidiForGame(file);
@@ -164,10 +197,31 @@ export const GamePage: React.FC = () => {
         setGameBlocks(gameBlocks);
         setGameEvents(gameEvents);
         setGameState('arrange');
+        useStore.getState().updateCamera({ x: window.innerWidth / 2, y: window.innerHeight / 2, zoom: 1 });
       }
     } catch (err) {
       console.error(err);
       alert("Failed to import file");
+    }
+  };
+
+  const handleDefaultImport = async () => {
+    try {
+      const url = `${import.meta.env.BASE_URL}default.mid`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Default MIDI not found in public folder');
+      const blob = await response.blob();
+      const file = new File([blob], 'default.mid', { type: 'audio/midi' });
+      
+      const { gameBlocks, gameEvents } = await parseMidiForGame(file);
+      setGameFileName('default.mid');
+      setGameBlocks(gameBlocks);
+      setGameEvents(gameEvents);
+      setGameState('arrange');
+      useStore.getState().updateCamera({ x: window.innerWidth / 2, y: window.innerHeight / 2, zoom: 1 });
+    } catch (err) {
+      console.error(err);
+      alert("Failed to load default MIDI. Make sure default.mid is in the public/ folder.");
     }
   };
 
@@ -176,7 +230,7 @@ export const GamePage: React.FC = () => {
     <div 
       className={`app-container ${theme}`}
       onContextMenu={(e) => e.preventDefault()}
-      style={{ overflow: 'hidden' }}
+      style={{ overflow: 'hidden', touchAction: 'none', userSelect: 'none' }}
     >
       <div className="main-wrapper">
         
@@ -192,64 +246,83 @@ export const GamePage: React.FC = () => {
               <p style={{ color: 'var(--text-secondary)', marginBottom: 40, textAlign: 'center', maxWidth: 400 }}>
                  Upload a MIDI file to generate a beatmap. Arrange the blocks freely before starting the game.
               </p>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', background: '#6366f1', color: 'white', borderRadius: 8, cursor: 'pointer', fontSize: 18, fontWeight: 'bold' }}>
-                 <Upload size={24} />
-                 Select MIDI File
-                 <input type="file" accept=".mid,.midi,.yblevel" style={{ display: 'none' }} onChange={handleImport} />
-              </label>
+              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', background: '#6366f1', color: 'white', borderRadius: 8, cursor: 'pointer', fontSize: 18, fontWeight: 'bold' }}>
+                   <Upload size={24} />
+                   Select MIDI File
+                   <input type="file" accept=".mid,.midi,.yblevel" style={{ display: 'none' }} onChange={handleImport} />
+                </label>
+                <button 
+                  onClick={handleDefaultImport}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', background: 'rgba(99, 102, 241, 0.2)', color: 'var(--text-primary)', border: '2px solid #6366f1', borderRadius: 8, cursor: 'pointer', fontSize: 18, fontWeight: 'bold' }}
+                >
+                  <Play size={24} />
+                  Play Default MIDI
+                </button>
+              </div>
            </div>
         )}
         
         {/* Arrangement Overlay */}
         {gameState === 'arrange' && (
             <>
-              <div style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 10, pointerEvents: 'none' }}>
-                  <h2 style={{ color: 'white', textShadow: '0 2px 4px rgba(0,0,0,0.8)', fontSize: 32, margin: 0 }}>
-                      Arrangement Phase
-                  </h2>
-                  <p style={{ color: 'white', textShadow: '0 1px 2px rgba(0,0,0,0.8)', marginTop: 8 }}>
-                      Drag the blocks to layout your beatmap.
-                  </p>
-                  
-                  <div style={{ pointerEvents: 'auto', marginTop: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <select 
-                      value={gameSpeed} 
-                      onChange={(e) => setGameSpeed(parseFloat(e.target.value))}
-                      style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8, fontSize: 16, cursor: 'pointer', outline: 'none' }}
-                    >
-                      <option value="0.25">0.25x</option>
-                      <option value="0.5">0.5x</option>
-                      <option value="0.75">0.75x</option>
-                      <option value="1">1.0x</option>
-                      <option value="1.25">1.25x</option>
-                      <option value="1.5">1.5x</option>
-                      <option value="2">2.0x</option>
-                    </select>
+              {/* Top Controls */}
+              <div style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 12, zIndex: 10, pointerEvents: 'auto' }}>
+                <select 
+                  value={gameSpeed} 
+                  onChange={(e) => setGameSpeed(parseFloat(e.target.value))}
+                  style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8, fontSize: 16, cursor: 'pointer', outline: 'none', backdropFilter: 'blur(4px)' }}
+                >
+                  <option value="0.25">0.25x</option>
+                  <option value="0.5">0.5x</option>
+                  <option value="0.75">0.75x</option>
+                  <option value="1">1.0x</option>
+                  <option value="1.25">1.25x</option>
+                  <option value="1.5">1.5x</option>
+                  <option value="2">2.0x</option>
+                </select>
 
-                    <button 
-                      onClick={() => {
-                         resetGamePlay();
-                         setGameState('countdown');
-                      }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 24px', background: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(4px)', color: 'white', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 20, cursor: 'pointer', fontSize: 16, fontWeight: 'bold' }}
-                    >
-                       <SkipForward size={20} />
-                       Start Game
-                    </button>
-                  </div>
+                <button 
+                  onClick={() => {
+                     resetGamePlay();
+                     useStore.getState().clearSelection();
+                     setPreviewPlaying(false);
+                     setGameState('countdown');
+                     if (isMobile) requestFullscreen();
+                  }}
+                  className="primary-btn"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 24px', borderRadius: 20, cursor: 'pointer', fontSize: 16, fontWeight: 'bold', border: 'none' }}
+                >
+                   <SkipForward size={20} />
+                   Start
+                </button>
               </div>
 
               {/* Toolbar Actions */}
-              <div style={{ position: 'absolute', right: 20, top: '50%', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 12, zIndex: 10 }}>
+              <div 
+                 className="toolbar glass-panel" 
+                 style={{ zIndex: 10 }}
+                 onWheel={(e) => e.stopPropagation()}
+                 onTouchMove={(e) => e.stopPropagation()}
+                 onPointerDown={(e) => e.stopPropagation()}
+              >
+                <button className="toolbar-btn glass-panel" onClick={toggleTutorial} title="Tutorial"><HelpCircle size={24} /></button>
                 <button className="toolbar-btn glass-panel" onClick={() => undoAction()} title="Undo"><Undo2 size={24} /></button>
                 <button className="toolbar-btn glass-panel" onClick={() => redoAction()} title="Redo"><Redo2 size={24} /></button>
                 <button className="toolbar-btn glass-panel" onClick={toggleSettings} title="Settings"><Settings size={24} /></button>
               </div>
 
               {/* Bottom Mini Player */}
-              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 24px', background: 'linear-gradient(to top, rgba(0,0,0,0.9), transparent)', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                 <div style={{ color: 'white', fontSize: 14, opacity: 0.8 }}>{gameFileName || 'Unknown MIDI'}</div>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div 
+                 style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 24px', background: 'linear-gradient(to top, rgba(0,0,0,0.9), transparent)', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 12, pointerEvents: 'none' }}
+              >
+                 <div style={{ color: 'white', fontSize: 14, opacity: 0.8, pointerEvents: 'auto', width: 'fit-content' }}>{gameFileName || 'Unknown MIDI'}</div>
+                 <div 
+                    style={{ display: 'flex', alignItems: 'center', gap: 16, pointerEvents: 'auto' }}
+                    onWheel={(e) => e.stopPropagation()}
+                    onTouchMove={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                 >
                     <button 
                       onClick={() => {
                         if (previewPlaying) {
@@ -346,7 +419,7 @@ export const GamePage: React.FC = () => {
              </div>
 
              {/* Hit Result Popup */}
-             <div style={{ position: 'absolute', top: 160, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', pointerEvents: 'none', zIndex: 10 }}>
+             <div style={{ position: 'absolute', top: isMobile ? 80 : 160, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', pointerEvents: 'none', zIndex: 10 }}>
                 {latestHit && Date.now() - latestHit.time < 1000 && (
                    <div 
                       key={latestHit.time} 
@@ -366,7 +439,7 @@ export const GamePage: React.FC = () => {
              </div>
 
              {/* Hit Error Bar */}
-             <div style={{ position: 'absolute', bottom: 60, left: '50%', transform: 'translateX(-50%)', width: 400, height: 8, background: 'rgba(0,0,0,0.6)', borderRadius: 4, pointerEvents: 'none', zIndex: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)' }}>
+             <div style={{ position: 'absolute', bottom: isMobile ? 10 : 60, left: '50%', transform: 'translateX(-50%)', width: isMobile ? 300 : 400, height: 8, background: 'rgba(0,0,0,0.6)', borderRadius: 4, pointerEvents: 'none', zIndex: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)' }}>
                 <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 2, background: 'rgba(255,255,255,0.8)', transform: 'translateX(-50%)' }} />
                 {latestHit && Date.now() - latestHit.time < 2000 && (
                    <div 
@@ -386,6 +459,31 @@ export const GamePage: React.FC = () => {
                    />
                 )}
              </div>
+             
+             {/* Mobile Pause Button */}
+             {isMobile && (
+               <button
+                 onClick={() => setGameState('paused')}
+                 style={{
+                   position: 'absolute',
+                   top: 20,
+                   left: 20,
+                   zIndex: 30,
+                   padding: '12px',
+                   background: 'rgba(0,0,0,0.5)',
+                   color: 'white',
+                   border: '1px solid rgba(255,255,255,0.3)',
+                   borderRadius: '8px',
+                   display: 'flex',
+                   alignItems: 'center',
+                   justifyContent: 'center',
+                   backdropFilter: 'blur(4px)',
+                   cursor: 'pointer'
+                 }}
+               >
+                 <Pause size={24} />
+               </button>
+             )}
            </>
         )}
 
@@ -421,6 +519,7 @@ export const GamePage: React.FC = () => {
                  <button 
                     onClick={() => {
                        resetGamePlay();
+                       setPreviewPlaying(false);
                        setGameState('arrange');
                     }}
                     style={{ padding: '12px 32px', fontSize: 20, cursor: 'pointer', borderRadius: 8, background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.3)' }}
@@ -430,19 +529,87 @@ export const GamePage: React.FC = () => {
               </div>
            </div>
         )}
+
+        {/* Result Overlay */}
+        {gameState === 'result' && (
+           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.9)', zIndex: 40, animation: 'fadeIn 0.5s forwards' }}>
+              <h2 style={{ color: 'white', fontSize: isMobile ? 36 : 56, marginBottom: isMobile ? 8 : 10, textShadow: '0 4px 20px rgba(99,102,241,0.5)', animation: 'slideInUp 0.5s forwards' }}>Level Cleared</h2>
+              <div style={{ color: '#a5b4fc', fontSize: isMobile ? 18 : 24, marginBottom: isMobile ? 20 : 40, animation: 'slideInUp 0.5s forwards', animationDelay: '0.1s', opacity: 0, animationFillMode: 'forwards' }}>
+                 Score: <span style={{ color: 'white', fontWeight: 'bold' }}>{gameScore}</span>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : 12, width: isMobile ? '240px' : '300px', marginBottom: isMobile ? 24 : 40 }}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 16 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.2s', opacity: 0, animationFillMode: 'forwards' }}>
+                    <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>Perfect</span>
+                    <span style={{ color: 'white' }}>{perfectCount}</span>
+                 </div>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 16 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.3s', opacity: 0, animationFillMode: 'forwards' }}>
+                    <span style={{ color: '#4ade80', fontWeight: 'bold' }}>Good</span>
+                    <span style={{ color: 'white' }}>{goodCount}</span>
+                 </div>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 16 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.4s', opacity: 0, animationFillMode: 'forwards' }}>
+                    <span style={{ color: '#facc15', fontWeight: 'bold' }}>Bad</span>
+                    <span style={{ color: 'white' }}>{badCount}</span>
+                 </div>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 16 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.5s', opacity: 0, animationFillMode: 'forwards' }}>
+                    <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Miss</span>
+                    <span style={{ color: 'white' }}>{missCount}</span>
+                 </div>
+                 <div style={{ height: 1, background: 'rgba(255,255,255,0.2)', margin: isMobile ? '4px 0' : '8px 0', animation: 'slideInUp 0.5s forwards', animationDelay: '0.6s', opacity: 0, animationFillMode: 'forwards' }} />
+                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 16 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.7s', opacity: 0, animationFillMode: 'forwards' }}>
+                    <span style={{ color: '#c084fc', fontWeight: 'bold' }}>Max Combo</span>
+                    <span style={{ color: 'white' }}>{maxCombo}</span>
+                 </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: isMobile ? 12 : 16, animation: 'slideInUp 0.5s forwards', animationDelay: '0.9s', opacity: 0, animationFillMode: 'forwards' }}>
+                 <button 
+                    onClick={() => {
+                       resetGamePlay();
+                       setGameState('countdown');
+                    }}
+                    style={{ padding: isMobile ? '10px 24px' : '12px 32px', fontSize: isMobile ? 16 : 20, cursor: 'pointer', borderRadius: 8, background: '#6366f1', color: 'white', border: 'none', fontWeight: 'bold' }}
+                 >
+                    Play Again
+                 </button>
+                 <button 
+                    onClick={() => {
+                       resetGamePlay();
+                       setPreviewPlaying(false);
+                       setGameState('arrange');
+                    }}
+                    style={{ padding: isMobile ? '10px 24px' : '12px 32px', fontSize: isMobile ? 16 : 20, cursor: 'pointer', borderRadius: 8, background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.3)', fontWeight: 'bold' }}
+                 >
+                    Back to Arrange
+                 </button>
+              </div>
+           </div>
+        )}
         
         {/* Settings Panel Render */}
-        <div style={{ position: 'absolute', right: 80, top: 20, zIndex: 50 }}>
+        <div style={{ zIndex: 50 }}>
           <SettingsPanel />
         </div>
 
-        {/* Escape Button */}
-        <button 
-          onClick={() => navigate('/editor')}
-          style={{ position: 'absolute', top: 20, left: 20, zIndex: 30, padding: '8px 16px', background: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-        >
-          Exit to Editor
-        </button>
+        {/* Tutorial Overlay */}
+        <ModalPanel title="How to Play" isOpen={isTutorialOpen} onClose={toggleTutorial} className="tutorial-overlay">
+           <ul style={{ color: 'var(--settings-text-muted)', lineHeight: 1.6, paddingLeft: 20 }}>
+               <li><b>Arrange Phase:</b> Drag blocks to map out the song. You can zoom and pan the canvas.</li>
+               <li style={{ marginTop: 8 }}><b>Continuous Drawing:</b> Long press on a block (or right click) to start drawing a continuous trail of blocks.</li>
+               <li style={{ marginTop: 8 }}><b>Play Phase:</b> You control the camera! On PC, move your mouse to look around and click to hit. On Mobile, drag on the right half of the screen to look around, and tap the left half to hit blocks when they align with the crosshair.</li>
+               <li style={{ marginTop: 8 }}><b>Scoring:</b> Accuracy determines your hit result (Perfect, Good, Bad, Miss) and your combo multiplier.</li>
+           </ul>
+        </ModalPanel>
+
+        {/* Mobile Fullscreen Button */}
+        {isMobile && !isFullscreen && gameState !== 'play' && gameState !== 'countdown' && (
+          <button 
+            onClick={requestFullscreen}
+            style={{ position: 'absolute', top: 20, left: 20, zIndex: 100, padding: '12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}
+          >
+            <Maximize size={24} />
+          </button>
+        )}
       </div>
     </div>
   );

@@ -117,7 +117,7 @@ body {
 .top-toolbar,
 .toolbar,
 .settings-panel,
-.hierarchy-panel,
+.outliner-panel,
 .piano-container {
   pointer-events: auto;
 }
@@ -535,8 +535,8 @@ body {
   opacity: 0.8;
 }
 
-/* Hierarchy Panel */
-.hierarchy-panel {
+/* Outliner Panel */
+.outliner-panel {
   position: absolute;
   top: 24px;
   left: 24px;
@@ -550,14 +550,14 @@ body {
   overflow: hidden;
 }
 
-.hierarchy-header h2 {
+.outliner-header h2 {
   font-size: 16px;
   font-weight: 600;
   color: var(--text-color);
   margin-bottom: 8px;
 }
 
-.hierarchy-search {
+.outliner-search {
   position: relative;
   display: flex;
   align-items: center;
@@ -588,7 +588,7 @@ body {
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
 }
 
-.hierarchy-content {
+.outliner-content {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -596,15 +596,15 @@ body {
   padding-right: 4px;
 }
 
-.hierarchy-content::-webkit-scrollbar {
+.outliner-content::-webkit-scrollbar {
   width: 4px;
 }
-.hierarchy-content::-webkit-scrollbar-thumb {
+.outliner-content::-webkit-scrollbar-thumb {
   background: var(--panel-border);
   border-radius: 4px;
 }
 
-.hierarchy-item {
+.outliner-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -614,10 +614,10 @@ body {
   transition: background 0.15s;
 }
 
-.hierarchy-item:hover {
+.outliner-item:hover {
   background: var(--action-bg);
 }
-.hierarchy-item.selected {
+.outliner-item.selected {
   background: rgba(99, 102, 241, 0.15);
   color: #6366f1;
 }
@@ -630,7 +630,7 @@ body {
   color: var(--text-color);
 }
 
-.hierarchy-input {
+.outliner-input {
   background: transparent;
   border: none;
   color: inherit;
@@ -639,11 +639,11 @@ body {
   width: 100%;
   outline: none;
 }
-.hierarchy-input:focus {
+.outliner-input:focus {
   border-bottom: 1px solid #6366f1;
 }
 
-.hierarchy-group-children {
+.outliner-group-children {
   padding-left: 20px;
   border-left: 1px solid var(--panel-border);
   margin-left: 12px;
@@ -653,7 +653,7 @@ body {
 }
 
 /* Filter Bar */
-.hierarchy-filter-bar {
+.outliner-filter-bar {
   display: flex;
   gap: 4px;
   overflow-x: auto;
@@ -662,15 +662,15 @@ body {
   min-height: 36px;
 }
 
-.hierarchy-filter-bar::-webkit-scrollbar {
+.outliner-filter-bar::-webkit-scrollbar {
   height: 4px;
 }
-.hierarchy-filter-bar::-webkit-scrollbar-thumb {
+.outliner-filter-bar::-webkit-scrollbar-thumb {
   background: var(--panel-border);
   border-radius: 4px;
 }
 
-.hierarchy-filter-btn {
+.outliner-filter-btn {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -688,18 +688,18 @@ body {
   opacity: 0.35;
 }
 
-.hierarchy-filter-btn.active {
+.outliner-filter-btn.active {
   opacity: 1;
   background: var(--action-bg);
 }
 
-.hierarchy-filter-btn:hover {
+.outliner-filter-btn:hover {
   opacity: 0.8;
   background: var(--action-bg);
 }
 
 /* Collapse Button */
-.hierarchy-collapse-btn {
+.outliner-collapse-btn {
   background: none;
   border: none;
   color: inherit;
@@ -711,12 +711,12 @@ body {
   opacity: 0.5;
   flex-shrink: 0;
 }
-.hierarchy-collapse-btn:hover {
+.outliner-collapse-btn:hover {
   opacity: 1;
 }
 
 /* Key Badge */
-.hierarchy-key-badge {
+.outliner-key-badge {
   display: flex;
   align-items: center;
   gap: 3px;
@@ -1602,4 +1602,21 @@ body {
   color: #a5b4fc;
   text-shadow: 0 2px 8px rgba(0,0,0,0.5);
 }
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 
