@@ -2,6 +2,8 @@ import React from 'react';
 import { useStore, undoAction, redoAction } from '../../store/useStore';
 import { Settings, Music, Drum, Trash2, Undo2, Redo2, LayoutList, PenTool, HelpCircle, Square, Wand2, Circle, Download, Upload } from 'lucide-react';
 import { exportRecordedEventsToMidi, importMidiToBlocks } from '../../utils/midiUtils';
+import { ToolbarButton } from './ToolbarButton';
+import { ToolbarDivider } from './ToolbarDivider';
 
 export const Toolbar: React.FC = () => {
   const { toggleSettings, toggleHelp, toggleOutliner, deleteSelected, selectedBlockIds, selectedTrackIds, selectedGroupRectIds, mode, setMode, isRecording, startRecording, stopRecording, gameState } = useStore();
@@ -18,63 +20,55 @@ export const Toolbar: React.FC = () => {
     <>
       {gameState !== 'arrange' && (
       <div className="top-toolbar glass-panel" style={{ gap: '8px' }}>
-        <button 
-          className={`toolbar-btn ${mode === 'piano' ? 'primary-btn' : ''}`}
+        <ToolbarButton 
+          active={mode === 'piano'}
           onClick={() => setMode(mode === 'piano' ? 'select' : 'piano')}
           title="Add Note (1)"
-        >
-          <Music size={24} />
-        </button>
+          icon={<Music size={24} />}
+        />
 
-        <button 
-          className={`toolbar-btn ${mode === 'drum' ? 'primary-btn' : ''}`}
+        <ToolbarButton 
+          active={mode === 'drum'}
           onClick={() => setMode(mode === 'drum' ? 'select' : 'drum')}
           title="Add Drum Block (2)"
-        >
-          <Drum size={24} />
-        </button>
+          icon={<Drum size={24} />}
+        />
 
-        <button 
-          className={`toolbar-btn ${mode === 'draw_group' ? 'primary-btn' : ''}`}
+        <ToolbarButton 
+          active={mode === 'draw_group'}
           onClick={() => setMode(mode === 'draw_group' ? 'select' : 'draw_group')}
           title="Draw Group (3)"
-        >
-          <Square size={24} fill="currentColor" />
-        </button>
+          icon={<Square size={24} fill="currentColor" />}
+        />
 
-        <button 
-          className={`toolbar-btn ${mode === 'draw_track' ? 'primary-btn' : ''}`}
+        <ToolbarButton 
+          active={mode === 'draw_track'}
           onClick={() => setMode(mode === 'draw_track' ? 'select' : 'draw_track')}
           title="Draw Track (4)"
-        >
-          <PenTool size={24} />
-        </button>
+          icon={<PenTool size={24} />}
+        />
 
-        <button 
-          className={`toolbar-btn ${mode === 'play' ? 'primary-btn' : ''}`}
+        <ToolbarButton 
+          active={mode === 'play'}
           onClick={() => setMode(mode === 'play' ? 'select' : 'play')}
           title="Perform Mode (5)"
-        >
-          <Wand2 size={24} />
-        </button>
+          icon={<Wand2 size={24} />}
+        />
 
-        <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)', margin: '0 8px' }} />
+        <ToolbarDivider variant="playground" />
 
-        <button 
-          className={`toolbar-btn ${isRecording ? 'danger-btn' : ''}`}
+        <ToolbarButton 
+          className={isRecording ? 'danger-btn' : ''}
           onClick={() => isRecording ? stopRecording() : startRecording()}
           title={isRecording ? "Stop Recording" : "Record Macro"}
-        >
-          <Circle size={24} fill={isRecording ? 'currentColor' : 'none'} />
-        </button>
+          icon={<Circle size={24} fill={isRecording ? 'currentColor' : 'none'} />}
+        />
 
-        <button 
-          className="toolbar-btn"
+        <ToolbarButton 
           onClick={exportRecordedEventsToMidi}
           title="Export Recording to MIDI"
-        >
-          <Upload size={24} />
-        </button>
+          icon={<Upload size={24} />}
+        />
 
         <label className="toolbar-btn" title="Import MIDI" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Download size={24} />
@@ -85,53 +79,42 @@ export const Toolbar: React.FC = () => {
 
       <div className="toolbar glass-panel">
 
-      <button 
-        className="toolbar-btn glass-panel" 
+      <ToolbarButton 
         onClick={() => undoAction()}
         title="Undo (Ctrl+Z)"
-      >
-        <Undo2 size={24} />
-      </button>
-      <button 
-        className="toolbar-btn glass-panel" 
+        icon={<Undo2 size={24} />}
+      />
+      <ToolbarButton 
         onClick={() => redoAction()}
         title="Redo (Ctrl+Y)"
-      >
-        <Redo2 size={24} />
-      </button>
+        icon={<Redo2 size={24} />}
+      />
 
-      <button 
-        className={`toolbar-btn ${selectedBlockIds.length > 0 || selectedTrackIds.length > 0 || selectedGroupRectIds.length > 0 ? 'danger-btn' : 'disabled-btn'}`}
+      <ToolbarButton 
+        className={selectedBlockIds.length > 0 || selectedTrackIds.length > 0 || selectedGroupRectIds.length > 0 ? 'danger-btn' : 'disabled-btn'}
         onClick={deleteSelected}
         disabled={selectedBlockIds.length === 0 && selectedTrackIds.length === 0 && selectedGroupRectIds.length === 0}
         title="Delete Selected"
-      >
-        <Trash2 size={24} />
-      </button>
+        icon={<Trash2 size={24} />}
+      />
 
-      <button 
-        className="toolbar-btn"
+      <ToolbarButton 
         onClick={toggleOutliner}
         title="Toggle Outliner"
-      >
-        <LayoutList size={24} />
-      </button>
+        icon={<LayoutList size={24} />}
+      />
 
-      <button 
-        className="toolbar-btn"
+      <ToolbarButton 
         onClick={toggleSettings}
         title="Settings"
-      >
-        <Settings size={24} />
-      </button>
+        icon={<Settings size={24} />}
+      />
 
-      <button 
-        className="toolbar-btn"
+      <ToolbarButton 
         onClick={toggleHelp}
         title="Help & Shortcuts"
-      >
-        <HelpCircle size={24} />
-      </button>
+        icon={<HelpCircle size={24} />}
+      />
       </div>
     </>
   );

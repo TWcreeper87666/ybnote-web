@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Application, useTick } from '@pixi/react';
+import { Application } from '@pixi/react';
 import * as PIXI from 'pixi.js';
 import { useStore } from '../../store/useStore';
 import { NoteBlock } from '../blocks/NoteBlock';
@@ -7,89 +7,25 @@ import { shiftPitch } from '../../utils/pitchUtils';
 import { TrackRenderer } from '../containers/TrackRenderer';
 import { GroupRectRenderer } from '../containers/GroupRectRenderer';
 import { Plus } from 'lucide-react';
-
-export type TrailStroke = {
-  id: number;
-  points: { x: number, y: number, time: number }[];
-};
-
-const TrailRenderer: React.FC<{ 
-  activeStrokesRef: React.MutableRefObject<TrailStroke[]>;
-  currentStrokeId: React.MutableRefObject<number | null>;
-}> = ({ activeStrokesRef, currentStrokeId }) => {
-  const gRef = useRef<PIXI.Graphics>(null);
-
-  useTick(() => {
-    if (gRef.current) {
-      const now = Date.now();
-      const FADE_TIME = 500;
-      
-      // Remove old points and empty strokes
-      activeStrokesRef.current.forEach(stroke => {
-        if (stroke.id === currentStrokeId.current && stroke.points.length > 0) {
-          // Keep the tip fresh while still dragging
-          stroke.points[stroke.points.length - 1].time = now;
-        }
-        stroke.points = stroke.points.filter(p => now - p.time < FADE_TIME);
-      });
-      activeStrokesRef.current = activeStrokesRef.current.filter(s => s.points.length > 0);
-      
-      const g = gRef.current;
-      g.clear();
-      
-      activeStrokesRef.current.forEach(stroke => {
-        const points = stroke.points;
-
-        // Draw micro-segments for smooth width tapering
-        for (let i = 1; i < points.length; i++) {
-          const p1 = points[i - 1];
-          const p2 = points[i];
-          const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-          const steps = Math.max(1, Math.ceil(dist / 8)); // micro-segment every 8 pixels
-          
-          for (let j = 0; j < steps; j++) {
-            const t1 = j / steps;
-            const t2 = (j + 1) / steps;
-            
-            const x1 = p1.x + (p2.x - p1.x) * t1;
-            const y1 = p1.y + (p2.y - p1.y) * t1;
-            const x2 = p1.x + (p2.x - p1.x) * t2;
-            const y2 = p1.y + (p2.y - p1.y) * t2;
-            
-            const midTime = p1.time + (p2.time - p1.time) * ((t1 + t2) / 2);
-            const age = now - midTime;
-            const life = Math.max(0, 1 - (age / FADE_TIME));
-            const easeLife = life * life * life; // Sharp tapering
-
-            // Glow
-            g.moveTo(x1, y1);
-            g.lineTo(x2, y2);
-            g.stroke({ width: 25 * easeLife, color: 0x8b5cf6, alpha: 0.3, cap: 'round' });
-            
-            // Core
-            g.moveTo(x1, y1);
-            g.lineTo(x2, y2);
-            g.stroke({ width: 8 * easeLife, color: 0xffffff, alpha: 1, cap: 'round' });
-          }
-        }
-      });
-    }
-  });
-
-  return <pixiGraphics ref={gRef} zIndex={200} draw={() => {}} eventMode="none" />;
-};
+import { TrailRenderer } from './shared/TrailRenderer';
+import { GridBackground } from './shared/GridBackground';
+import { SelectionBoxRenderer, GroupDrawBoxRenderer } from './shared/SelectionBoxRenderer';
+import { useCanvasCamera } from '../../hooks/useCanvasCamera';
+import { useCanvasInteractions } from '../../hooks/useCanvasInteractions';
 
 export const Canvas: React.FC = () => {
-  const { blocks, camera, updateCamera, showGrid, theme, mode, latestPerformHit } = useStore();
-  const isPanningRef = useRef(false);
-  const panStartRef = useRef({ x: 0, y: 0 });
-  const [selectionBox, setSelectionBox] = useState<{x: number, y: number, w: number, h: number} | null>(null);
-  const selectionStartRef = useRef<{x: number, y: number} | null>(null);
+  const { blocks, camera, showGrid, theme, mode, latestPerformHit } = useStore();
+  const {
+    startPan, updatePan, endPan,
+    selectionBox, startSelection, updateSelection, endSelection,
+    activeStrokesRef, currentStrokeId, startTrail, updateTrail, endTrail,
+    intersectedBlocksRef, isSelectingRef
+  } = useCanvasInteractions();
+
   const [groupDrawBox, setGroupDrawBox] = useState<{x: number, y: number, w: number, h: number} | null>(null);
   const groupDrawStartRef = useRef<{x: number, y: number} | null>(null);
   const groupDrawBoxRef = useRef<{x: number, y: number, w: number, h: number} | null>(null);
   const containerRef = useRef<PIXI.Container>(null);
-  const activeStrokesRef = useRef<TrailStroke[]>([]);
 
   const finishGroupDraw = useCallback(() => {
     const box = groupDrawBoxRef.current;
@@ -103,25 +39,19 @@ export const Canvas: React.FC = () => {
     setGroupDrawBox(null);
     groupDrawStartRef.current = null;
   }, []);
-  const nextStrokeId = useRef(0);
-  const currentStrokeId = useRef<number | null>(null);
 
   const lastClickTimeRef = useRef<number>(0);
   const lastClickPosRef = useRef<{x: number, y: number} | null>(null);
 
-  const intersectedBlocksRef = useRef<Set<string>>(new Set());
-
   useEffect(() => {
     const handleGlobalUp = (e: PointerEvent) => {
-      isPanningRef.current = false;
-      selectionStartRef.current = null;
-      setSelectionBox(null);
-      
+      endPan();
+      endSelection();
       finishGroupDraw();
 
       if (e.button === 2 || e.buttons === 0) {
         intersectedBlocksRef.current.clear();
-        currentStrokeId.current = null;
+        endTrail();
       }
     };
     window.addEventListener('pointerup', handleGlobalUp);
@@ -130,11 +60,13 @@ export const Canvas: React.FC = () => {
       window.removeEventListener('pointerup', handleGlobalUp);
       window.removeEventListener('pointercancel', handleGlobalUp);
     };
-  }, []);
+  }, [endPan, endSelection, endTrail, finishGroupDraw]);
 
-  // Attach non-passive wheel listener to document to prevent zooming the entire page
-  useEffect(() => {
-    const handler = (e: WheelEvent) => {
+  useCanvasCamera({
+    isMobile: /Mobi|Android/i.test(navigator.userAgent),
+    isPlayMode: mode === 'play',
+    isActive: true,
+    onWheelIntercept: useCallback((e: WheelEvent) => {
       const state = useStore.getState();
       let targetBlockId = state.hoveredBlockId;
       let targetGroupRectId = state.hoveredGroupRectId;
@@ -185,6 +117,7 @@ export const Canvas: React.FC = () => {
           },
           { continuous: true }
         );
+        return true;
       } else if (targetGroupRectId && !e.ctrlKey && e.shiftKey) {
         e.preventDefault();
         const delta = e.deltaY > 0 ? -1 : 1;
@@ -193,29 +126,11 @@ export const Canvas: React.FC = () => {
           const newVolume = Math.round(Math.max(0, Math.min(1, (rect.volume ?? 1) + delta * 0.1)) * 100) / 100;
           state.updateGroupRect(rect.id, { volume: newVolume });
         }
-      } else {
-        e.preventDefault();
-        const zoomFactor = 1.1;
-        const direction = e.deltaY > 0 ? 1 / zoomFactor : zoomFactor;
-        
-        const oldZoom = state.camera.zoom;
-        let newZoom = oldZoom * direction;
-        newZoom = Math.min(Math.max(newZoom, 0.1), 5); // Clamp zoom
-        
-        const globalX = state.mode === 'play' ? window.innerWidth / 2 : e.clientX;
-        const globalY = state.mode === 'play' ? window.innerHeight / 2 : e.clientY;
-        const localX = (globalX - state.camera.x) / oldZoom;
-        const localY = (globalY - state.camera.y) / oldZoom;
-        
-        const newCameraX = globalX - localX * newZoom;
-        const newCameraY = globalY - localY * newZoom;
-
-        state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+        return true;
       }
-    };
-    document.addEventListener('wheel', handler, { passive: false });
-    return () => document.removeEventListener('wheel', handler);
-  }, []);
+      return false;
+    }, [])
+  });
 
   const lineIntersectsRect = (x1: number, y1: number, x2: number, y2: number, rx: number, ry: number, rw: number, rh: number) => {
     if (x1 >= rx && x1 <= rx + rw && y1 >= ry && y1 <= ry + rh) return true;
@@ -389,9 +304,7 @@ export const Canvas: React.FC = () => {
     }
     const button = e.button;
     if (button === 1) { // Middle click to pan
-      isPanningRef.current = true;
-      const pos = e.global;
-      panStartRef.current = { x: pos.x - camera.x, y: pos.y - camera.y };
+      startPan(e.global.x, e.global.y, camera.x, camera.y);
     } else if (button === 0) {
       const state = useStore.getState();
 
@@ -556,8 +469,7 @@ export const Canvas: React.FC = () => {
         }
         // Start marquee selection on left click
         const pos = e.currentTarget.toLocal(e.global);
-        selectionStartRef.current = { x: pos.x, y: pos.y };
-        setSelectionBox({ x: pos.x, y: pos.y, w: 0, h: 0 });
+        startSelection(pos.x, pos.y);
         if (e.pointerId !== undefined && e.target.setPointerCapture) {
           e.target.setPointerCapture(e.pointerId);
         }
@@ -568,12 +480,7 @@ export const Canvas: React.FC = () => {
         useStore.getState().clearSelection();
       }
       const pos = e.currentTarget.toLocal(e.global);
-      const id = nextStrokeId.current++;
-      currentStrokeId.current = id;
-      activeStrokesRef.current.push({
-        id,
-        points: [{ x: pos.x, y: pos.y, time: Date.now() }]
-      });
+      startTrail(pos.x, pos.y);
       let startedOnBlock = false;
       let current = e.target as any;
       while (current) {
@@ -590,12 +497,8 @@ export const Canvas: React.FC = () => {
 
   const handlePointerMove = (e: any) => {
     if (useStore.getState().mode === 'play') return;
-    if (isPanningRef.current) {
-      const pos = e.global;
-      updateCamera({
-        x: pos.x - panStartRef.current.x,
-        y: pos.y - panStartRef.current.y,
-      });
+    if (updatePan(e.global.x, e.global.y, useStore.getState().updateCamera)) {
+      // handled
     } else if (groupDrawStartRef.current && groupDrawBoxRef.current) {
       const pos = e.currentTarget.toLocal(e.global);
       const start = groupDrawStartRef.current;
@@ -606,14 +509,11 @@ export const Canvas: React.FC = () => {
       const newBox = { x, y, w, h };
       setGroupDrawBox(newBox);
       groupDrawBoxRef.current = newBox;
-    } else if (selectionStartRef.current) {
+    } else if (isSelectingRef.current) {
       const pos = e.currentTarget.toLocal(e.global);
-      const start = selectionStartRef.current;
-      const x = Math.min(start.x, pos.x);
-      const y = Math.min(start.y, pos.y);
-      const w = Math.abs(pos.x - start.x);
-      const h = Math.abs(pos.y - start.y);
-      setSelectionBox({ x, y, w, h });
+      const box = updateSelection(pos.x, pos.y);
+      if (!box) return;
+      const { x, y, w, h } = box;
       
       const blocks = useStore.getState().blocks;
       const tracks = useStore.getState().tracks;
@@ -644,22 +544,16 @@ export const Canvas: React.FC = () => {
       useStore.setState({ selectedBlockIds: selectedIds, selectedTrackIds: selectedTIds, selectedGroupRectIds: selectedGIds });
     } else if (e.buttons === 2) {
       const pos = e.currentTarget.toLocal(e.global);
-      if (currentStrokeId.current !== null) {
-        const stroke = activeStrokesRef.current.find(s => s.id === currentStrokeId.current);
-        if (stroke && stroke.points.length > 0) {
-          const prev = stroke.points[stroke.points.length - 1];
-          stroke.points.push({ x: pos.x, y: pos.y, time: Date.now() });
-          checkTrailIntersection(prev.x, prev.y, pos.x, pos.y);
-        }
-      }
+      updateTrail(pos.x, pos.y, (p1, p2) => {
+        checkTrailIntersection(p1.x, p1.y, p2.x, p2.y);
+      });
     }
   };
 
   const handlePointerUp = (e: any) => {
     if (useStore.getState().mode === 'play') return;
-    isPanningRef.current = false;
-    selectionStartRef.current = null;
-    setSelectionBox(null);
+    endPan();
+    endSelection();
     
     finishGroupDraw();
 
@@ -668,53 +562,7 @@ export const Canvas: React.FC = () => {
     }
   };
 
-  const drawBackground = (g: PIXI.Graphics) => {
-    g.clear();
-    // Hit area covering the whole screen so we can detect drag anywhere
-    g.rect(-10000, -10000, 20000, 20000); 
-    g.fill({ color: 0x000000, alpha: 0.001 }); // Almost transparent
 
-    // Draw grid if enabled
-    if (showGrid) {
-      const isDark = theme === 'dark';
-      const gridColor = isDark ? 0xffffff : 0x000000;
-      const gridAlpha = isDark ? 0.1 : 0.05;
-      
-      const gridSize = 60;
-      const size = 5000;
-      const startPos = Math.floor(-size / gridSize) * gridSize;
-      const endPos = Math.ceil(size / gridSize) * gridSize;
-      
-      for (let x = startPos; x <= endPos; x += gridSize) {
-        g.moveTo(x, startPos);
-        g.lineTo(x, endPos);
-      }
-      for (let y = startPos; y <= endPos; y += gridSize) {
-        g.moveTo(startPos, y);
-        g.lineTo(endPos, y);
-      }
-      
-      g.stroke({ width: 1, color: gridColor, alpha: gridAlpha });
-    }
-  };
-
-  const drawSelectionBox = (g: PIXI.Graphics) => {
-    g.clear();
-    if (selectionBox) {
-      g.rect(selectionBox.x, selectionBox.y, selectionBox.w, selectionBox.h);
-      g.fill({ color: 0x6366f1, alpha: 0.2 });
-      g.stroke({ width: 1, color: 0x6366f1, alpha: 0.8 });
-    }
-  };
-
-  const drawGroupDrawBox = (g: PIXI.Graphics) => {
-    g.clear();
-    if (groupDrawBox) {
-      g.roundRect(groupDrawBox.x, groupDrawBox.y, groupDrawBox.w, groupDrawBox.h, 8);
-      g.fill({ color: 0x4f46e5, alpha: 0.15 });
-      g.stroke({ width: 2, color: 0x6366f1, alpha: 0.5 });
-    }
-  };
 
   return (
     <div 
@@ -737,16 +585,10 @@ export const Canvas: React.FC = () => {
           onPointerUp={handlePointerUp}
           onPointerUpOutside={handlePointerUp}
         >
-          {/* Background Hit Area for dragging the canvas */}
-          <pixiGraphics 
-            label="background"
-            zIndex={-10}
-            draw={drawBackground} 
-            eventMode="static"
-          />
+          <GridBackground showGrid={showGrid} theme={theme} zoom={camera.zoom} />
           
-          <pixiGraphics zIndex={200} draw={drawSelectionBox} eventMode="none" />
-          <pixiGraphics zIndex={200} draw={drawGroupDrawBox} eventMode="none" />
+          <SelectionBoxRenderer selectionBox={selectionBox} zoom={camera.zoom} />
+          <GroupDrawBoxRenderer groupDrawBox={groupDrawBox} zoom={camera.zoom} />
 
           <GroupRectRenderer />
 

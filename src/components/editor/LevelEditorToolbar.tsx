@@ -1,8 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Upload, Music, FileDown, Play, Pause, Settings,
-  ArrowLeft, X, Undo2, Redo2, ZoomIn, Activity, Volume2, Blocks, ChevronDown
+  Upload, Music, FileDown, Play, Pause,
+  ArrowLeft, Undo2, Redo2, ZoomIn, Activity, Volume2, Blocks, ChevronDown
 } from 'lucide-react';
 import { Midi } from '@tonejs/midi';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
@@ -11,6 +11,8 @@ import { useStore } from '../../store/useStore';
 import { exportLevel } from '../../utils/levelUtils';
 import { exportToMidiFile } from '../../utils/midiExport';
 import { HelpModal } from './HelpModal';
+import { ToolbarButton } from '../ui/ToolbarButton';
+import { ToolbarDivider } from '../ui/ToolbarDivider';
 
 export const LevelEditorToolbar: React.FC = () => {
   const navigate = useNavigate();
@@ -18,7 +20,7 @@ export const LevelEditorToolbar: React.FC = () => {
   const mainStore = useStore();
   const audioInputRef = useRef<HTMLInputElement>(null);
   const midiInputRef = useRef<HTMLInputElement>(null);
-  const [showSettings, setShowSettings] = useState(false);
+
   const [showHelp, setShowHelp] = useState(false);
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -163,6 +165,15 @@ export const LevelEditorToolbar: React.FC = () => {
 
   // --- Export .yblevel ---
   const handleExport = async () => {
+    let defaultName = 'level';
+    if (store.audioFile) {
+      defaultName = store.audioFile.name.replace(/\.[^/.]+$/, ""); // Strip extension
+    }
+    const fileName = window.prompt("請輸入匯出檔案名稱：", defaultName);
+    if (!fileName) {
+      return; // user cancelled
+    }
+
     setIsExporting(true);
 
     // Sync gameEvents one last time before export
@@ -188,8 +199,8 @@ export const LevelEditorToolbar: React.FC = () => {
       const blob = await exportLevel({
         bpm: store.bpm,
         offset: store.offset,
-        trimStart: store.trimStart,
-        trimEnd: store.trimEnd,
+        trimStart: 0, // Default to 0 for now
+        trimEnd: store.chartEndPosition,
         audioBuffer: store.audioBuffer,
         midiData: store.midiData,
         gameBlocks: mainStore.gameBlocks,
@@ -199,7 +210,7 @@ export const LevelEditorToolbar: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `level_${Date.now()}.yblevel`;
+      a.download = `${fileName}.yblevel`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -222,22 +233,21 @@ export const LevelEditorToolbar: React.FC = () => {
   return (
     <>
       <div className="le-toolbar glass-panel">
-        <button className="le-toolbar-btn" onClick={() => navigate('/playground')} title="Back to Playground">
-          <ArrowLeft size={18} />
-        </button>
+        <ToolbarButton variant="editor" onClick={() => navigate('/playground')} title="Back to Playground" icon={<ArrowLeft size={18} />} />
 
-        <div className="le-toolbar-divider" />
+        <ToolbarDivider variant="editor" />
 
         {/* File Dropdown */}
         <div style={{ position: 'relative' }}>
-          <button 
-            className={`le-toolbar-btn ${showFileMenu ? 'active' : ''}`} 
+          <ToolbarButton 
+            variant="editor"
+            active={showFileMenu} 
             onClick={() => setShowFileMenu(!showFileMenu)}
             style={{ padding: '8px 14px' }}
           >
             File
             <ChevronDown size={14} style={{ marginLeft: 2, opacity: 0.7 }} />
-          </button>
+          </ToolbarButton>
 
           {showFileMenu && (
             <>
@@ -303,57 +313,55 @@ export const LevelEditorToolbar: React.FC = () => {
           onChange={handleMidiImport}
         />
 
-        <div className="le-toolbar-divider" />
+        <ToolbarDivider variant="editor" />
 
         {/* Tab Selection */}
         <div className="le-toolbar-btn-group" style={{ display: 'flex', gap: 2, background: 'rgba(0,0,0,0.2)', padding: 2, borderRadius: 14 }}>
-          <button
-            className={`le-toolbar-btn ${store.activeTab === 'pianoroll' ? 'active' : ''}`}
+          <ToolbarButton
+            variant="editor"
+            active={store.activeTab === 'pianoroll'}
             onClick={() => store.setActiveTab('pianoroll')}
             title="Piano Roll"
             style={{ borderRadius: 12 }}
+            icon={<Music size={16} />}
           >
-            <Music size={16} />
             <span>Editor</span>
-          </button>
-          <button
-            className={`le-toolbar-btn ${store.activeTab === 'blocks' ? 'active' : ''}`}
+          </ToolbarButton>
+          <ToolbarButton
+            variant="editor"
+            active={store.activeTab === 'blocks'}
             onClick={() => store.setActiveTab('blocks')}
             title="Block Arrangement"
             style={{ borderRadius: 12 }}
+            icon={<Blocks size={16} />}
           >
-            <Blocks size={16} />
             <span>Blocks</span>
-          </button>
+          </ToolbarButton>
         </div>
 
-        <div className="le-toolbar-divider" />
+        <ToolbarDivider variant="editor" />
 
         {/* Play/Pause */}
-        <button
-          className={`le-toolbar-btn ${store.isPlaying ? 'active' : ''}`}
+        <ToolbarButton
+          variant="editor"
+          active={store.isPlaying}
           onClick={() => store.togglePlayback()}
           title={store.isPlaying ? 'Pause' : 'Play'}
-        >
-          {store.isPlaying ? <Pause size={20} /> : <Play size={20} />}
-        </button>
+          icon={store.isPlaying ? <Pause size={20} /> : <Play size={20} />}
+        />
 
         {/* Undo/Redo */}
-        <button className="le-toolbar-btn" onClick={() => store.undo()} disabled={store.historyIndex <= 0} title="Undo (Ctrl+Z)">
-          <Undo2 size={18} />
-        </button>
-        <button className="le-toolbar-btn" onClick={() => store.redo()} disabled={store.historyIndex >= store.history.length - 1} title="Redo (Ctrl+Y)">
-          <Redo2 size={18} />
-        </button>
+        <ToolbarButton variant="editor" onClick={() => store.undo()} disabled={store.historyIndex <= 0} title="Undo (Ctrl+Z)" icon={<Undo2 size={18} />} />
+        <ToolbarButton variant="editor" onClick={() => store.redo()} disabled={store.historyIndex >= store.history.length - 1} title="Redo (Ctrl+Y)" icon={<Redo2 size={18} />} />
 
         {/* Velocity Toggle */}
-        <button 
-          className={`le-toolbar-btn ${store.showVelocityTab ? 'active' : ''}`} 
+        <ToolbarButton 
+          variant="editor"
+          active={store.showVelocityTab} 
           onClick={() => store.setShowVelocityTab(!store.showVelocityTab)} 
           title="Toggle Velocity Tab"
-        >
-          <Activity size={18} />
-        </button>
+          icon={<Activity size={18} />}
+        />
 
         {/* Zoom */}
         <div className="le-toolbar-btn" style={{ cursor: 'default' }} title="Zoom">
@@ -424,12 +432,12 @@ export const LevelEditorToolbar: React.FC = () => {
         </select>
 
 
-        <div className="le-toolbar-divider" />
+        <ToolbarDivider variant="editor" />
         
         {/* Help */}
-        <button className="le-toolbar-btn" onClick={() => setShowHelp(true)} title="Help & Shortcuts">
+        <ToolbarButton variant="editor" onClick={() => setShowHelp(true)} title="Help & Shortcuts">
           <span style={{ fontWeight: 'bold', fontSize: 16 }}>?</span>
-        </button>
+        </ToolbarButton>
 
         {/* Status indicators */}
         {store.audioFile && (
@@ -439,6 +447,7 @@ export const LevelEditorToolbar: React.FC = () => {
               : store.audioFile.name}
           </div>
         )}
+
         {store.midiData && (
           <div className="le-status-badge">
             🎹 {store.midiData.tracks.length} track{store.midiData.tracks.length !== 1 ? 's' : ''}

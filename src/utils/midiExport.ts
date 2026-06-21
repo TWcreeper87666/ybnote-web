@@ -1,7 +1,7 @@
 import { Midi } from '@tonejs/midi';
 import type { ParsedMidiData, EditorTrack } from '../store/useLevelEditorStore';
 
-export const exportToMidiFile = (midiData: ParsedMidiData) => {
+export const generateMidiBlob = (midiData: ParsedMidiData): Blob => {
   const midi = new Midi();
   midi.header.setTempo(midiData.bpm);
 
@@ -32,7 +32,11 @@ export const exportToMidiFile = (midiData: ParsedMidiData) => {
 
   const uint8Array = midi.toArray();
   const buffer = uint8Array.buffer.slice(uint8Array.byteOffset, uint8Array.byteOffset + uint8Array.byteLength) as ArrayBuffer;
-  const blob = new Blob([buffer], { type: 'audio/midi' });
+  return new Blob([buffer], { type: 'audio/midi' });
+};
+
+export const exportToMidiFile = (midiData: ParsedMidiData) => {
+  const blob = generateMidiBlob(midiData);
   
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
