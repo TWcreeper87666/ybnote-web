@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { GameCanvas } from '../components/canvas/GameCanvas';
 import { parseMidiForGame } from '../utils/midiUtils';
 import { importLevel } from '../utils/levelUtils';

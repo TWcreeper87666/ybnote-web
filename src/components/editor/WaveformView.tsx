@@ -215,7 +215,7 @@ export const WaveformView: React.FC = () => {
     }
   };
 
-  const handleWindowMouseUp = (e: MouseEvent) => {
+  const handleWindowMouseUp = () => {
     window.removeEventListener('mousemove', handleWindowMouseMove);
     window.removeEventListener('mouseup', handleWindowMouseUp);
     
