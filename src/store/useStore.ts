@@ -543,7 +543,8 @@ export const useStore = create<AppState>()(
               return selectedRects.some(g => x < g.x + g.w && x + w > g.x && y < g.y + g.h && y + h > g.y);
             };
 
-            const blockIds = state.blocks.filter(b => isInside(b.x, b.y)).map(b => b.id);
+            const targetBlocks = state.gameState === 'arrange' ? state.gameBlocks : state.blocks;
+            const blockIds = targetBlocks.filter(b => isInside(b.x, b.y)).map(b => b.id);
             const trackIds = state.tracks.filter(t => t.nodes.some(n => isInside(n.x, n.y, 10, 10))).map(t => t.id);
             const groupRectIds = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id) || isInside(g.x, g.y, g.w, g.h)).map(g => g.id);
 
@@ -557,7 +558,7 @@ export const useStore = create<AppState>()(
           }
 
           return {
-            selectedBlockIds: state.blocks.map(b => b.id),
+            selectedBlockIds: state.gameState === 'arrange' ? state.gameBlocks.map(b => b.id) : state.blocks.map(b => b.id),
             selectedTrackIds: state.tracks.map(t => t.id),
             selectedGroupRectIds: state.groupRects.map(g => g.id),
             activeTrackId: null,
@@ -645,6 +646,9 @@ export const useStore = create<AppState>()(
             blocks: state.blocks.map(b =>
               state.selectedBlockIds.includes(b.id) ? { ...b, groupId } : b
             ),
+            gameBlocks: state.gameBlocks.map(b =>
+              state.selectedBlockIds.includes(b.id) ? { ...b, groupId } : b
+            ),
             tracks: state.tracks.map(t =>
               state.selectedTrackIds.includes(t.id) ? { ...t, groupId } : t
             ),
@@ -658,6 +662,7 @@ export const useStore = create<AppState>()(
           // Find groups of selected objects
           const groupIdsToRemove = new Set([
             ...state.blocks.filter(b => state.selectedBlockIds.includes(b.id) && b.groupId).map(b => b.groupId),
+            ...state.gameBlocks.filter(b => state.selectedBlockIds.includes(b.id) && b.groupId).map(b => b.groupId),
             ...state.tracks.filter(t => state.selectedTrackIds.includes(t.id) && t.groupId).map(t => t.groupId),
             ...state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id) && g.groupId).map(g => g.groupId)
           ]);
@@ -666,6 +671,9 @@ export const useStore = create<AppState>()(
           get().showToast('已解散群組 (Group Dissolved)');
           return {
             blocks: state.blocks.map(b =>
+              b.groupId && groupIdsToRemove.has(b.groupId) ? { ...b, groupId: undefined } : b
+            ),
+            gameBlocks: state.gameBlocks.map(b =>
               b.groupId && groupIdsToRemove.has(b.groupId) ? { ...b, groupId: undefined } : b
             ),
             tracks: state.tracks.map(t =>

@@ -2,12 +2,13 @@ import { useEffect, useState, useRef } from 'react';
 import { GameCanvas } from '../components/canvas/GameCanvas';
 import { parseMidiForGame } from '../utils/midiUtils';
 import { importLevel } from '../utils/levelUtils';
-import { Upload, SkipForward, Plus, Undo2, Redo2, Settings, Play, Pause, Volume2, Maximize, HelpCircle } from 'lucide-react';
+import { Upload, SkipForward, Plus, Undo2, Redo2, Settings, Play, Pause, Volume2, Maximize, HelpCircle, Home } from 'lucide-react';
 import { SettingsPanel } from '../components/ui/SettingsPanel';
 import { ModalPanel } from '../components/ui/ModalPanel';
 import { playNote } from '../utils/audio';
 import { useStore, undoAction, redoAction } from '../store/useStore';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useShortcuts } from '../hooks/useShortcuts';
 const ProgressBar: React.FC = () => {
   const barRef = useRef<HTMLDivElement>(null);
   const events = useStore.getState().gameEvents;
@@ -37,9 +38,11 @@ const ProgressBar: React.FC = () => {
 export const GamePage: React.FC = () => {
   const { theme, gameState, setGameState, setGameBlocks, setGameEvents, gameScore, gameCombo, perfectCount, goodCount, badCount, missCount, wrongCount, maxCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, toggleSettings, isTutorialOpen, toggleTutorial, latestHit, mobileControlMode, setMobileControlMode } = useStore();
   const isMobile = useIsMobile();
+  useShortcuts();
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
   const [previewVolume, setPreviewVolume] = useState(1);
+  const [arrangeBy, setArrangeBy] = useState<'sequence' | 'pitch'>('sequence');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const previewStartTimeRef = useRef(Date.now());
   const previewTimeOffsetRef = useRef(0);
@@ -226,7 +229,7 @@ export const GamePage: React.FC = () => {
         useStore.getState().updateCamera({ x: window.innerWidth / 2, y: window.innerHeight / 2, zoom: 1 });
       } else {
         // Import .mid/.midi
-        const { gameBlocks, gameEvents } = await parseMidiForGame(file);
+        const { gameBlocks, gameEvents } = await parseMidiForGame(file, arrangeBy);
         setGameFileName(file.name);
         setGameBlocks(gameBlocks);
         setGameEvents(gameEvents);
@@ -247,7 +250,7 @@ export const GamePage: React.FC = () => {
       const blob = await response.blob();
       const file = new File([blob], 'default.mid', { type: 'audio/midi' });
       
-      const { gameBlocks, gameEvents } = await parseMidiForGame(file);
+      const { gameBlocks, gameEvents } = await parseMidiForGame(file, arrangeBy);
       setGameFileName('default.mid');
       setGameBlocks(gameBlocks);
       setGameEvents(gameEvents);
@@ -280,19 +283,33 @@ export const GamePage: React.FC = () => {
               <p style={{ color: 'var(--text-secondary)', marginBottom: 40, textAlign: 'center', maxWidth: 400 }}>
                  Upload a MIDI file to generate a beatmap. Arrange the blocks freely before starting the game.
               </p>
-              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', background: '#6366f1', color: 'white', borderRadius: 8, cursor: 'pointer', fontSize: 18, fontWeight: 'bold' }}>
-                   <Upload size={24} />
-                   Select MIDI File
-                   <input type="file" accept=".mid,.midi,.yblevel" style={{ display: 'none' }} onChange={handleImport} />
-                </label>
-                <button 
-                  onClick={handleDefaultImport}
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', background: 'rgba(99, 102, 241, 0.2)', color: 'var(--text-primary)', border: '2px solid #6366f1', borderRadius: 8, cursor: 'pointer', fontSize: 18, fontWeight: 'bold' }}
-                >
-                  <Play size={24} />
-                  Play Default MIDI
-                </button>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', background: '#6366f1', color: 'white', borderRadius: 8, cursor: 'pointer', fontSize: 18, fontWeight: 'bold' }}>
+                     <Upload size={24} />
+                     Select MIDI File
+                     <input type="file" accept=".mid,.midi,.yblevel" style={{ display: 'none' }} onChange={handleImport} />
+                  </label>
+                  <button 
+                    onClick={handleDefaultImport}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', background: 'rgba(99, 102, 241, 0.2)', color: 'var(--text-primary)', border: '2px solid #6366f1', borderRadius: 8, cursor: 'pointer', fontSize: 18, fontWeight: 'bold' }}
+                  >
+                    <Play size={24} />
+                    Play Default MIDI
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ color: 'white', fontWeight: 'bold' }}>Sort By:</span>
+                  <select 
+                    value={arrangeBy} 
+                    onChange={(e) => setArrangeBy(e.target.value as 'sequence' | 'pitch')}
+                    style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8, fontSize: 16, cursor: 'pointer', outline: 'none', backdropFilter: 'blur(4px)' }}
+                  >
+                    <option value="sequence">Sequence</option>
+                    <option value="pitch">Pitch</option>
+                  </select>
+                </div>
               </div>
            </div>
         )}
@@ -300,6 +317,33 @@ export const GamePage: React.FC = () => {
         {/* Arrangement Overlay */}
         {gameState === 'arrange' && (
             <>
+              {/* Back to Home Button */}
+              <button
+                 onClick={() => {
+                   setGameState('upload');
+                   setGameFileName(null);
+                 }}
+                 style={{
+                   position: 'absolute',
+                   top: 20,
+                   left: 20,
+                   zIndex: 30,
+                   padding: '12px',
+                   background: 'rgba(0,0,0,0.5)',
+                   color: 'white',
+                   border: '1px solid rgba(255,255,255,0.3)',
+                   borderRadius: '8px',
+                   display: 'flex',
+                   alignItems: 'center',
+                   justifyContent: 'center',
+                   backdropFilter: 'blur(4px)',
+                   cursor: 'pointer'
+                 }}
+                 title="Back to Main"
+              >
+                 <Home size={24} />
+              </button>
+
               {/* Top Controls */}
               <div style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 12, zIndex: 10, pointerEvents: 'auto' }}>
                 <select 

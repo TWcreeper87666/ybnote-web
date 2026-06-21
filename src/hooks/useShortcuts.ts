@@ -1,10 +1,20 @@
 import { useEffect } from 'react';
 import { useStore, undoAction, redoAction } from '../store/useStore';
 
+import { useLevelEditorStore } from '../store/useLevelEditorStore';
+
 export const useShortcuts = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const state = useStore.getState();
+
+      // Disable shortcuts during active gameplay
+      if (state.gameState === 'play') return;
+
+      // Disable canvas shortcuts if we are in the level editor's pianoroll tab
+      if (window.location.hash.includes('/level-editor') && useLevelEditorStore.getState().activeTab === 'pianoroll') {
+        return;
+      }
 
       // Check if user is typing in an input field
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
@@ -52,14 +62,17 @@ export const useShortcuts = () => {
       if (e.ctrlKey || e.metaKey) {
         switch (e.key.toLowerCase()) {
           case 'c':
+            if (state.gameState === 'arrange') return;
             e.preventDefault();
             state.copySelected();
             break;
           case 'v':
+            if (state.gameState === 'arrange') return;
             e.preventDefault();
             state.pasteClipboard();
             break;
           case 'd':
+            if (state.gameState === 'arrange') return;
             e.preventDefault();
             state.duplicateSelected();
             break;
@@ -121,6 +134,7 @@ export const useShortcuts = () => {
         }
 
         if (e.key === 'Delete' || e.key === 'Backspace') {
+          if (state.gameState === 'arrange') return;
           if (state.activeTrackId) {
             state.deleteTrack(state.activeTrackId);
             state.setActiveTrackId(null);

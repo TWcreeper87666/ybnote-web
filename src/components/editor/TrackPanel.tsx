@@ -3,6 +3,17 @@ import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import { getTrackColor } from '../../utils/trackColors';
 import { Plus, Copy, Trash2, Eye, EyeOff, Volume2, VolumeX } from 'lucide-react';
 
+const getInstrumentIcon = (instrument: string) => {
+  switch (instrument) {
+    case 'piano': return '🎹';
+    case 'bass': return '🎸';
+    case 'synth': return '📻';
+    case 'percussion': return '🥁';
+    case 'group_rect': return '🟩';
+    default: return '🎹';
+  }
+};
+
 export const TrackPanel: React.FC = () => {
   const store = useLevelEditorStore();
   const tracks = store.midiData?.tracks || [];
@@ -103,6 +114,13 @@ export const TrackPanel: React.FC = () => {
     }
   };
 
+  const handleInstrumentChange = (instrument: string) => {
+    if (contextMenu && contextMenu.trackId !== null) {
+      store.updateTrackInstrument(contextMenu.trackId, instrument);
+    }
+    setContextMenu(null);
+  };
+
   return (
     <aside className="le-track-panel">
       <div className="le-tp-header">
@@ -142,7 +160,10 @@ export const TrackPanel: React.FC = () => {
                   />
                 ) : (
                   <>
-                    <span className="le-tp-name">{track.name}</span>
+                    <span className="le-tp-name">
+                      <span style={{ marginRight: 6 }} title={track.instrument}>{getInstrumentIcon(track.instrument)}</span>
+                      {track.name}
+                    </span>
                     <span className="le-tp-notes">{track.notes.length} notes</span>
                   </>
                 )}
@@ -193,6 +214,23 @@ export const TrackPanel: React.FC = () => {
             <>
               <button className="le-cm-item" onClick={() => handleContextAction('rename')}>Rename (F2)</button>
               <button className="le-cm-item" onClick={() => handleContextAction('duplicate')}>Duplicate</button>
+              <div className="le-cm-divider" />
+              <div style={{ padding: '4px 12px', fontSize: 11, opacity: 0.6, textTransform: 'uppercase', fontWeight: 'bold' }}>Instrument</div>
+              <button className="le-cm-item" onClick={() => handleInstrumentChange('piano')}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('piano')} Piano</div>
+              </button>
+              <button className="le-cm-item" onClick={() => handleInstrumentChange('bass')}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('bass')} Bass</div>
+              </button>
+              <button className="le-cm-item" onClick={() => handleInstrumentChange('synth')}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('synth')} Synth</div>
+              </button>
+              <button className="le-cm-item" onClick={() => handleInstrumentChange('percussion')}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('percussion')} Drums</div>
+              </button>
+              <button className="le-cm-item" onClick={() => handleInstrumentChange('group_rect')}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('group_rect')} Group Rect</div>
+              </button>
               <div className="le-cm-divider" />
               <button className="le-cm-item danger" onClick={() => handleContextAction('remove')}>Remove</button>
             </>

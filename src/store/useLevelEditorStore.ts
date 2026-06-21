@@ -29,6 +29,7 @@ interface HistorySnapshot {
   selectedNoteIds: string[];
   chartEndPosition?: number;
   audioStartTime?: number;
+  playbackAnchor?: number;
 }
 
 interface LevelEditorState {
@@ -118,7 +119,7 @@ interface LevelEditorState {
 
   // Actions — Notes
   getCurrentTrack: () => EditorTrack | null;
-  addNote: (note: EditorNote) => void;
+  addNote: (note: EditorNote, commit?: boolean) => void;
   removeNote: (noteId: string) => void;
   removeSelectedNotes: () => void;
   updateNotes: (updates: { id: string; changes: Partial<EditorNote> }[], commit?: boolean) => void;
@@ -350,12 +351,12 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
     return s.midiData.tracks.find(t => t.id === s.selectedTrackId) || null;
   },
 
-  addNote: (note) => {
+  addNote: (note, commit = true) => {
     const track = get().getCurrentTrack();
     if (!track) return;
     track.notes.push(note);
     set({ midiData: { ...get().midiData! } });
-    get().commitHistory();
+    if (commit) get().commitHistory();
   },
 
   removeNote: (noteId) => {
@@ -421,6 +422,7 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
       selectedNoteIds: Array.from(s.selectedNoteIds),
       chartEndPosition: s.chartEndPosition,
       audioStartTime: s.audioStartTime,
+      playbackAnchor: s.playbackAnchor,
     };
     const newHistory = s.history.slice(0, s.historyIndex + 1);
     newHistory.push(snapshot);
@@ -444,6 +446,10 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
       selectedNoteIds: new Set(snapshot.selectedNoteIds),
       ...(snapshot.chartEndPosition !== undefined && { chartEndPosition: snapshot.chartEndPosition }),
       ...(snapshot.audioStartTime !== undefined && { audioStartTime: snapshot.audioStartTime }),
+      ...(snapshot.playbackAnchor !== undefined && { 
+        playbackAnchor: snapshot.playbackAnchor,
+        playbackPosition: s.isPlaying ? s.playbackPosition : snapshot.playbackAnchor
+      }),
     });
   },
 
@@ -461,6 +467,10 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
       selectedNoteIds: new Set(snapshot.selectedNoteIds),
       ...(snapshot.chartEndPosition !== undefined && { chartEndPosition: snapshot.chartEndPosition }),
       ...(snapshot.audioStartTime !== undefined && { audioStartTime: snapshot.audioStartTime }),
+      ...(snapshot.playbackAnchor !== undefined && { 
+        playbackAnchor: snapshot.playbackAnchor,
+        playbackPosition: s.isPlaying ? s.playbackPosition : snapshot.playbackAnchor
+      }),
     });
   },
 

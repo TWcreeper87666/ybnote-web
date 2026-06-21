@@ -6,7 +6,6 @@ import { LevelEditorToolbar } from '../components/editor/LevelEditorToolbar';
 import { GameCanvas } from '../components/canvas/GameCanvas';
 import { WaveformView } from '../components/editor/WaveformView';
 import { TrackPanel } from '../components/editor/TrackPanel';
-import { VelocityTab } from '../components/editor/VelocityTab';
 import { parseMidiFile } from '../utils/midiImport';
 import { FileDown, Play, Pause, Volume2 } from 'lucide-react';
 import { Toolbar } from '../components/ui/Toolbar';
@@ -104,6 +103,41 @@ const MiniPlayerSlider = () => {
   );
 };
 
+const GlobalPlayhead = () => {
+  const ref = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    let rafId: number;
+    const update = () => {
+      if (ref.current) {
+        const state = useLevelEditorStore.getState();
+        const x = state.playbackPosition * state.zoomLevel - state.scrollLeft;
+        ref.current.style.transform = `translateX(${x}px)`;
+        ref.current.style.opacity = x < 0 ? '0' : '1';
+      }
+      rafId = requestAnimationFrame(update);
+    };
+    rafId = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  return (
+    <div style={{ position: 'absolute', top: 0, bottom: 0, left: 60, right: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 50 }}>
+      <div 
+        ref={ref}
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: 0,
+          width: 2,
+          backgroundColor: '#ffcc00',
+          boxShadow: '0 0 6px rgba(255, 204, 0, 0.6)'
+        }}
+      />
+    </div>
+  );
+};
+
 export const LevelEditorPage: React.FC = () => {
   const { activeTab } = useLevelEditorStore();
   const theme = useStore((s) => s.theme);
@@ -113,7 +147,6 @@ export const LevelEditorPage: React.FC = () => {
 
   const [trackPanelWidth, setTrackPanelWidth] = React.useState(250);
   const [waveformHeight, setWaveformHeight] = React.useState(128);
-  const [velocityHeight, setVelocityHeight] = React.useState(100);
   const [isDragging, setIsDragging] = React.useState(false);
   const dragState = React.useRef<{ type: string; startX: number; startY: number; initialW: number; initialH: number } | null>(null);
 
@@ -220,9 +253,6 @@ export const LevelEditorPage: React.FC = () => {
       } else if (type === 'waveform') {
         const dy = e.clientY - startY;
         setWaveformHeight(Math.max(50, Math.min(500, initialH + dy)));
-      } else if (type === 'velocity') {
-        const dy = startY - e.clientY;
-        setVelocityHeight(Math.max(50, Math.min(500, initialH + dy)));
       }
     };
 
@@ -247,7 +277,7 @@ export const LevelEditorPage: React.FC = () => {
       startX: e.clientX,
       startY: e.clientY,
       initialW: trackPanelWidth,
-      initialH: type === 'waveform' ? waveformHeight : velocityHeight
+      initialH: waveformHeight
     };
     document.body.style.cursor = type === 'track' ? 'ew-resize' : 'ns-resize';
   };
@@ -322,7 +352,8 @@ export const LevelEditorPage: React.FC = () => {
           <div className="le-resizer le-resizer-horizontal" onMouseDown={(e) => startResize(e, 'track')} />
           
           <div className="le-workspace">
-            <div className="le-synced-views" style={{ display: activeTab === 'pianoroll' ? 'flex' : 'none' }}>
+            <div className="le-synced-views" style={{ display: activeTab === 'pianoroll' ? 'flex' : 'none', position: 'relative' }}>
+              <GlobalPlayhead />
               <div style={{ height: waveformHeight, flexShrink: 0, display: 'flex' }}>
                 <WaveformView />
               </div>
@@ -330,12 +361,6 @@ export const LevelEditorPage: React.FC = () => {
               <div className="le-pr-canvas-area">
                 <PianoRoll />
               </div>
-              {store.showVelocityTab && <div className="le-resizer le-resizer-vertical" onMouseDown={(e) => startResize(e, 'velocity')} />}
-              {store.showVelocityTab && (
-                <div style={{ height: velocityHeight, flexShrink: 0, display: 'flex' }}>
-                  <VelocityTab />
-                </div>
-              )}
             </div>
             <div style={{
           position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,

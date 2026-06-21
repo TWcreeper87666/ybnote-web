@@ -211,7 +211,7 @@ export const importMidiToBlocks = async (file: File) => {
     }));
 };
 
-export const parseMidiForGame = async (file: File) => {
+export const parseMidiForGame = async (file: File, arrangeBy: 'sequence' | 'pitch' = 'sequence') => {
     const arrayBuffer = await file.arrayBuffer();
     const midi = new Midi(arrayBuffer);
     
@@ -221,7 +221,7 @@ export const parseMidiForGame = async (file: File) => {
     const generateId = () => Math.random().toString(36).substring(2, 9);
     
     // 1. Extract unique pitch/instrument combinations
-    const uniqueNotes = new Map<string, { pitch: string, instrument: string }>();
+    const uniqueNotes = new Map<string, { pitch: string, instrument: string, midiNumber: number }>();
     
     midi.tracks.forEach(track => {
       const instrument = track.instrument.percussion ? 'percussion' : 
@@ -232,7 +232,7 @@ export const parseMidiForGame = async (file: File) => {
          const pitch = track.instrument.percussion ? 'kick' : note.name;
          const key = `${pitch}-${instrument}`;
          if (!uniqueNotes.has(key)) {
-             uniqueNotes.set(key, { pitch, instrument });
+             uniqueNotes.set(key, { pitch, instrument, midiNumber: note.midi });
          }
       });
     });
@@ -248,7 +248,12 @@ export const parseMidiForGame = async (file: File) => {
 
     const blockIdMap = new Map<string, string>(); // Maps 'pitch-instrument' to blockId
 
-    for (const [key, noteInfo] of uniqueNotes.entries()) {
+    let notesArray = Array.from(uniqueNotes.entries());
+    if (arrangeBy === 'pitch') {
+        notesArray.sort((a, b) => a[1].midiNumber - b[1].midiNumber);
+    }
+
+    for (const [key, noteInfo] of notesArray) {
         const id = generateId();
         blockIdMap.set(key, id);
         gameBlocks.push({

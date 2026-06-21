@@ -2,15 +2,13 @@
 audio delay when no interaction
 
 # level-editor:
-- ctrl+A no response
-- group not working
 - export loading icon
-- track instrument type
+- help panel update
 
 # game
 - do wrong notes play sound?
 - key binding in game?
-- import midi, aks player order type(pitch,newest)
+- import .yblevel
 
 # making
 record mode
@@ -19,20 +17,21 @@ export/ import icon??
 level-editor
 game
 
-# new
+# to do
 new object: trigger
 use same template for arrangement and level-editor
-proper readme
+
 
 # should I
 mobile landspace
+mobile editor/level-editor page
 
 # optimize
 
 my ToolbarDivider is kinda useless
 css seperate
+mobile interact blue rect remove?
 
-## components:
 虛擬樂器面板的拖曳邏輯 (Piano / Drum Keyboard)
 相關檔案：instruments/PianoKeyboard.tsx 與 instruments/DrumKeyboard.tsx
 重複的地方： 這兩個檔案有大量完全相同的滑鼠事件處理程式碼。包含了：

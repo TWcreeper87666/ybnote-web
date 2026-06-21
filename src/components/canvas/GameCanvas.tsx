@@ -9,6 +9,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { TrailRenderer } from './shared/TrailRenderer';
 import { GridBackground } from './shared/GridBackground';
 import { SelectionBoxRenderer } from './shared/SelectionBoxRenderer';
+import { GroupRectRenderer } from '../containers/GroupRectRenderer';
 import { useCanvasCamera } from '../../hooks/useCanvasCamera';
 import { useCanvasInteractions } from '../../hooks/useCanvasInteractions';
 
@@ -856,7 +857,19 @@ export const GameCanvas: React.FC = () => {
             return b.x < x + w && b.x + 60 > x && b.y < y + h && b.y + 60 > y;
           });
           
-          useStore.setState({ selectedBlockIds: directlySelectedGameBlocks.map(b => b.id) });
+          const directlySelectedGroupRects = state.groupRects.filter(g => {
+            return g.x < x + w && g.x + g.w > x && g.y < y + h && g.y + g.h > y;
+          });
+
+          const activeGroupIds = new Set([
+            ...directlySelectedGameBlocks.filter(b => b.groupId).map(b => b.groupId as string),
+            ...directlySelectedGroupRects.filter(g => g.groupId).map(g => g.groupId as string)
+          ]);
+
+          const selectedIds = state.gameBlocks.filter(b => directlySelectedGameBlocks.includes(b) || (b.groupId && activeGroupIds.has(b.groupId))).map(b => b.id);
+          const selectedGIds = state.groupRects.filter(g => directlySelectedGroupRects.includes(g) || (g.groupId && activeGroupIds.has(g.groupId))).map(g => g.id);
+          
+          useStore.setState({ selectedBlockIds: selectedIds, selectedGroupRectIds: selectedGIds });
       } else if (gameState === 'arrange' && e.buttons === 2) {
           const state = useStore.getState();
           const localX = (e.global.x - state.camera.x) / state.camera.zoom;
@@ -903,6 +916,7 @@ export const GameCanvas: React.FC = () => {
       >
         <GridBackground showGrid={showGrid} theme={theme} zoom={camera.zoom} />
         <SelectionBoxRenderer selectionBox={selectionBox} zoom={camera.zoom} />
+        <GroupRectRenderer />
         
         {/* Draw Blocks */}
         {gameBlocks.map(b => (

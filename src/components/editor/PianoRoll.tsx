@@ -46,6 +46,9 @@ export const PianoRoll: React.FC = () => {
   const dragCurrentPitch = useRef(-1);
   const lastNoteDuration = useRef(0.5);
 
+  const hasDragged = useRef(false);
+  const justAddedNote = useRef(false);
+
   // Marquee
   const isMarqueeSelecting = useRef(false);
   const marqueeStart = useRef({ x: 0, y: 0 });
@@ -60,7 +63,7 @@ export const PianoRoll: React.FC = () => {
 
   // Playback animation
   const playbackRafId = useRef(0);
-  const playbackStartWallTime = useRef(0);
+  const lastRafTime = useRef(0);
 
   // Fading animations
   const fadeAnimations = useRef<{x: number, y: number, w: number, h: number, opacity: number}[]>([]);
@@ -138,13 +141,27 @@ export const PianoRoll: React.FC = () => {
     }
     ctx.stroke();
 
-    // Highlight C keys
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
-    for (let p = 0; p <= MAX_PITCH; p++) {
-      if (p % 12 === 0) {
-        const y = (MAX_PITCH - p) * ROW_HEIGHT - scrollTop;
-        if (y + ROW_HEIGHT < 0 || y > height) continue;
-        ctx.fillRect(0, y, width, ROW_HEIGHT);
+    // Highlight C keys (skip or alternate in Drum Mode)
+    const currentTrack = store.getCurrentTrack();
+    const isDrumMode = currentTrack?.instrument === 'percussion' || currentTrack?.instrument === 'group_rect';
+    
+    if (isDrumMode) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.015)';
+      for (let p = 0; p <= MAX_PITCH; p++) {
+        if (p % 2 !== 0) {
+          const y = (MAX_PITCH - p) * ROW_HEIGHT - scrollTop;
+          if (y + ROW_HEIGHT < 0 || y > height) continue;
+          ctx.fillRect(0, y, width, ROW_HEIGHT);
+        }
+      }
+    } else {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+      for (let p = 0; p <= MAX_PITCH; p++) {
+        if (p % 12 === 0) {
+          const y = (MAX_PITCH - p) * ROW_HEIGHT - scrollTop;
+          if (y + ROW_HEIGHT < 0 || y > height) continue;
+          ctx.fillRect(0, y, width, ROW_HEIGHT);
+        }
       }
     }
 
@@ -270,23 +287,7 @@ export const PianoRoll: React.FC = () => {
     ctx.clearRect(0, 0, width, height);
     tCtx.clearRect(0, 0, width, TIMELINE_HEIGHT);
 
-    // 1. Playhead
-    const playheadX = store.playbackPosition * zoom - scrollLeft;
-    if (playheadX >= -2 && playheadX <= width + 2) {
-      ctx.strokeStyle = '#ffcc00';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(playheadX, 0);
-      ctx.lineTo(playheadX, height);
-      ctx.stroke();
-
-      tCtx.strokeStyle = '#ffcc00';
-      tCtx.lineWidth = 2;
-      tCtx.beginPath();
-      tCtx.moveTo(playheadX, 0);
-      tCtx.lineTo(playheadX, TIMELINE_HEIGHT);
-      tCtx.stroke();
-    }
+    // 1. Playhead (Removed in favor of GlobalPlayhead in LevelEditorPage)
 
     // Anchor
     const anchorX = store.playbackAnchor * zoom - scrollLeft;
@@ -333,12 +334,15 @@ export const PianoRoll: React.FC = () => {
 
   // --- Playback loop ---
 
-  const playbackLoop = useCallback(() => {
+  const playbackLoop = useCallback((time: DOMHighResTimeStamp) => {
     const store = useLevelEditorStore.getState();
     if (!store.isPlaying) return;
 
-    const elapsed = (performance.now() - playbackStartWallTime.current) / 1000;
-    const newPos = store.playbackAnchor + elapsed;
+    if (!lastRafTime.current) lastRafTime.current = time;
+    const dt = (time - lastRafTime.current) / 1000;
+    lastRafTime.current = time;
+
+    const newPos = store.playbackPosition + dt * store.audioPlaybackRate;
 
     if (newPos >= store.chartEndPosition) {
       store.stopPlayback();
@@ -353,11 +357,11 @@ export const PianoRoll: React.FC = () => {
         for (const note of track.notes) {
           const newPosMs = newPos * 1000;
           const oldPosMs = store.playbackPosition * 1000;
-          if (note.timeStart * 1000 > oldPosMs && note.timeStart * 1000 <= newPosMs) {
+          if (note.timeStart * 1000 >= oldPosMs && note.timeStart * 1000 < newPosMs) {
             const noteName = pitchToName(note.pitch);
             // Apply track velocity and store's overall MIDI volume
             const finalVelocity = note.velocity * (store.midiVolume / 100);
-            playNote(noteName, finalVelocity);
+            playNote(noteName, finalVelocity, track.instrument);
           }
         }
       }
@@ -526,6 +530,14 @@ export const PianoRoll: React.FC = () => {
     if (!track) return;
 
     if (e.button === 0) { // Left Click
+      if (e.altKey) {
+        wasPlayingRef.current = store.isPlaying;
+        if (store.isPlaying) store.stopPlayback();
+        store.setPlaybackAnchor(x / store.zoomLevel);
+        dragAction.current = 'scrub';
+        return;
+      }
+
       if (e.ctrlKey) {
         // Start marquee
         isMarqueeSelecting.current = true;
@@ -548,6 +560,8 @@ export const PianoRoll: React.FC = () => {
         dragStartMouseX.current = x;
         dragStartMouseY.current = y;
         dragCurrentPitch.current = note.pitch;
+        hasDragged.current = false;
+        justAddedNote.current = false;
 
         dragStartNotes.current.clear();
         for (const n of track.notes) {
@@ -560,18 +574,27 @@ export const PianoRoll: React.FC = () => {
           }
         }
 
-        if (target.type === 'note') dragAction.current = 'move';
-        else if (target.type === 'resize-left') dragAction.current = 'resize-left';
-        else dragAction.current = 'resize-right';
+        if (target.type === 'note') {
+          dragAction.current = 'move';
+          store.setPlaybackAnchor(note.timeStart);
+        } else if (target.type === 'resize-left') {
+          dragAction.current = 'resize-left';
+          store.setPlaybackAnchor(note.timeStart);
+        } else {
+          dragAction.current = 'resize-right';
+          store.setPlaybackAnchor(note.timeStart + note.duration);
+        }
 
         // Preview sound
-        playNote(pitchToName(note.pitch), note.velocity);
+        playNote(pitchToName(note.pitch), note.velocity, track.instrument);
       } else if (target.type === 'empty') {
         // Add new note
         const zoom = store.zoomLevel;
         const pitch = MAX_PITCH - Math.floor((y + store.scrollTop) / ROW_HEIGHT);
         const timeStart = x / zoom;
         const duration = lastNoteDuration.current;
+
+        store.setPlaybackAnchor(timeStart);
 
         const newNote: EditorNote = {
           id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -583,10 +606,10 @@ export const PianoRoll: React.FC = () => {
         };
 
         if (!e.shiftKey) store.clearSelection();
-        store.addNote(newNote);
+        store.addNote(newNote, false);
         store.selectNote(newNote.id);
 
-        playNote(newNote.name, 0.8);
+        playNote(newNote.name, 0.8, track.instrument);
 
         // Start drag for the new note
         dragTargetNoteId.current = newNote.id;
@@ -600,9 +623,13 @@ export const PianoRoll: React.FC = () => {
           duration: newNote.duration,
           pitch: newNote.pitch,
         });
+        hasDragged.current = false;
+        justAddedNote.current = true;
       }
     } else if (e.button === 2) { // Right click = erase
       dragAction.current = 'erase';
+      hasDragged.current = false;
+      justAddedNote.current = false;
       if (target.type === 'note' || target.type === 'resize-left' || target.type === 'resize-right') {
         const note = target.note!;
         const noteX = note.timeStart * store.zoomLevel;
@@ -633,7 +660,8 @@ export const PianoRoll: React.FC = () => {
     if (dragAction.current === 'none' && !isMarqueeSelecting.current && !isMiddlePanning.current) {
       const target = getHitTarget(x, y, isTimeline);
       let cursor = 'crosshair';
-      if (target.type === 'resize-left' || target.type === 'resize-right' || target.type === 'stretch-midi' || target.type === 'chart-end-pos') cursor = 'ew-resize';
+      if (e.altKey) cursor = 'pointer';
+      else if (target.type === 'resize-left' || target.type === 'resize-right' || target.type === 'stretch-midi' || target.type === 'chart-end-pos') cursor = 'ew-resize';
       else if (target.type === 'note') cursor = 'move';
       else if (target.type === 'timeline') cursor = 'pointer';
       
@@ -676,6 +704,7 @@ export const PianoRoll: React.FC = () => {
     }
 
     if (dragAction.current !== 'none') {
+      hasDragged.current = true;
       const dxTime = (x - dragStartMouseX.current) / store.zoomLevel;
       const dyRows = Math.floor((y - dragStartMouseY.current) / ROW_HEIGHT);
 
@@ -718,21 +747,30 @@ export const PianoRoll: React.FC = () => {
             const newTime = Math.max(0, orig.timeStart + dxTime);
             updates.push({ id: noteId, changes: { timeStart: newTime, pitch: newPitch, name: pitchToName(newPitch) } });
 
-            if (noteId === dragTargetNoteId.current && newPitch !== dragCurrentPitch.current) {
-              primaryNewPitch = newPitch;
-              pitchChanged = true;
+            if (noteId === dragTargetNoteId.current) {
+              store.setPlaybackAnchor(newTime);
+              if (newPitch !== dragCurrentPitch.current) {
+                primaryNewPitch = newPitch;
+                pitchChanged = true;
+              }
             }
           } else if (dragAction.current === 'resize-right') {
             const newDuration = Math.max(0.01, orig.duration + dxTime);
             updates.push({ id: noteId, changes: { duration: newDuration } });
-            if (noteId === dragTargetNoteId.current) lastNoteDuration.current = newDuration;
+            if (noteId === dragTargetNoteId.current) {
+              lastNoteDuration.current = newDuration;
+              store.setPlaybackAnchor(orig.timeStart + newDuration);
+            }
           } else if (dragAction.current === 'resize-left') {
             const maxDx = orig.duration - 0.01;
             const actualDx = Math.min(dxTime, maxDx);
             const newTime = Math.max(0, orig.timeStart + actualDx);
             const newDuration = orig.duration - actualDx;
             updates.push({ id: noteId, changes: { timeStart: newTime, duration: newDuration } });
-            if (noteId === dragTargetNoteId.current) lastNoteDuration.current = newDuration;
+            if (noteId === dragTargetNoteId.current) {
+              lastNoteDuration.current = newDuration;
+              store.setPlaybackAnchor(newTime);
+            }
           }
         });
       }
@@ -743,7 +781,7 @@ export const PianoRoll: React.FC = () => {
 
         if (pitchChanged) {
           dragCurrentPitch.current = primaryNewPitch;
-          playNote(pitchToName(primaryNewPitch));
+          playNote(pitchToName(primaryNewPitch), 0.8, store.getCurrentTrack()?.instrument);
         }
       }
     }
@@ -770,8 +808,12 @@ export const PianoRoll: React.FC = () => {
     }
 
     if (dragAction.current !== 'none') {
+      if (hasDragged.current || justAddedNote.current || dragAction.current === 'erase') {
+        store.commitHistory();
+      }
       dragAction.current = 'none';
-      store.commitHistory();
+      hasDragged.current = false;
+      justAddedNote.current = false;
     }
 
     if (isMarqueeSelecting.current) {
@@ -847,10 +889,60 @@ export const PianoRoll: React.FC = () => {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
 
     const store = useLevelEditorStore.getState();
+    if (store.activeTab !== 'pianoroll') return;
+
+    if (e.key === 'Alt') {
+      const fgCanvas = fgCanvasRef.current;
+      if (fgCanvas && dragAction.current === 'none') {
+        fgCanvas.style.cursor = 'pointer';
+      }
+    }
 
     if (e.key === ' ') {
       e.preventDefault();
       store.togglePlayback();
+      return;
+    }
+
+    if (e.key === 'Home') {
+      e.preventDefault();
+      const track = store.getCurrentTrack();
+      let targetTime = 0;
+      if (store.selectedNoteIds.size > 0 && track) {
+        const selectedNotes = track.notes.filter(n => store.selectedNoteIds.has(n.id));
+        targetTime = Math.min(...selectedNotes.map(n => n.timeStart));
+      }
+      store.setPlaybackAnchor(targetTime);
+      
+      const wrapper = wrapperRef.current;
+      const viewportW = wrapper ? wrapper.clientWidth - KEYBOARD_WIDTH : 800;
+      const visibleMinTime = store.scrollLeft / store.zoomLevel;
+      const visibleMaxTime = (store.scrollLeft + viewportW) / store.zoomLevel;
+      
+      if (targetTime < visibleMinTime || targetTime > visibleMaxTime) {
+        store.setScrollLeft(Math.max(0, targetTime * store.zoomLevel - 100));
+      }
+      return;
+    }
+
+    if (e.key === 'End') {
+      e.preventDefault();
+      const track = store.getCurrentTrack();
+      let targetTime = store.chartEndPosition;
+      if (store.selectedNoteIds.size > 0 && track) {
+        const selectedNotes = track.notes.filter(n => store.selectedNoteIds.has(n.id));
+        targetTime = Math.max(...selectedNotes.map(n => n.timeStart + n.duration));
+      }
+      store.setPlaybackAnchor(targetTime);
+
+      const wrapper = wrapperRef.current;
+      const viewportW = wrapper ? wrapper.clientWidth - KEYBOARD_WIDTH : 800;
+      const visibleMinTime = store.scrollLeft / store.zoomLevel;
+      const visibleMaxTime = (store.scrollLeft + viewportW) / store.zoomLevel;
+      
+      if (targetTime < visibleMinTime || targetTime > visibleMaxTime) {
+        store.setScrollLeft(Math.max(0, targetTime * store.zoomLevel - 100));
+      }
       return;
     }
 
@@ -896,6 +988,15 @@ export const PianoRoll: React.FC = () => {
     }
   }, [drawBgCanvas, drawFgCanvas]);
 
+  const handleKeyUp = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Alt') {
+      const fgCanvas = fgCanvasRef.current;
+      if (fgCanvas && dragAction.current === 'none') {
+        fgCanvas.style.cursor = 'crosshair';
+      }
+    }
+  }, []);
+
   // --- Subscriptions & lifecycle ---
 
   useEffect(() => {
@@ -905,6 +1006,7 @@ export const PianoRoll: React.FC = () => {
     if (wrapperRef.current) observer.observe(wrapperRef.current);
 
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
 
     // Subscribe to store changes for redraw
     const unsub = useLevelEditorStore.subscribe((state, prevState) => {
@@ -928,7 +1030,7 @@ export const PianoRoll: React.FC = () => {
 
       // Handle playback start/stop
       if (state.isPlaying && !prevState.isPlaying) {
-        playbackStartWallTime.current = performance.now();
+        lastRafTime.current = performance.now();
         playbackRafId.current = requestAnimationFrame(playbackLoop);
       } else if (!state.isPlaying && prevState.isPlaying) {
         cancelAnimationFrame(playbackRafId.current);
@@ -939,11 +1041,12 @@ export const PianoRoll: React.FC = () => {
     return () => {
       observer.disconnect();
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
       cancelAnimationFrame(playbackRafId.current);
       cancelAnimationFrame(fadeRafId.current);
       unsub();
     };
-  }, [resizeCanvases, handleKeyDown, drawBgCanvas, drawFgCanvas, playbackLoop]);
+  }, [resizeCanvases, handleKeyDown, handleKeyUp, drawBgCanvas, drawFgCanvas, playbackLoop]);
 
   // Add wheel handler after mount (passive: false required)
   useEffect(() => {

@@ -3,6 +3,38 @@ import WaveSurfer from 'wavesurfer.js';
 import Minimap from 'wavesurfer.js/dist/plugins/minimap.js';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 
+const CustomWaveProgress = () => {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let rafId: number;
+    const update = () => {
+      if (ref.current) {
+        const state = useLevelEditorStore.getState();
+        const w = state.playbackPosition * state.zoomLevel;
+        ref.current.style.width = `${Math.max(0, w)}px`;
+      }
+      rafId = requestAnimationFrame(update);
+    };
+    rafId = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  return (
+    <div 
+      ref={ref}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        pointerEvents: 'none',
+        zIndex: 5
+      }}
+    />
+  );
+};
+
 export const WaveformView: React.FC = () => {
   const store = useLevelEditorStore();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -30,9 +62,9 @@ export const WaveformView: React.FC = () => {
     const ws = WaveSurfer.create({
       container: containerRef.current,
       waveColor: '#a5b4fc',
-      progressColor: '#4f46e5',
-      cursorColor: '#ff5555',
-      cursorWidth: 2,
+      progressColor: '#a5b4fc', // Hide native progress by making it same as waveColor
+      cursorColor: 'transparent',
+      cursorWidth: 0,
       minPxPerSec: store.zoomLevel,
       autoCenter: false,
       interact: false, // We handle click/drag manually
@@ -82,12 +114,7 @@ export const WaveformView: React.FC = () => {
 
   useEffect(() => {
     if (wavesurferRef.current) {
-      const oldRate = wavesurferRef.current.getPlaybackRate();
-      const newRate = store.audioPlaybackRate;
-      wavesurferRef.current.setPlaybackRate(newRate);
-      
-      const currentAudioTime = (store.playbackAnchor - store.audioStartTime) * oldRate;
-      store.setAudioStartTime(store.playbackAnchor - (currentAudioTime / newRate));
+      wavesurferRef.current.setPlaybackRate(store.audioPlaybackRate);
     }
   }, [store.audioPlaybackRate]);
 
@@ -104,7 +131,7 @@ export const WaveformView: React.FC = () => {
     
     const ws = wavesurferRef.current;
     if (store.isPlaying) {
-      const targetAudioTime = (store.playbackPosition - store.audioStartTime) * store.audioPlaybackRate;
+      const targetAudioTime = store.playbackPosition - store.audioStartTime;
       if (targetAudioTime >= 0) {
         if (!ws.isPlaying()) {
           ws.setTime(targetAudioTime);
@@ -120,7 +147,7 @@ export const WaveformView: React.FC = () => {
       }
     } else {
       if (ws.isPlaying()) ws.pause();
-      const targetAudioTime = (store.playbackAnchor - store.audioStartTime) * store.audioPlaybackRate;
+      const targetAudioTime = store.playbackAnchor - store.audioStartTime;
       if (targetAudioTime >= 0 && targetAudioTime <= audioDuration) {
         ws.setTime(targetAudioTime);
       } else {
@@ -198,7 +225,7 @@ export const WaveformView: React.FC = () => {
         store.setAudioStartTime(dragStartAudioTime.current + dt);
         
         if (wavesurferRef.current && !useLevelEditorStore.getState().isPlaying) {
-          const targetAudioTime = (store.playbackAnchor - store.audioStartTime) * store.audioPlaybackRate;
+          const targetAudioTime = store.playbackAnchor - store.audioStartTime;
           wavesurferRef.current.setTime(Math.max(0, targetAudioTime));
         }
       }
@@ -274,13 +301,13 @@ export const WaveformView: React.FC = () => {
     );
   }
 
-  const currentTotalSeconds = Math.max(0, (store.playbackAnchor - store.audioStartTime) * store.audioPlaybackRate);
+  const currentTotalSeconds = Math.max(0, store.playbackAnchor - store.audioStartTime);
   const m = Math.floor(currentTotalSeconds / 60);
   const s = Math.floor(currentTotalSeconds % 60);
   const dragTimeText = `${m}:${s.toString().padStart(2, '0')}`;
 
   const offsetPixels = store.audioStartTime * store.zoomLevel;
-  const scaledDuration = (audioDuration * store.zoomLevel) / store.audioPlaybackRate;
+  const scaledDuration = audioDuration * store.zoomLevel;
 
   return (
     <div 
@@ -300,23 +327,6 @@ export const WaveformView: React.FC = () => {
         </div>
       )}
 
-      <div className="rate-selector" style={{ position: 'absolute', top: 8, right: 8, zIndex: 20 }}>
-        <select 
-          value={store.audioPlaybackRate} 
-          onChange={(e) => store.setAudioPlaybackRate(Number(e.target.value))}
-          style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid #444', color: '#fff', padding: '2px 6px', borderRadius: 4, fontSize: '0.75rem', outline: 'none', cursor: 'pointer' }}
-          tabIndex={-1}
-          onFocus={(e) => e.target.blur()}
-          onKeyDown={(e) => e.preventDefault()}
-        >
-          <option value={0.5}>0.5x</option>
-          <option value={0.75}>0.75x</option>
-          <option value={1.0}>1.0x</option>
-          <option value={1.25}>1.25x</option>
-          <option value={1.5}>1.5x</option>
-        </select>
-      </div>
-
       <div className="waveform-sticky">
         <div className="waveform-content" style={{ transform: `translateX(${-store.scrollLeft}px)` }}>
           <div 
@@ -328,6 +338,7 @@ export const WaveformView: React.FC = () => {
           >
             <div ref={containerRef} className="waveform-container" />
           </div>
+          <CustomWaveProgress />
         </div>
       </div>
     </div>
