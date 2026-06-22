@@ -4,10 +4,11 @@ import { useStore } from '../store/useStore';
 interface UseCanvasCameraOptions {
   isPlayMode: boolean;
   isActive: boolean;
+  isGameCanvas?: boolean;
   onWheelIntercept?: (e: WheelEvent) => boolean;
 }
 
-export const useCanvasCamera = ({ isPlayMode, isActive, onWheelIntercept }: UseCanvasCameraOptions) => {
+export const useCanvasCamera = ({ isPlayMode, isActive, isGameCanvas, onWheelIntercept }: UseCanvasCameraOptions) => {
   // Desktop Wheel
   useEffect(() => {
     if (!isActive) return;
@@ -18,10 +19,11 @@ export const useCanvasCamera = ({ isPlayMode, isActive, onWheelIntercept }: UseC
       
       e.preventDefault();
       const state = useStore.getState();
+      const activeCamera = isGameCanvas ? state.gameCamera : state.camera;
       const zoomFactor = 1.1;
       const direction = e.deltaY > 0 ? 1 / zoomFactor : zoomFactor;
       
-      const oldZoom = state.camera.zoom;
+      const oldZoom = activeCamera.zoom;
       let newZoom = oldZoom * direction;
       newZoom = Math.min(Math.max(newZoom, 0.1), 5); // Clamp zoom
       
@@ -33,13 +35,17 @@ export const useCanvasCamera = ({ isPlayMode, isActive, onWheelIntercept }: UseC
       const globalX = isCrosshair ? window.innerWidth / 2 : e.clientX - rect.left;
       const globalY = isCrosshair ? window.innerHeight / 2 : e.clientY - rect.top;
       
-      const localX = (globalX - state.camera.x) / oldZoom;
-      const localY = (globalY - state.camera.y) / oldZoom;
+      const localX = (globalX - activeCamera.x) / oldZoom;
+      const localY = (globalY - activeCamera.y) / oldZoom;
       
       const newCameraX = globalX - localX * newZoom;
       const newCameraY = globalY - localY * newZoom;
 
-      state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+      if (isGameCanvas) {
+         state.updateGameCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+      } else {
+         state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+      }
     };
 
     document.addEventListener('wheel', handler, { passive: false });

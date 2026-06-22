@@ -99,10 +99,10 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
         return;
       }
       const state = useStore.getState();
-      const camera = state.camera;
+      const isLevelEditor = window.location.hash.includes('/level-editor');
+      const camera = isLevelEditor ? state.gameCamera : state.camera;
       
-      let canvas = document.querySelector('.le-blocks-container canvas');
-      if (!canvas) canvas = document.querySelector('canvas');
+      const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
       const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
       const localX = (e.clientX - rect.left - camera.x) / camera.zoom;
       const localY = (e.clientY - rect.top - camera.y) / camera.zoom;
@@ -161,6 +161,11 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
       setIsDragging(false);
       if (hasPaused) {
         useStore.temporal.getState().resume();
+        if (window.location.hash.includes('/level-editor')) {
+          import('../store/useLevelEditorStore').then(({ useLevelEditorStore }) => {
+            useLevelEditorStore.getState().commitHistory();
+          });
+        }
       }
       if (isMobile) {
         useStore.getState().clearSelection();

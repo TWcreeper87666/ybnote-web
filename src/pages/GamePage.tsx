@@ -2,11 +2,13 @@ import { useEffect, useState, useRef } from 'react';
 import { GameCanvas } from '../components/canvas/GameCanvas';
 import { parseMidiForGame } from '../utils/midiUtils';
 import { importLevel } from '../utils/levelUtils';
-import { Upload, SkipForward, Plus, Undo2, Redo2, Settings, Play, Pause, Volume2, Maximize, HelpCircle, Home } from 'lucide-react';
+import { Upload, SkipForward, Plus, Undo2, Redo2, Settings, Play, Pause, Volume2, Maximize, HelpCircle, Home, LayoutList } from 'lucide-react';
 import { SettingsPanel } from '../components/ui/SettingsPanel';
 import { ModalPanel } from '../components/ui/ModalPanel';
+import { OutlinerPanel } from '../components/ui/OutlinerPanel';
 import { playNote } from '../utils/audio';
 import { useStore, undoAction, redoAction } from '../store/useStore';
+import { useLevelEditorStore } from '../store/useLevelEditorStore';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useShortcuts } from '../hooks/useShortcuts';
 const ProgressBar: React.FC = () => {
@@ -36,14 +38,14 @@ const ProgressBar: React.FC = () => {
 };
 
 export const GamePage: React.FC = () => {
-  const { theme, gameState, setGameState, setGameBlocks, setGameEvents, gameScore, gameCombo, perfectCount, goodCount, badCount, missCount, wrongCount, maxCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, toggleSettings, isTutorialOpen, toggleTutorial, latestHit, mobileControlMode, setMobileControlMode } = useStore();
+  const { theme, gameState, setGameState, setGameBlocks, setGameEvents, gameScore, gameCombo, perfectCount, goodCount, badCount, missCount, wrongCount, maxCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, toggleSettings, isTutorialOpen, toggleTutorial, latestHit, mobileControlMode, setMobileControlMode, levelMetadata, setLevelMetadata, gameAudioUrl, setGameAudioUrl, gameAudioVolume, setGameAudioVolume } = useStore();
   const isMobile = useIsMobile();
   useShortcuts();
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
-  const [previewVolume, setPreviewVolume] = useState(1);
   const [arrangeBy, setArrangeBy] = useState<'sequence' | 'pitch'>('sequence');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const previewStartTimeRef = useRef(Date.now());
   const previewTimeOffsetRef = useRef(0);
   const lastPlayedEventIndexRef = useRef(0);
@@ -138,8 +140,50 @@ export const GamePage: React.FC = () => {
   }, [gameState, isMobile]);
 
 
-  // Preview Player Logic
+  // Audio playback for Play mode
   useEffect(() => {
+    if (gameState !== 'play') return;
+    let rafId: number;
+    let started = false;
+    const tick = () => {
+      const currentSyncTime = (window as any).__currentGameTime;
+      const offset = useLevelEditorStore.getState().offset;
+
+      if (audioRef.current && (currentSyncTime + offset) >= 0) {
+        if (!started) {
+          audioRef.current.currentTime = (currentSyncTime + offset) / 1000;
+          audioRef.current.playbackRate = useStore.getState().gameSpeed;
+          audioRef.current.play().catch(e => console.warn(e));
+          started = true;
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (audioRef.current) audioRef.current.pause();
+    };
+  }, [gameState]);
+
+  // Preview Player Logic for Arrange mode
+  useEffect(() => {
+      if (audioRef.current) {
+         if (gameState === 'arrange' && previewPlaying) {
+            const offset = useLevelEditorStore.getState().offset;
+            const syncTime = previewTime + offset;
+           if (syncTime >= 0) {
+              audioRef.current.currentTime = syncTime / 1000;
+              audioRef.current.playbackRate = useStore.getState().gameSpeed;
+              audioRef.current.play().catch(e => console.warn(e));
+           } else {
+              audioRef.current.pause();
+           }
+        } else if (gameState === 'arrange') {
+           audioRef.current.pause();
+        }
+     }
+
      if (gameState !== 'arrange' || !previewPlaying) return;
 
      let rafId: number;
@@ -165,12 +209,16 @@ export const GamePage: React.FC = () => {
          setPreviewTime(elapsed);
 
          const events = useStore.getState().gameEvents;
-         while (lastPlayedEventIndexRef.current < events.length && events[lastPlayedEventIndexRef.current].time <= elapsed) {
+          while (lastPlayedEventIndexRef.current < events.length && events[lastPlayedEventIndexRef.current].time <= elapsed) {
              const ev = events[lastPlayedEventIndexRef.current];
-             const b = useStore.getState().gameBlocks.find(blk => blk.id === ev.blockId);
-             if (b) {
-                playNote(b.pitch, (b.volume ?? 1) * previewVolume, b.instrument);
-                useStore.getState().updateGameBlock(b.id, { playedAt: Date.now() });
+             if (ev.blockId === 'background') {
+                playNote(ev.pitch, gameAudioVolume, ev.instrument);
+             } else {
+                const b = useStore.getState().gameBlocks.find(blk => blk.id === ev.blockId);
+                if (b) {
+                   playNote(b.pitch, (b.volume ?? 1) * gameAudioVolume, b.instrument);
+                   useStore.getState().updateGameBlock(b.id, { playedAt: Date.now() });
+                }
              }
              lastPlayedEventIndexRef.current++;
          }
@@ -214,7 +262,13 @@ export const GamePage: React.FC = () => {
     try {
       if (file.name.endsWith('.yblevel')) {
         // Import .yblevel package
-        const { levelData } = await importLevel(file);
+        const { levelData, audioBlob } = await importLevel(file);
+        if (audioBlob) {
+            const url = URL.createObjectURL(audioBlob);
+            setGameAudioUrl(url);
+        } else {
+            setGameAudioUrl(null);
+        }
         setGameFileName(file.name);
         setGameBlocks(levelData.blocks.map(b => ({
           id: b.id,
@@ -225,16 +279,37 @@ export const GamePage: React.FC = () => {
           volume: b.volume,
         })));
         setGameEvents(levelData.events);
+        setLevelMetadata({
+          title: levelData.title,
+          author: levelData.author,
+          description: levelData.description,
+          midiCredit: levelData.midiCredit
+        });
         setGameState('arrange');
-        useStore.getState().updateCamera({ x: window.innerWidth / 2, y: window.innerHeight / 2, zoom: 1 });
+        let avgX = 0, avgY = 0;
+        if (levelData.blocks.length > 0) {
+           avgX = levelData.blocks.reduce((sum, b) => sum + b.x, 0) / levelData.blocks.length;
+           avgY = levelData.blocks.reduce((sum, b) => sum + b.y, 0) / levelData.blocks.length;
+        }
+        const cam = { x: window.innerWidth / 2 - avgX, y: window.innerHeight / 2 - avgY, zoom: 1 };
+        useStore.getState().updateCamera(cam);
+        useStore.getState().updateGameCamera(cam);
       } else {
         // Import .mid/.midi
         const { gameBlocks, gameEvents } = await parseMidiForGame(file, arrangeBy);
         setGameFileName(file.name);
         setGameBlocks(gameBlocks);
         setGameEvents(gameEvents);
+        setLevelMetadata(null);
         setGameState('arrange');
-        useStore.getState().updateCamera({ x: window.innerWidth / 2, y: window.innerHeight / 2, zoom: 1 });
+        let avgX = 0, avgY = 0;
+        if (gameBlocks.length > 0) {
+           avgX = gameBlocks.reduce((sum, b) => sum + b.x, 0) / gameBlocks.length;
+           avgY = gameBlocks.reduce((sum, b) => sum + b.y, 0) / gameBlocks.length;
+        }
+        const cam = { x: window.innerWidth / 2 - avgX, y: window.innerHeight / 2 - avgY, zoom: 1 };
+        useStore.getState().updateCamera(cam);
+        useStore.getState().updateGameCamera(cam);
       }
     } catch (err) {
       console.error(err);
@@ -254,8 +329,16 @@ export const GamePage: React.FC = () => {
       setGameFileName('default.mid');
       setGameBlocks(gameBlocks);
       setGameEvents(gameEvents);
+      setLevelMetadata(null);
       setGameState('arrange');
-      useStore.getState().updateCamera({ x: window.innerWidth / 2, y: window.innerHeight / 2, zoom: 1 });
+      let avgX = 0, avgY = 0;
+      if (gameBlocks.length > 0) {
+         avgX = gameBlocks.reduce((sum, b) => sum + b.x, 0) / gameBlocks.length;
+         avgY = gameBlocks.reduce((sum, b) => sum + b.y, 0) / gameBlocks.length;
+      }
+      const cam = { x: window.innerWidth / 2 - avgX, y: window.innerHeight / 2 - avgY, zoom: 1 };
+      useStore.getState().updateCamera(cam);
+      useStore.getState().updateGameCamera(cam);
     } catch (err) {
       console.error(err);
       alert("Failed to load default MIDI. Make sure default.mid is in the public/ folder.");
@@ -269,6 +352,7 @@ export const GamePage: React.FC = () => {
       onContextMenu={(e) => e.preventDefault()}
       style={{ overflow: 'hidden', touchAction: 'none', userSelect: 'none' }}
     >
+      <audio ref={audioRef} src={gameAudioUrl || undefined} style={{ display: 'none' }} />
       <div className="main-wrapper">
         
         {/* Render Canvas */}
@@ -281,13 +365,13 @@ export const GamePage: React.FC = () => {
            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)', zIndex: 20 }}>
               <h1 style={{ color: 'var(--text-primary)', marginBottom: 20 }}>Rhythm Game Mode</h1>
               <p style={{ color: 'var(--text-secondary)', marginBottom: 40, textAlign: 'center', maxWidth: 400 }}>
-                 Upload a MIDI file to generate a beatmap. Arrange the blocks freely before starting the game.
+                 Upload a MIDI file or .yblevel to generate a beatmap. Arrange the blocks freely before starting the game.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
                 <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', background: '#6366f1', color: 'white', borderRadius: 8, cursor: 'pointer', fontSize: 18, fontWeight: 'bold' }}>
                      <Upload size={24} />
-                     Select MIDI File
+                     Select MIDI or .yblevel
                      <input type="file" accept=".mid,.midi,.yblevel" style={{ display: 'none' }} onChange={handleImport} />
                   </label>
                   <button 
@@ -365,8 +449,8 @@ export const GamePage: React.FC = () => {
                      onChange={(e) => setMobileControlMode(e.target.value as 'crosshair' | 'touch')}
                      style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8, fontSize: 16, cursor: 'pointer', outline: 'none', backdropFilter: 'blur(4px)' }}
                    >
-                     <option value="crosshair">Crosshair Mode</option>
                      <option value="touch">Normal Mode</option>
+                     <option value="crosshair">Crosshair Mode</option>
                    </select>
 
                 <button 
@@ -393,17 +477,24 @@ export const GamePage: React.FC = () => {
                  onTouchMove={(e) => e.stopPropagation()}
                  onPointerDown={(e) => e.stopPropagation()}
               >
-                <button className="toolbar-btn glass-panel" onClick={toggleTutorial} title="Tutorial"><HelpCircle size={24} /></button>
                 <button className="toolbar-btn glass-panel" onClick={() => undoAction()} title="Undo"><Undo2 size={24} /></button>
                 <button className="toolbar-btn glass-panel" onClick={() => redoAction()} title="Redo"><Redo2 size={24} /></button>
+                <button className="toolbar-btn glass-panel" onClick={() => useStore.getState().toggleOutliner()} title="Outliner"><LayoutList size={24} /></button>
                 <button className="toolbar-btn glass-panel" onClick={toggleSettings} title="Settings"><Settings size={24} /></button>
+                <button className="toolbar-btn glass-panel" onClick={toggleTutorial} title="Tutorial"><HelpCircle size={24} /></button>
               </div>
+
+              {/* Outliner Panel Render */}
+              <OutlinerPanel />
 
               {/* Bottom Mini Player */}
               <div 
                  style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 24px', background: 'linear-gradient(to top, rgba(0,0,0,0.9), transparent)', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 12, pointerEvents: 'none' }}
               >
-                 <div style={{ color: 'white', fontSize: 14, opacity: 0.8, pointerEvents: 'auto', width: 'fit-content' }}>{gameFileName || 'Unknown MIDI'}</div>
+                 <div style={{ color: 'white', pointerEvents: 'auto', width: 'fit-content' }}>
+                    <div style={{ fontSize: 18, fontWeight: 'bold' }}>{levelMetadata?.title || gameFileName || 'Unknown MIDI'}</div>
+                    {levelMetadata?.author && <div style={{ fontSize: 14, opacity: 0.8 }}>by {levelMetadata.author}</div>}
+                 </div>
                  <div 
                     style={{ display: 'flex', alignItems: 'center', gap: 16, pointerEvents: 'auto' }}
                     onWheel={(e) => e.stopPropagation()}
@@ -440,8 +531,12 @@ export const GamePage: React.FC = () => {
                          min="0"
                          max="1"
                          step="0.05"
-                         value={previewVolume}
-                         onChange={(e) => setPreviewVolume(parseFloat(e.target.value))}
+                         value={gameAudioVolume}
+                         onChange={(e) => {
+                             const v = parseFloat(e.target.value);
+                             setGameAudioVolume(v);
+                             if (audioRef.current) audioRef.current.volume = v;
+                         }}
                          style={{ width: 80, accentColor: '#6366f1', cursor: 'pointer' }}
                        />
                     </div>
@@ -510,7 +605,7 @@ export const GamePage: React.FC = () => {
 
              {/* Hit Result Popup */}
              <div style={{ position: 'absolute', top: isMobile ? 20 : 160, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', pointerEvents: 'none', zIndex: 10 }}>
-                {latestHit && Date.now() - latestHit.time < 1000 && (
+                {latestHit && (
                    <div 
                       key={latestHit.time} 
                       style={{ 
@@ -532,7 +627,7 @@ export const GamePage: React.FC = () => {
              {/* Hit Error Bar */}
              <div style={{ position: 'absolute', bottom: isMobile ? 10 : 60, left: '50%', transform: 'translateX(-50%)', width: isMobile ? 300 : 400, height: 8, background: 'rgba(0,0,0,0.6)', borderRadius: 4, pointerEvents: 'none', zIndex: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)' }}>
                 <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 2, background: 'rgba(255,255,255,0.8)', transform: 'translateX(-50%)' }} />
-                {latestHit && Date.now() - latestHit.time < 2000 && (
+                {latestHit && (
                    <div 
                       key={`hit-${latestHit.time}`}
                       style={{
@@ -630,7 +725,8 @@ export const GamePage: React.FC = () => {
            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.9)', zIndex: 40, animation: 'fadeIn 0.5s forwards' }}>
               <h2 style={{ color: 'white', fontSize: isMobile ? 28 : 56, marginBottom: isMobile ? 4 : 10, textShadow: '0 4px 20px rgba(99,102,241,0.5)', animation: 'slideInUp 0.5s forwards' }}>Level Cleared</h2>
               <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: isMobile ? 12 : 18, marginBottom: isMobile ? 8 : 24, animation: 'slideInUp 0.5s forwards', animationDelay: '0.05s', opacity: 0, animationFillMode: 'forwards', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                 <div>{gameFileName || 'Unknown Level'}</div>
+                 <div style={{ color: 'white', fontWeight: 'bold', fontSize: '1.2em' }}>{levelMetadata?.title || gameFileName || 'Unknown Level'}</div>
+                 {levelMetadata?.author && <div style={{ marginBottom: 4 }}>Author: {levelMetadata.author}</div>}
                  <div>Speed: {gameSpeed}x</div>
                  <div>Mode: {mobileControlMode === 'crosshair' ? 'Crosshair' : 'Normal'}</div>
               </div>

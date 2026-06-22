@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import lamejsSrc from 'lamejs/lame.min.js?raw';
-import type { EditorNote, ParsedMidiData } from '../store/useLevelEditorStore';
-import { generateMidiBlob } from './midiExport';
+import type { ParsedMidiData } from '../store/useLevelEditorStore';
+
 
 // --- Polyfill for lamejs bug in Vite ---
 // lamejs 1.2.x has circular dependencies and implicit globals (MPEGMode, Lame, BitStream)
@@ -32,6 +32,11 @@ export interface LevelJson {
   offset: number;
   trimStart: number;
   trimEnd: number;
+  title?: string;
+  author?: string;
+  description?: string;
+  midiCredit?: string;
+  musicCredit?: string;
   blocks: {
     id: string;
     x: number;
@@ -53,6 +58,9 @@ export interface LevelJson {
     timeStart: number;
     duration: number;
     velocity: number;
+    trackId?: number;
+    trackName?: string;
+    trackInstrument?: string;
   }[];
 }
 
@@ -138,63 +146,60 @@ interface ExportParams {
   offset: number;
   trimStart: number;
   trimEnd: number;
+  title?: string;
+  author?: string;
+  description?: string;
+  midiCredit?: string;
+  musicCredit?: string;
   audioBuffer: AudioBuffer | null;
+  audioFile: Blob | File | null;
+  compressAudio: boolean;
   midiData: ParsedMidiData | null;
   gameBlocks: { id: string; x: number; y: number; pitch: string; instrument: string; volume?: number }[];
   gameEvents: { time: number; pitch: string; instrument: string; blockId: string }[];
 }
 
 export async function exportLevel(params: ExportParams): Promise<Blob> {
-  const { bpm, offset, trimStart, trimEnd, audioBuffer, midiData, gameBlocks, gameEvents } = params;
+  const { bpm, offset, trimStart, trimEnd, title, author, description, midiCredit, musicCredit, audioBuffer, audioFile, compressAudio, midiData, gameBlocks, gameEvents } = params;
 
-  // Collect all notes from all tracks
-  const allNotes: EditorNote[] = [];
-  if (midiData) {
-    for (const track of midiData.tracks) {
-      allNotes.push(...track.notes);
-    }
-  }
-
-  let levelText = `VERSION:2\n`;
+  let levelText = `VERSION:1\n`;
   levelText += `BPM:${bpm}\n`;
   levelText += `OFFSET:${offset}\n`;
   levelText += `TRIM_START:${trimStart}\n`;
-  levelText += `TRIM_END:${trimEnd}\n\n`;
-
-  levelText += `[BLOCKS]\n`;
-  for (const b of gameBlocks) {
-    levelText += `${b.id},${b.x},${b.y},${b.pitch},${b.instrument},${b.volume ?? 1}\n`;
-  }
+  levelText += `TRIM_END:${trimEnd}\n`;
+  if (title) levelText += `TITLE:${title}\n`;
+  if (author) levelText += `AUTHOR:${author}\n`;
+  if (description) levelText += `DESCRIPTION:${description.replace(/\n/g, '\\n')}\n`;
+  if (midiCredit) levelText += `MIDI_CREDIT:${midiCredit}\n`;
+  if (musicCredit) levelText += `MUSIC_CREDIT:${musicCredit}\n`;
   levelText += `\n`;
+  levelText += `[JSON]\n`;
 
-  levelText += `[EVENTS]\n`;
-  for (const e of gameEvents) {
-    levelText += `${e.time},${e.pitch},${e.instrument},${e.blockId}\n`;
-  }
-  levelText += `\n`;
+  const jsonData = {
+    blocks: gameBlocks.map(b => ({ ...b, volume: b.volume ?? 1 })),
+    events: gameEvents,
+    midiNotes: midiData ? midiData.tracks.flatMap(t => t.notes.map(n => ({
+      ...n,
+      trackId: t.id,
+      trackName: t.name,
+      trackInstrument: t.instrument
+    }))) : []
+  };
 
-  levelText += `[MIDI]\n`;
-  for (const n of allNotes) {
-    levelText += `${n.id},${n.pitch},${n.name},${n.timeStart},${n.duration},${n.velocity}\n`;
-  }
+  levelText += JSON.stringify(jsonData);
 
   const zip = new JSZip();
   zip.file('level.txt', levelText);
 
-  // Encode audio if available
-  if (audioBuffer) {
+  if (compressAudio && audioBuffer) {
     const ctx = new AudioContext();
     const actualEnd = trimEnd > 0 ? trimEnd : audioBuffer.duration;
     const sliced = sliceAudioBuffer(ctx, audioBuffer, trimStart, actualEnd);
     const mp3Blob = encodeToMp3(sliced, 128);
     zip.file('audio.mp3', mp3Blob);
     ctx.close();
-  }
-
-  // Include midi if available
-  if (midiData && midiData.tracks.length > 0) {
-    const midiBlob = generateMidiBlob(midiData);
-    zip.file('data.mid', midiBlob);
+  } else if (audioFile) {
+    zip.file('audio.mp3', audioFile);
   }
 
   return await zip.generateAsync({ 
@@ -218,7 +223,6 @@ export async function importLevel(file: File): Promise<ImportedLevel> {
   const arrayBuffer = await file.arrayBuffer();
   const zip = await JSZip.loadAsync(arrayBuffer);
 
-  // Parse level.txt
   const txtFile = zip.file('level.txt');
   if (!txtFile) {
     throw new Error('Invalid .yblevel file: missing level.txt');
@@ -226,7 +230,7 @@ export async function importLevel(file: File): Promise<ImportedLevel> {
   const txtStr = await txtFile.async('string');
   
   const levelData: LevelJson = {
-    version: 2,
+    version: 1,
     bpm: 120,
     offset: 0,
     trimStart: 0,
@@ -236,60 +240,42 @@ export async function importLevel(file: File): Promise<ImportedLevel> {
     midiNotes: [],
   };
 
-  const lines = txtStr.split('\n').map(l => l.trim());
-  let currentSection = '';
+  const lines = txtStr.split('\n');
+  let jsonStartIdx = -1;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line === '[JSON]') {
+      jsonStartIdx = i + 1;
+      break;
+    }
+    
     if (!line || line.startsWith('#')) continue;
 
-    if (line.startsWith('[')) {
-      currentSection = line;
-      continue;
-    }
+    const firstColon = line.indexOf(':');
+    if (firstColon === -1) continue;
+    const key = line.substring(0, firstColon);
+    const val = line.substring(firstColon + 1);
 
-    if (currentSection === '') {
-      // Header metadata
-      const [key, ...valParts] = line.split(':');
-      const val = valParts.join(':');
-      if (key === 'VERSION') levelData.version = parseFloat(val);
-      if (key === 'BPM') levelData.bpm = parseFloat(val);
-      if (key === 'OFFSET') levelData.offset = parseFloat(val);
-      if (key === 'TRIM_START') levelData.trimStart = parseFloat(val);
-      if (key === 'TRIM_END') levelData.trimEnd = parseFloat(val);
-    } else if (currentSection === '[BLOCKS]') {
-      const parts = line.split(',');
-      if (parts.length >= 6) {
-        levelData.blocks.push({
-          id: parts[0],
-          x: parseFloat(parts[1]),
-          y: parseFloat(parts[2]),
-          pitch: parts[3],
-          instrument: parts[4],
-          volume: parseFloat(parts[5]),
-        });
-      }
-    } else if (currentSection === '[EVENTS]') {
-      const parts = line.split(',');
-      if (parts.length >= 4) {
-        levelData.events.push({
-          time: parseFloat(parts[0]),
-          pitch: parts[1],
-          instrument: parts[2],
-          blockId: parts[3],
-        });
-      }
-    } else if (currentSection === '[MIDI]') {
-      const parts = line.split(',');
-      if (parts.length >= 6) {
-        levelData.midiNotes.push({
-          id: parts[0],
-          pitch: parseFloat(parts[1]),
-          name: parts[2],
-          timeStart: parseFloat(parts[3]),
-          duration: parseFloat(parts[4]),
-          velocity: parseFloat(parts[5]),
-        });
-      }
+    if (key === 'VERSION') levelData.version = parseFloat(val);
+    if (key === 'BPM') levelData.bpm = parseFloat(val);
+    if (key === 'OFFSET') levelData.offset = parseFloat(val);
+    if (key === 'TRIM_START') levelData.trimStart = parseFloat(val);
+    if (key === 'TRIM_END') levelData.trimEnd = parseFloat(val);
+    if (key === 'TITLE') levelData.title = val;
+    if (key === 'AUTHOR') levelData.author = val;
+    if (key === 'DESCRIPTION') levelData.description = val.replace(/\\n/g, '\n');
+    if (key === 'MIDI_CREDIT') levelData.midiCredit = val;
+    if (key === 'MUSIC_CREDIT') levelData.musicCredit = val;
+  }
+
+  if (jsonStartIdx !== -1) {
+    const jsonStr = lines.slice(jsonStartIdx).join('\n');
+    if (jsonStr.trim()) {
+      const parsed = JSON.parse(jsonStr);
+      if (parsed.blocks) levelData.blocks = parsed.blocks;
+      if (parsed.events) levelData.events = parsed.events;
+      if (parsed.midiNotes) levelData.midiNotes = parsed.midiNotes;
     }
   }
 

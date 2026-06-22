@@ -2,13 +2,20 @@
 audio delay when no interaction
 
 # level-editor:
-- export loading icon
 - help panel update
+- remove velocity modify completely
+- playground canvas, midi and blocks action rethink
+- 我在editor放note，undo會跑到blocks去
+- history fix
+
 
 # game
 - do wrong notes play sound?
 - key binding in game?
-- import .yblevel
+- level selector
+- offset lol
+- arrangement player drag music sync
+- crosshair mode, any key treats as hit key
 
 # making
 record mode
@@ -19,7 +26,8 @@ game
 
 # to do
 new object: trigger
-use same template for arrangement and level-editor
+speed options
+yblevel: bg img(move a little with cursor)
 
 
 # should I
@@ -31,6 +39,7 @@ mobile editor/level-editor page
 my ToolbarDivider is kinda useless
 css seperate
 mobile interact blue rect remove?
+remove useless module
 
 虛擬樂器面板的拖曳邏輯 (Piano / Drum Keyboard)
 相關檔案：instruments/PianoKeyboard.tsx 與 instruments/DrumKeyboard.tsx
@@ -38,33 +47,3 @@ mobile interact blue rect remove?
 面板本身的拖曳：用來讓視窗在螢幕上浮動移動的 isDraggingPiano / isDraggingDrum 邏輯。
 拖曳新增方塊到畫布：處理從按鍵/打擊板拖曳出一個「半透明方塊」，並在滑鼠放開時計算對應的 PIXI Canvas 座標與「格線對齊 (Snap to Grid)」，最後新增到 Store 中。
 重構方向：可以抽出 useDraggablePanel 與 useDragToCanvas 這兩個 Hooks，甚至將面板外框寫成一個共用的 <FloatingInstrumentPanel> 元件，未來若要新增吉他或貝斯面板，只要專心寫按鈕就好。
-
-
-
-
-
-
-
-
-VERSION:2
-BPM:120
-OFFSET:0
-TRIM_START:0
-TRIM_END:0
-
-# [BLOCKS] 段落
-# 格式: id, x, y, pitch, instrument, volume
-[BLOCKS]
-b1,100,200,C4,piano,1
-b2,150,200,E4,piano,1
-
-# [EVENTS] 段落
-# 格式: time, pitch, instrument, blockId
-[EVENTS]
-0.5,C4,piano,b1
-1.0,E4,piano,b2
-
-# [MIDI] 段落
-# 格式: id, pitch, name, timeStart, duration, velocity
-[MIDI]
-m1,60,C4,0,0.5,100

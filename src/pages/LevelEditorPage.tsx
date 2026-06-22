@@ -346,7 +346,7 @@ export const LevelEditorPage: React.FC = () => {
         </div>
 
         <div className="le-main-area">
-          <div style={{ width: trackPanelWidth, flexShrink: 0, display: 'flex' }}>
+          <div style={{ width: trackPanelWidth, flexShrink: 0, display: 'flex', minHeight: 0 }}>
             <TrackPanel />
           </div>
           <div className="le-resizer le-resizer-horizontal" onMouseDown={(e) => startResize(e, 'track')} />
@@ -377,20 +377,22 @@ export const LevelEditorPage: React.FC = () => {
                 
                 {/* Editor UI overlays for blocks mode */}
                 <div className="ui-overlay" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10 }}>
-                  <div 
-                    className="ui-pointer-events"
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      if (e.nativeEvent) e.nativeEvent.stopImmediatePropagation();
-                    }}
-                  >
-                    <Toolbar />
-                    <OutlinerPanel />
-                    <SettingsPanel />
-                    <HelpPanel />
-                    <SelectionPropertiesHud />
-                    <ContextMenu />
-                  </div>
+                  {activeTab === 'blocks' && (
+                    <div 
+                      className="ui-pointer-events"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        if (e.nativeEvent) e.nativeEvent.stopImmediatePropagation();
+                      }}
+                    >
+                      <Toolbar />
+                      <OutlinerPanel />
+                      <SettingsPanel />
+                      <HelpPanel />
+                      <SelectionPropertiesHud />
+                      <ContextMenu />
+                    </div>
+                  )}
                 </div>
                 
                 {/* Bottom Mini Player */}

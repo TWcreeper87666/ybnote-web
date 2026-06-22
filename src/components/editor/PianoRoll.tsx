@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import type { EditorNote } from '../../store/useLevelEditorStore';
 import { PianoRollKeyboard } from './PianoRollKeyboard';
@@ -32,6 +32,7 @@ type DragAction = 'none' | 'move' | 'resize-left' | 'resize-right' | 'scrub' | '
 
 export const PianoRoll: React.FC = () => {
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const [wrapperHeight, setWrapperHeight] = useState(800);
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   const fgCanvasRef = useRef<HTMLCanvasElement>(null);
   const timelineBgRef = useRef<HTMLCanvasElement>(null);
@@ -43,6 +44,7 @@ export const PianoRoll: React.FC = () => {
   const dragStartMouseX = useRef(0);
   const dragStartMouseY = useRef(0);
   const dragStartNotes = useRef<Map<string, { timeStart: number; duration: number; pitch: number }>>(new Map());
+  const lastMousePos = useRef({ clientX: 0, clientY: 0 });
   const dragCurrentPitch = useRef(-1);
   const lastNoteDuration = useRef(0.5);
 
@@ -122,24 +124,49 @@ export const PianoRoll: React.FC = () => {
     ctx.beginPath();
 
     // Horizontal lines
-    for (let p = 0; p <= MAX_PITCH; p++) {
+    for (let p = 12; p <= MAX_PITCH; p++) {
       const y = (MAX_PITCH - p) * ROW_HEIGHT - scrollTop;
       if (y < -ROW_HEIGHT || y > height + ROW_HEIGHT) continue;
       ctx.moveTo(0, y);
       ctx.lineTo(width, y);
     }
 
-    // Vertical lines (beats)
+    // Vertical lines
     const bpm = store.bpm || 120;
-    const pxPerBeat = zoom * (60 / bpm);
+    const beatDuration = 60 / bpm;
+    const pxPerBeat = zoom * beatDuration;
+    let gridSubdivisions = 1;
+    if (pxPerBeat > 200) gridSubdivisions = 4;
+    else if (pxPerBeat > 100) gridSubdivisions = 2;
+
     if (pxPerBeat > 0) {
-      const gridOffset = (((-scrollLeft) % pxPerBeat) + pxPerBeat) % pxPerBeat;
-      for (let x = gridOffset; x <= width; x += pxPerBeat) {
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
+      const pxPerGrid = pxPerBeat / gridSubdivisions;
+      const gridOffset = (((-scrollLeft) % pxPerGrid) + pxPerGrid) % pxPerGrid;
+      for (let x = gridOffset; x <= width; x += pxPerGrid) {
+        const gridIndex = Math.round((x + scrollLeft) / pxPerGrid);
+        if (gridIndex % gridSubdivisions === 0) {
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, height);
+        }
       }
     }
     ctx.stroke();
+
+    // Subdivisions lines
+    if (gridSubdivisions > 1 && pxPerBeat > 0) {
+      ctx.strokeStyle = 'rgba(42, 42, 48, 0.4)';
+      ctx.beginPath();
+      const pxPerGrid = pxPerBeat / gridSubdivisions;
+      const gridOffset = (((-scrollLeft) % pxPerGrid) + pxPerGrid) % pxPerGrid;
+      for (let x = gridOffset; x <= width; x += pxPerGrid) {
+        const gridIndex = Math.round((x + scrollLeft) / pxPerGrid);
+        if (gridIndex % gridSubdivisions !== 0) {
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, height);
+        }
+      }
+      ctx.stroke();
+    }
 
     // Highlight C keys (skip or alternate in Drum Mode)
     const currentTrack = store.getCurrentTrack();
@@ -147,7 +174,7 @@ export const PianoRoll: React.FC = () => {
     
     if (isDrumMode) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.015)';
-      for (let p = 0; p <= MAX_PITCH; p++) {
+      for (let p = 12; p <= MAX_PITCH; p++) {
         if (p % 2 !== 0) {
           const y = (MAX_PITCH - p) * ROW_HEIGHT - scrollTop;
           if (y + ROW_HEIGHT < 0 || y > height) continue;
@@ -156,7 +183,7 @@ export const PianoRoll: React.FC = () => {
       }
     } else {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
-      for (let p = 0; p <= MAX_PITCH; p++) {
+      for (let p = 12; p <= MAX_PITCH; p++) {
         if (p % 12 === 0) {
           const y = (MAX_PITCH - p) * ROW_HEIGHT - scrollTop;
           if (y + ROW_HEIGHT < 0 || y > height) continue;
@@ -178,16 +205,23 @@ export const PianoRoll: React.FC = () => {
     tCtx.font = '10px Inter, sans-serif';
 
     if (pxPerBeat > 0) {
-      const startBeat = Math.max(0, Math.floor(scrollLeft / pxPerBeat));
-      const endBeat = Math.ceil((scrollLeft + width) / pxPerBeat);
-      for (let b = startBeat; b <= endBeat; b++) {
-        const x = b * pxPerBeat - scrollLeft;
-        if (x < -pxPerBeat || x > width + pxPerBeat) continue;
-        if (b % 4 === 0) {
-          tCtx.fillText(`${b / 4 + 1}`, x + 2, TIMELINE_HEIGHT - 4);
+      const pxPerGrid = pxPerBeat / gridSubdivisions;
+      const startGrid = Math.max(0, Math.floor(scrollLeft / pxPerGrid));
+      const endGrid = Math.ceil((scrollLeft + width) / pxPerGrid);
+      for (let g = startGrid; g <= endGrid; g++) {
+        const x = g * pxPerGrid - scrollLeft;
+        if (x < -pxPerGrid || x > width + pxPerGrid) continue;
+        
+        if (g % (gridSubdivisions * 4) === 0) {
+          // Downbeat
+          tCtx.fillText(`${g / (gridSubdivisions * 4) + 1}`, x + 2, TIMELINE_HEIGHT - 4);
           tCtx.fillRect(x, TIMELINE_HEIGHT - 8, 1, 8);
-        } else {
+        } else if (g % gridSubdivisions === 0) {
+          // Beat
           tCtx.fillRect(x, TIMELINE_HEIGHT - 4, 1, 4);
+        } else {
+          // Sub-beat
+          tCtx.fillRect(x, TIMELINE_HEIGHT - 2, 1, 2);
         }
       }
     }
@@ -259,9 +293,10 @@ export const PianoRoll: React.FC = () => {
     // 4. Fade animations
     for (const anim of fadeAnimations.current) {
       const animX = anim.x - scrollLeft;
+      const animY = anim.y - scrollTop;
       if (animX + anim.w < 0 || animX > width) continue;
       ctx.fillStyle = `rgba(255, 85, 85, ${anim.opacity})`;
-      ctx.fillRect(animX, anim.y, anim.w, anim.h);
+      ctx.fillRect(animX, animY, anim.w, anim.h);
     }
   }, []);
 
@@ -397,6 +432,8 @@ export const PianoRoll: React.FC = () => {
     setSize(fgCanvasRef.current, viewportW, viewportH);
     setSize(timelineBgRef.current, viewportW, TIMELINE_HEIGHT);
     setSize(timelineFgRef.current, viewportW, TIMELINE_HEIGHT);
+
+    setWrapperHeight(wrapper.clientHeight);
 
     drawBgCanvas();
     drawFgCanvas();
@@ -538,7 +575,7 @@ export const PianoRoll: React.FC = () => {
         return;
       }
 
-      if (e.ctrlKey) {
+      if (e.ctrlKey && target.type === 'empty') {
         // Start marquee
         isMarqueeSelecting.current = true;
         marqueeStart.current = { x, y };
@@ -550,15 +587,15 @@ export const PianoRoll: React.FC = () => {
       if (target.type === 'note' || target.type === 'resize-left' || target.type === 'resize-right') {
         const note = target.note!;
         if (!store.selectedNoteIds.has(note.id)) {
-          store.selectNote(note.id, e.shiftKey);
-        } else if (e.shiftKey) {
+          store.selectNote(note.id, e.ctrlKey || e.metaKey);
+        } else if (e.ctrlKey || e.metaKey) {
           store.deselectNote(note.id);
           return;
         }
 
         dragTargetNoteId.current = note.id;
         dragStartMouseX.current = x;
-        dragStartMouseY.current = y;
+        dragStartMouseY.current = y + store.scrollTop;
         dragCurrentPitch.current = note.pitch;
         hasDragged.current = false;
         justAddedNote.current = false;
@@ -598,8 +635,8 @@ export const PianoRoll: React.FC = () => {
 
         const newNote: EditorNote = {
           id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          pitch: Math.max(0, Math.min(MAX_PITCH, pitch)),
-          name: pitchToName(Math.max(0, Math.min(MAX_PITCH, pitch))),
+          pitch: Math.max(12, Math.min(MAX_PITCH, pitch)),
+          name: pitchToName(Math.max(12, Math.min(MAX_PITCH, pitch))),
           timeStart,
           duration,
           velocity: 0.8,
@@ -614,7 +651,7 @@ export const PianoRoll: React.FC = () => {
         // Start drag for the new note
         dragTargetNoteId.current = newNote.id;
         dragStartMouseX.current = x;
-        dragStartMouseY.current = y;
+        dragStartMouseY.current = y + store.scrollTop;
         dragAction.current = 'move';
         dragCurrentPitch.current = newNote.pitch;
         dragStartNotes.current.clear();
@@ -637,18 +674,25 @@ export const PianoRoll: React.FC = () => {
         const noteY = (MAX_PITCH - note.pitch) * ROW_HEIGHT;
         startFadeAnimation(noteX, noteY, noteW, ROW_HEIGHT - 1);
         store.removeNote(note.id);
+      } else if (target.type === 'empty') {
+        store.clearSelection();
+        dragAction.current = 'none';
       }
     }
   }, [getMouseCoords, getHitTarget]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
+    lastMousePos.current = { clientX: e.clientX, clientY: e.clientY };
     const store = useLevelEditorStore.getState();
 
     if (isMiddlePanning.current) {
       const dx = e.clientX - panStartMouseX.current;
       const dy = e.clientY - panStartMouseY.current;
+      const newScrollTop = panStartScrollY.current - dy;
+      const wrapper = wrapperRef.current;
+      const maxScrollTop = wrapper ? Math.max(0, (MAX_PITCH - 11) * ROW_HEIGHT - wrapper.clientHeight + TIMELINE_HEIGHT + 20) : 0;
       store.setScrollLeft(panStartScrollX.current - dx);
-      store.setScrollTop(panStartScrollY.current - dy);
+      store.setScrollTop(Math.max(0, Math.min(maxScrollTop, newScrollTop)));
       drawBgCanvas();
       drawFgCanvas();
       return;
@@ -706,7 +750,8 @@ export const PianoRoll: React.FC = () => {
     if (dragAction.current !== 'none') {
       hasDragged.current = true;
       const dxTime = (x - dragStartMouseX.current) / store.zoomLevel;
-      const dyRows = Math.floor((y - dragStartMouseY.current) / ROW_HEIGHT);
+      const absoluteY = y + store.scrollTop;
+      const dyRows = Math.floor((absoluteY - dragStartMouseY.current) / ROW_HEIGHT);
 
       const updates: { id: string; changes: Partial<EditorNote> }[] = [];
       let pitchChanged = false;
@@ -737,14 +782,63 @@ export const PianoRoll: React.FC = () => {
           });
         }
       } else {
+        const bpm = store.bpm || 120;
+        const beatDuration = 60 / bpm;
+        const pxPerBeat = store.zoomLevel * beatDuration;
+        let gridSubdivisions = 1;
+        if (pxPerBeat > 200) gridSubdivisions = 4;
+        else if (pxPerBeat > 100) gridSubdivisions = 2;
+        const gridInterval = beatDuration / gridSubdivisions;
+
+        const snapTime = (time: number) => {
+          if (!e.shiftKey) return time;
+          let bestTime = Math.round(time / gridInterval) * gridInterval;
+          let minDist = Math.abs(bestTime - time) * store.zoomLevel;
+          
+          const track = store.getCurrentTrack();
+          if (track) {
+            track.notes.forEach(n => {
+              if (store.selectedNoteIds.has(n.id)) return;
+              const dStart = Math.abs(n.timeStart - time) * store.zoomLevel;
+              if (dStart < minDist && dStart < 15) {
+                minDist = dStart;
+                bestTime = n.timeStart;
+              }
+              const dEnd = Math.abs((n.timeStart + n.duration) - time) * store.zoomLevel;
+              if (dEnd < minDist && dEnd < 15) {
+                minDist = dEnd;
+                bestTime = n.timeStart + n.duration;
+              }
+            });
+          }
+          return bestTime;
+        };
+
+        let snapOffsetTime = 0;
+        const primaryOrig = dragTargetNoteId.current ? dragStartNotes.current.get(dragTargetNoteId.current) : undefined;
+        
+        if (primaryOrig) {
+          if (dragAction.current === 'move') {
+            const rawNewTime = Math.max(0, primaryOrig.timeStart + dxTime);
+            snapOffsetTime = snapTime(rawNewTime) - rawNewTime;
+          } else if (dragAction.current === 'resize-right') {
+            const rawNewEnd = primaryOrig.timeStart + primaryOrig.duration + dxTime;
+            snapOffsetTime = snapTime(rawNewEnd) - rawNewEnd;
+          } else if (dragAction.current === 'resize-left') {
+            const maxDx = primaryOrig.duration - 0.01;
+            const rawNewTime = primaryOrig.timeStart + Math.min(dxTime, maxDx);
+            snapOffsetTime = snapTime(rawNewTime) - rawNewTime;
+          }
+        }
+
         store.selectedNoteIds.forEach(noteId => {
           const orig = dragStartNotes.current.get(noteId);
           if (!orig) return;
 
           if (dragAction.current === 'move') {
             let newPitch = orig.pitch - dyRows;
-            newPitch = Math.max(0, Math.min(MAX_PITCH, newPitch));
-            const newTime = Math.max(0, orig.timeStart + dxTime);
+            newPitch = Math.max(12, Math.min(MAX_PITCH, newPitch));
+            const newTime = Math.max(0, orig.timeStart + dxTime + snapOffsetTime);
             updates.push({ id: noteId, changes: { timeStart: newTime, pitch: newPitch, name: pitchToName(newPitch) } });
 
             if (noteId === dragTargetNoteId.current) {
@@ -755,7 +849,7 @@ export const PianoRoll: React.FC = () => {
               }
             }
           } else if (dragAction.current === 'resize-right') {
-            const newDuration = Math.max(0.01, orig.duration + dxTime);
+            const newDuration = Math.max(0.01, orig.duration + dxTime + snapOffsetTime);
             updates.push({ id: noteId, changes: { duration: newDuration } });
             if (noteId === dragTargetNoteId.current) {
               lastNoteDuration.current = newDuration;
@@ -763,7 +857,7 @@ export const PianoRoll: React.FC = () => {
             }
           } else if (dragAction.current === 'resize-left') {
             const maxDx = orig.duration - 0.01;
-            const actualDx = Math.min(dxTime, maxDx);
+            const actualDx = Math.min(dxTime + snapOffsetTime, maxDx);
             const newTime = Math.max(0, orig.timeStart + actualDx);
             const newDuration = orig.duration - actualDx;
             updates.push({ id: noteId, changes: { timeStart: newTime, duration: newDuration } });
@@ -864,8 +958,8 @@ export const PianoRoll: React.FC = () => {
       // Zoom
       const wrapper = wrapperRef.current;
       if (!wrapper) return;
-      const zoomDelta = e.deltaY > 0 ? -10 : 10;
-      const newZoom = Math.max(10, Math.min(1000, store.zoomLevel + zoomDelta));
+      const zoomRatio = e.deltaY > 0 ? (1 / 1.5) : 1.5;
+      const newZoom = Math.max(10, Math.min(1000, Math.round(store.zoomLevel * zoomRatio)));
       if (newZoom === store.zoomLevel) return;
       const rect = wrapper.getBoundingClientRect();
       const physicalX = e.clientX - rect.left - KEYBOARD_WIDTH;
@@ -876,11 +970,25 @@ export const PianoRoll: React.FC = () => {
       store.setScrollLeft(store.scrollLeft + delta);
     } else {
       // Vertical scroll
-      store.setScrollTop(store.scrollTop + e.deltaY);
+      const wrapper = wrapperRef.current;
+      const maxScrollTop = wrapper ? Math.max(0, (MAX_PITCH - 11) * ROW_HEIGHT - wrapper.clientHeight + TIMELINE_HEIGHT + 20) : 0;
+      store.setScrollTop(Math.max(0, Math.min(maxScrollTop, store.scrollTop + e.deltaY)));
     }
 
     resizeCanvases();
-  }, [resizeCanvases]);
+
+    if (dragAction.current !== 'none' && lastMousePos.current.clientX !== 0) {
+      const fakeEvent = new MouseEvent('mousemove', {
+        clientX: lastMousePos.current.clientX,
+        clientY: lastMousePos.current.clientY,
+        shiftKey: e.shiftKey,
+        altKey: e.altKey,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+      });
+      handleMouseMove(fakeEvent);
+    }
+  }, [resizeCanvases, handleMouseMove]);
 
   // --- Keyboard shortcuts ---
 
@@ -954,6 +1062,28 @@ export const PianoRoll: React.FC = () => {
       } else if (e.key === 'c' || e.key === 'C') {
         e.preventDefault();
         store.copySelectedNotes();
+      } else if (e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        const s = useLevelEditorStore.getState();
+        const track = s.getCurrentTrack();
+        if (track && s.selectedNoteIds.size > 0) {
+          const selected = track.notes.filter(n => s.selectedNoteIds.has(n.id));
+          const maxTime = Math.max(...selected.map(n => n.timeStart + n.duration));
+          const minTime = Math.min(...selected.map(n => n.timeStart));
+          const offset = maxTime - minTime;
+          const newNotes = selected.map(n => ({
+            ...n,
+            id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            timeStart: n.timeStart + offset,
+          }));
+          track.notes.push(...newNotes);
+          useLevelEditorStore.setState({
+            midiData: { ...s.midiData! },
+            selectedNoteIds: new Set(newNotes.map(n => n.id)),
+          });
+          s.commitHistory();
+          drawBgCanvas();
+        }
       } else if (e.key === 'v' || e.key === 'V') {
         e.preventDefault();
         store.pasteNotes(store.playbackAnchor);
@@ -984,6 +1114,10 @@ export const PianoRoll: React.FC = () => {
         });
       }
       store.removeSelectedNotes();
+      drawBgCanvas();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      store.clearSelection();
       drawBgCanvas();
     }
   }, [drawBgCanvas, drawFgCanvas]);
@@ -1017,7 +1151,8 @@ export const PianoRoll: React.FC = () => {
         state.scrollLeft !== prevState.scrollLeft ||
         state.scrollTop !== prevState.scrollTop ||
         state.zoomLevel !== prevState.zoomLevel ||
-        state.ghostNoteVisibility !== prevState.ghostNoteVisibility
+        state.ghostNoteVisibility !== prevState.ghostNoteVisibility ||
+        state.bpm !== prevState.bpm
       ) {
         drawBgCanvas();
         drawFgCanvas();
@@ -1099,7 +1234,7 @@ export const PianoRoll: React.FC = () => {
           </div>
 
           {/* Keyboard */}
-          <PianoRollKeyboard scrollTop={store.scrollTop} height={wrapperRef.current?.clientHeight ?? 800} />
+          <PianoRollKeyboard scrollTop={store.scrollTop} height={wrapperHeight} />
 
           {/* Canvas area */}
           <div

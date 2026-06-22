@@ -104,15 +104,27 @@ export const useShortcuts = () => {
             break;
           case 'z':
             e.preventDefault();
-            if (e.shiftKey) {
-              redoAction();
+            if (window.location.hash.includes('/level-editor')) {
+              if (e.shiftKey) {
+                useLevelEditorStore.getState().redo();
+              } else {
+                useLevelEditorStore.getState().undo();
+              }
             } else {
-              undoAction();
+              if (e.shiftKey) {
+                redoAction();
+              } else {
+                undoAction();
+              }
             }
             break;
           case 'y':
             e.preventDefault();
-            redoAction();
+            if (window.location.hash.includes('/level-editor')) {
+              useLevelEditorStore.getState().redo();
+            } else {
+              redoAction();
+            }
             break;
         }
       } else {

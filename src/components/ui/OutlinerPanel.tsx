@@ -29,13 +29,17 @@ const animateCameraTo = (targetX: number, targetY: number, duration = 300) => {
 type FilterState = { notes: boolean; groups: boolean; tracks: boolean; enable: boolean };
 
 export const OutlinerPanel: React.FC = () => {
-  const { 
-    blocks, groupRects, tracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds,
+  const {
+    blocks: defaultBlocks, groupRects, tracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds,
     isOutlinerOpen, 
     selectBlock, updateBlock, updateGroupRect, selectGroupRect, selectTrack,
     searchQuery, setSearchQuery,
-    camera
+    camera: defaultCamera, gameState, gameBlocks, updateGameBlock, gameCamera
   } = useStore();
+
+  const blocks = gameState === 'arrange' ? gameBlocks : defaultBlocks;
+  const activeUpdateBlock = gameState === 'arrange' ? updateGameBlock : updateBlock;
+  const camera = gameState === 'arrange' || gameState === 'play' ? gameCamera : defaultCamera;
 
   const [filters, setFilters] = useState<FilterState>({ notes: true, groups: true, tracks: true, enable: false });
 
@@ -361,7 +365,7 @@ export const OutlinerPanel: React.FC = () => {
               selectBlock={selectBlock}
               selectGroupRect={selectGroupRect}
               selectTrack={selectTrack}
-              updateBlock={updateBlock}
+              updateBlock={activeUpdateBlock}
               updateGroupRect={updateGroupRect}
               camera={camera}
               tracks={tracks}
@@ -377,7 +381,7 @@ export const OutlinerPanel: React.FC = () => {
             block={block} 
             selected={selectedBlockIds.includes(block.id)} 
             selectBlock={selectBlock} 
-            updateBlock={updateBlock} 
+            updateBlock={activeUpdateBlock} 
             camera={camera}
             handleShiftClick={handleShiftClick}
           />

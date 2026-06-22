@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { sliceAudioBuffer, encodeToMp3 } from '../utils/levelUtils';
+import { useStore } from './useStore';
 
 // --- Types ---
 export interface EditorNote {
@@ -15,6 +17,7 @@ export interface EditorTrack {
   name: string;
   notes: EditorNote[];
   instrument: string;
+  isBackground?: boolean;
 }
 
 export interface ParsedMidiData {
@@ -25,11 +28,15 @@ export interface ParsedMidiData {
 
 // --- History ---
 interface HistorySnapshot {
-  notes: EditorNote[];
+  tracks: EditorTrack[];
+  selectedTrackId: number | null;
   selectedNoteIds: string[];
   chartEndPosition?: number;
   audioStartTime?: number;
   playbackAnchor?: number;
+  bpm?: number;
+  gameBlocks?: any[];
+  gameEvents?: any[];
 }
 
 interface LevelEditorState {
@@ -47,6 +54,11 @@ interface LevelEditorState {
   // MIDI / Project
   bpm: number;
   offset: number;        // ms offset for audio sync
+  levelTitle: string;
+  levelAuthor: string;
+  levelDescription: string;
+  levelMidiCredit: string;
+  levelMusicCredit: string;
   midiData: ParsedMidiData | null;
   selectedTrackId: number | null;
   midiVolume: number;
@@ -87,11 +99,15 @@ interface LevelEditorState {
   setAudioVolume: (v: number) => void;
   setAudioPlaybackRate: (v: number) => void;
   setAudioStartTime: (v: number) => void;
+  removeAudio: () => void;
+  trimAudioInPlace: (mode: 'start' | 'end') => Promise<void>;
 
   // Actions — MIDI & Tracks
   setMidiData: (data: ParsedMidiData) => void;
+  appendMidiData: (data: ParsedMidiData) => void;
   setBpm: (bpm: number) => void;
   setOffset: (offset: number) => void;
+  setLevelMetadata: (metadata: Partial<{ levelTitle: string; levelAuthor: string; levelDescription: string; levelMidiCredit: string; levelMusicCredit: string; }>) => void;
   setMidiVolume: (v: number) => void;
   setInstrumentPreset: (v: string) => void;
   
@@ -101,6 +117,7 @@ interface LevelEditorState {
   removeTrack: (id: number) => void;
   renameTrack: (id: number, name: string) => void;
   updateTrackInstrument: (id: number, instrument: string) => void;
+  toggleTrackBackground: (id: number) => void;
   toggleTrackMute: (id: number) => void;
   toggleGhostNotes: (id: number) => void;
 
@@ -144,10 +161,14 @@ interface LevelEditorState {
 
   // Actions — Reset
   reset: () => void;
+
+  // History config
+  historyLimit: number;
+  setHistoryLimit: (limit: number) => void;
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
-let nextTrackIdObj = 0;
+let nextTrackIdObj = 1;
 
 export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
   // Initial state
@@ -163,8 +184,22 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
 
   bpm: 120,
   offset: 0,
-  midiData: null,
-  selectedTrackId: null,
+  levelTitle: '',
+  levelAuthor: '',
+  levelDescription: '',
+  levelMidiCredit: '',
+  levelMusicCredit: '',
+  midiData: {
+    bpm: 120,
+    duration: 60,
+    tracks: [{
+      id: 0,
+      name: 'Track 1',
+      notes: [],
+      instrument: 'piano'
+    }]
+  },
+  selectedTrackId: 0,
   midiVolume: 80,
   instrumentPreset: 'piano',
 
@@ -183,8 +218,24 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
 
   selectedNoteIds: new Set(),
 
-  history: [],
-  historyIndex: -1,
+  history: [{
+    tracks: [{
+      id: 0,
+      name: 'Track 1',
+      notes: [],
+      instrument: 'piano'
+    }],
+    selectedTrackId: 0,
+    selectedNoteIds: [],
+    chartEndPosition: 60,
+    audioStartTime: 0,
+    playbackAnchor: 0,
+    bpm: 120,
+    gameBlocks: [],
+    gameEvents: []
+  }],
+  historyIndex: 0,
+  historyLimit: 50,
   clipboard: [],
   clipboardSourceTrackId: null,
 
@@ -201,6 +252,92 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
   setAudioVolume: (v) => set({ audioVolume: v }),
   setAudioPlaybackRate: (v) => set({ audioPlaybackRate: v }),
   setAudioStartTime: (v) => set({ audioStartTime: v }),
+  removeAudio: () => {
+    const prev = get().audioUrl;
+    if (prev) URL.revokeObjectURL(prev);
+    set({ audioFile: null, audioBuffer: null, audioUrl: null, audioDuration: 0 });
+  },
+  trimAudioInPlace: async (mode) => {
+    const s = get();
+    if (!s.audioBuffer || !s.midiData) return;
+    
+    if (s.isPlaying) {
+      get().stopPlayback();
+    }
+    
+    // Determine trim points based on anchor
+    const anchor = s.playbackAnchor;
+    const targetAudioTime = anchor - s.audioStartTime;
+    if (targetAudioTime < 0 || targetAudioTime > s.audioDuration) return; // playhead not over audio
+
+    let newTrimStart = 0;
+    let newTrimEnd = s.audioDuration;
+
+    if (mode === 'start') {
+      newTrimStart = targetAudioTime;
+    } else {
+      newTrimEnd = targetAudioTime;
+    }
+
+    if (newTrimStart >= newTrimEnd) return; // Invalid trim
+
+    // Slice buffer
+    const ctx = new AudioContext();
+    const newBuffer = sliceAudioBuffer(ctx, s.audioBuffer, newTrimStart, newTrimEnd);
+    const newBlob = encodeToMp3(newBuffer, 128);
+    const newFile = new File([newBlob], 'audio.mp3', { type: 'audio/mp3' });
+    const newUrl = URL.createObjectURL(newBlob);
+    ctx.close();
+
+    const prev = s.audioUrl;
+    if (prev) URL.revokeObjectURL(prev);
+
+    let newAudioStartTime = s.audioStartTime;
+    let shiftAmount = 0;
+    let newMidiData = s.midiData;
+
+    if (mode === 'start') {
+      newAudioStartTime = anchor;
+      
+      let hasNotesBefore = false;
+      if (s.midiData) {
+        hasNotesBefore = s.midiData.tracks.some(track => track.notes.some(note => note.timeStart < anchor - 0.001));
+      }
+      
+      if (!hasNotesBefore && s.midiData) {
+        shiftAmount = anchor;
+        newAudioStartTime = 0;
+        
+        newMidiData = {
+          ...s.midiData,
+          tracks: s.midiData.tracks.map(track => ({
+            ...track,
+            notes: track.notes.map(note => ({
+              ...note,
+              timeStart: Math.max(0, note.timeStart - shiftAmount)
+            }))
+          }))
+        };
+      }
+    }
+
+    set({
+      audioBuffer: newBuffer,
+      audioFile: newFile,
+      audioUrl: newUrl,
+      audioDuration: newBuffer.duration,
+      trimEnd: newBuffer.duration,
+      audioStartTime: newAudioStartTime,
+      chartEndPosition: mode === 'start' ? Math.max(0, s.chartEndPosition - shiftAmount) : anchor,
+      ...(shiftAmount > 0 ? { 
+        midiData: newMidiData,
+        playbackAnchor: Math.max(0, s.playbackAnchor - shiftAmount),
+        playbackPosition: Math.max(0, s.playbackPosition - shiftAmount),
+      } : {})
+    });
+    
+    get().commitHistory();
+  },
 
   // --- MIDI actions ---
   setMidiData: (data) => {
@@ -213,22 +350,78 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
       chartEndPosition: data.duration || 60,
       selectedTrackId: data.tracks.length > 0 ? data.tracks[0].id : null,
       selectedNoteIds: new Set(),
-      history: [],
-      historyIndex: -1,
+      history: [{
+        tracks: JSON.parse(JSON.stringify(data.tracks)),
+        selectedTrackId: data.tracks.length > 0 ? data.tracks[0].id : null,
+        selectedNoteIds: [],
+        chartEndPosition: data.duration || 60,
+        audioStartTime: 0,
+        playbackAnchor: 0,
+        bpm: data.bpm,
+        gameBlocks: useStore.getState().gameBlocks ? JSON.parse(JSON.stringify(useStore.getState().gameBlocks)) : [],
+        gameEvents: useStore.getState().gameEvents ? JSON.parse(JSON.stringify(useStore.getState().gameEvents)) : []
+      }],
+      historyIndex: 0,
       ghostNoteVisibility: {},
       trackMute: {}
     });
+  },
+  appendMidiData: (data) => {
+    const s = get();
+    if (!s.midiData) {
+      get().setMidiData(data);
+      return;
+    }
+    
+    // Start IDs after the maximum current track ID
+    const startTrackId = Math.max(0, ...s.midiData.tracks.map(t => t.id)) + 1;
+    const newTracks = data.tracks.map((t, i) => ({
+      ...t,
+      id: startTrackId + i
+    }));
+    
+    const updatedData = {
+      ...s.midiData,
+      duration: Math.max(s.midiData.duration || 60, data.duration || 60),
+      tracks: [...s.midiData.tracks, ...newTracks]
+    };
+    
+    nextTrackIdObj = startTrackId + newTracks.length;
+    
+    set({
+      midiData: updatedData,
+      chartEndPosition: Math.max(s.chartEndPosition, data.duration || 60)
+    });
+    
     get().commitHistory();
   },
-  setBpm: (bpm) => set({ bpm }),
+  setBpm: (bpm) => {
+    const s = get();
+    if (s.midiData) {
+      set({ bpm, midiData: { ...s.midiData, bpm } });
+      get().commitHistory();
+    } else {
+      set({ bpm });
+    }
+    
+    // Also sync BPM to all game tracks so the runner speed updates
+    const mainStoreState = useStore.getState();
+    const trackUpdates = mainStoreState.tracks.map((t: any) => ({
+      id: t.id,
+      updates: { bpm }
+    }));
+    if (trackUpdates.length > 0) {
+      trackUpdates.forEach((tu: any) => mainStoreState.updateTrack(tu.id, tu.updates));
+    }
+  },
   setOffset: (offset) => set({ offset }),
+  setLevelMetadata: (metadata) => set((s) => ({ ...s, ...metadata })),
   setMidiVolume: (v) => set({ midiVolume: v }),
   setInstrumentPreset: (v) => set({ instrumentPreset: v }),
 
   // --- Track Management ---
   selectTrack: (id) => {
-    set({ selectedTrackId: id, selectedNoteIds: new Set(), history: [], historyIndex: -1 });
-    get().commitHistory();
+    set({ selectedTrackId: id, selectedNoteIds: new Set() });
   },
   addTrack: () => {
     const s = get();
@@ -253,6 +446,7 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
     currentMidiData.tracks.push(newTrack);
     set({ midiData: { ...currentMidiData } });
     get().selectTrack(newTrackId);
+    get().commitHistory();
   },
   duplicateTrack: (id) => {
     const s = get();
@@ -277,6 +471,7 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
     s.midiData.tracks.splice(index + 1, 0, newTrack);
     set({ midiData: { ...s.midiData } });
     get().selectTrack(newTrackId);
+    get().commitHistory();
   },
   removeTrack: (id) => {
     const s = get();
@@ -287,8 +482,8 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
     if (newSelectedId === id) {
       newSelectedId = s.midiData.tracks.length > 0 ? s.midiData.tracks[0].id : null;
     }
-    set({ midiData: { ...s.midiData } });
-    get().selectTrack(newSelectedId);
+    set({ midiData: { ...s.midiData }, selectedTrackId: newSelectedId });
+    get().commitHistory();
   },
   renameTrack: (id, name) => {
     const s = get();
@@ -305,6 +500,15 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
     const track = s.midiData.tracks.find(t => t.id === id);
     if (track) {
       track.instrument = instrument;
+      set({ midiData: { ...s.midiData } });
+    }
+  },
+  toggleTrackBackground: (id) => {
+    const s = get();
+    if (!s.midiData) return;
+    const track = s.midiData.tracks.find(t => t.id === id);
+    if (track) {
+      track.isBackground = !track.isBackground;
       set({ midiData: { ...s.midiData } });
     }
   },
@@ -415,33 +619,73 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
   // --- History ---
   commitHistory: () => {
     const s = get();
-    const track = s.getCurrentTrack();
-    if (!track) return;
+    if (!s.midiData) return;
+    const mainState = useStore.getState();
     const snapshot: HistorySnapshot = {
-      notes: JSON.parse(JSON.stringify(track.notes)),
+      tracks: JSON.parse(JSON.stringify(s.midiData.tracks)),
+      selectedTrackId: s.selectedTrackId,
       selectedNoteIds: Array.from(s.selectedNoteIds),
       chartEndPosition: s.chartEndPosition,
       audioStartTime: s.audioStartTime,
       playbackAnchor: s.playbackAnchor,
+      bpm: s.bpm,
+      gameBlocks: JSON.parse(JSON.stringify(mainState.gameBlocks)),
+      gameEvents: JSON.parse(JSON.stringify(mainState.gameEvents)),
     };
     const newHistory = s.history.slice(0, s.historyIndex + 1);
     newHistory.push(snapshot);
+    if (newHistory.length > s.historyLimit) {
+      newHistory.splice(0, newHistory.length - s.historyLimit);
+    }
     set({
       history: newHistory,
       historyIndex: newHistory.length - 1
     });
   },
 
+  setHistoryLimit: (limit) => set((s) => {
+    let newHistory = [...s.history];
+    if (newHistory.length > limit) {
+      newHistory = newHistory.slice(newHistory.length - limit);
+    }
+    return {
+      historyLimit: limit,
+      history: newHistory,
+      historyIndex: Math.min(s.historyIndex, newHistory.length - 1)
+    };
+  }),
+
   undo: () => {
     const s = get();
-    if (s.historyIndex <= 0 || !s.midiData || s.selectedTrackId === null) return;
+    if (s.historyIndex <= 0 || !s.midiData) return;
     const newIndex = s.historyIndex - 1;
     const snapshot = s.history[newIndex];
-    const track = s.midiData.tracks.find(t => t.id === s.selectedTrackId);
-    if (!track) return;
-    track.notes = JSON.parse(JSON.stringify(snapshot.notes));
+    const currentSnapshot = s.history[s.historyIndex];
+    
+    let changedTab: 'pianoroll' | 'blocks' | null = null;
+    let msg = 'Undo: Modification';
+
+    if (JSON.stringify(currentSnapshot.gameBlocks) !== JSON.stringify(snapshot.gameBlocks) || 
+        JSON.stringify(currentSnapshot.gameEvents) !== JSON.stringify(snapshot.gameEvents)) {
+      changedTab = 'blocks';
+      if ((currentSnapshot.gameBlocks?.length || 0) > (snapshot.gameBlocks?.length || 0)) msg = 'Undo: Add Block';
+      else if ((currentSnapshot.gameBlocks?.length || 0) < (snapshot.gameBlocks?.length || 0)) msg = 'Undo: Delete Block';
+      else msg = 'Undo: Modify Block';
+    } else if (JSON.stringify(currentSnapshot.tracks) !== JSON.stringify(snapshot.tracks)) {
+      changedTab = 'pianoroll';
+      const cNotes = currentSnapshot.tracks.reduce((sum, t) => sum + t.notes.length, 0);
+      const sNotes = snapshot.tracks.reduce((sum, t) => sum + t.notes.length, 0);
+      if (cNotes > sNotes) msg = 'Undo: Add Note';
+      else if (cNotes < sNotes) msg = 'Undo: Delete Note';
+      else msg = 'Undo: Modify Note';
+    } else if (currentSnapshot.bpm !== snapshot.bpm) {
+      msg = 'Undo: Change BPM';
+    }
+
     set({
-      midiData: { ...s.midiData },
+      midiData: { ...s.midiData, tracks: JSON.parse(JSON.stringify(snapshot.tracks)), bpm: snapshot.bpm || s.bpm },
+      bpm: snapshot.bpm || s.bpm,
+      selectedTrackId: snapshot.selectedTrackId,
       historyIndex: newIndex,
       selectedNoteIds: new Set(snapshot.selectedNoteIds),
       ...(snapshot.chartEndPosition !== undefined && { chartEndPosition: snapshot.chartEndPosition }),
@@ -450,19 +694,45 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
         playbackAnchor: snapshot.playbackAnchor,
         playbackPosition: s.isPlaying ? s.playbackPosition : snapshot.playbackAnchor
       }),
+      ...(changedTab ? { activeTab: changedTab } : {})
     });
+    const mainState = useStore.getState();
+    if (snapshot.gameBlocks) mainState.setGameBlocks(JSON.parse(JSON.stringify(snapshot.gameBlocks)));
+    if (snapshot.gameEvents) mainState.setGameEvents(JSON.parse(JSON.stringify(snapshot.gameEvents)));
+    mainState.showToast(msg);
   },
 
   redo: () => {
     const s = get();
-    if (s.historyIndex >= s.history.length - 1 || !s.midiData || s.selectedTrackId === null) return;
+    if (s.historyIndex >= s.history.length - 1 || !s.midiData) return;
     const newIndex = s.historyIndex + 1;
     const snapshot = s.history[newIndex];
-    const track = s.midiData.tracks.find(t => t.id === s.selectedTrackId);
-    if (!track) return;
-    track.notes = JSON.parse(JSON.stringify(snapshot.notes));
+    const currentSnapshot = s.history[s.historyIndex];
+    
+    let changedTab: 'pianoroll' | 'blocks' | null = null;
+    let msg = 'Redo: Modification';
+
+    if (JSON.stringify(currentSnapshot.gameBlocks) !== JSON.stringify(snapshot.gameBlocks) || 
+        JSON.stringify(currentSnapshot.gameEvents) !== JSON.stringify(snapshot.gameEvents)) {
+      changedTab = 'blocks';
+      if ((currentSnapshot.gameBlocks?.length || 0) < (snapshot.gameBlocks?.length || 0)) msg = 'Redo: Add Block';
+      else if ((currentSnapshot.gameBlocks?.length || 0) > (snapshot.gameBlocks?.length || 0)) msg = 'Redo: Delete Block';
+      else msg = 'Redo: Modify Block';
+    } else if (JSON.stringify(currentSnapshot.tracks) !== JSON.stringify(snapshot.tracks)) {
+      changedTab = 'pianoroll';
+      const cNotes = currentSnapshot.tracks.reduce((sum, t) => sum + t.notes.length, 0);
+      const sNotes = snapshot.tracks.reduce((sum, t) => sum + t.notes.length, 0);
+      if (cNotes < sNotes) msg = 'Redo: Add Note';
+      else if (cNotes > sNotes) msg = 'Redo: Delete Note';
+      else msg = 'Redo: Modify Note';
+    } else if (currentSnapshot.bpm !== snapshot.bpm) {
+      msg = 'Redo: Change BPM';
+    }
+
     set({
-      midiData: { ...s.midiData },
+      midiData: { ...s.midiData, tracks: JSON.parse(JSON.stringify(snapshot.tracks)), bpm: snapshot.bpm || s.bpm },
+      bpm: snapshot.bpm || s.bpm,
+      selectedTrackId: snapshot.selectedTrackId,
       historyIndex: newIndex,
       selectedNoteIds: new Set(snapshot.selectedNoteIds),
       ...(snapshot.chartEndPosition !== undefined && { chartEndPosition: snapshot.chartEndPosition }),
@@ -471,7 +741,12 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
         playbackAnchor: snapshot.playbackAnchor,
         playbackPosition: s.isPlaying ? s.playbackPosition : snapshot.playbackAnchor
       }),
+      ...(changedTab ? { activeTab: changedTab } : {})
     });
+    const mainState = useStore.getState();
+    if (snapshot.gameBlocks) mainState.setGameBlocks(JSON.parse(JSON.stringify(snapshot.gameBlocks)));
+    if (snapshot.gameEvents) mainState.setGameEvents(JSON.parse(JSON.stringify(snapshot.gameEvents)));
+    mainState.showToast(msg);
   },
 
   // --- Clipboard ---
@@ -518,13 +793,35 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
       audioFile: null, audioBuffer: null, audioUrl: null,
       trimStart: 0, trimEnd: 0, audioVolume: 80, audioPlaybackRate: 1.0,
       audioStartTime: 0, audioDuration: 0,
-      bpm: 120, offset: 0, midiData: null, selectedTrackId: null,
+      levelTitle: '', levelAuthor: '', levelDescription: '', levelMidiCredit: '', levelMusicCredit: '',
+      bpm: 120, offset: 0, midiData: {
+        bpm: 120,
+        duration: 60,
+        tracks: [{
+          id: 0,
+          name: 'Track 1',
+          notes: [],
+          instrument: 'piano'
+        }]
+      }, selectedTrackId: 0,
       midiVolume: 80, instrumentPreset: 'piano',
       ghostNoteVisibility: {}, trackMute: {},
       zoomLevel: 100, scrollLeft: 0, scrollTop: 800, showVelocityTab: true,
       playbackPosition: 0, playbackAnchor: 0, isPlaying: false, chartEndPosition: 60,
       selectedNoteIds: new Set(),
-      history: [], historyIndex: -1, clipboard: [], clipboardSourceTrackId: null,
+      history: [{
+        tracks: [{
+          id: 0,
+          name: 'Track 1',
+          notes: [],
+          instrument: 'piano'
+        }],
+        selectedTrackId: 0,
+        selectedNoteIds: [],
+        chartEndPosition: 60,
+        audioStartTime: 0,
+        playbackAnchor: 0
+      }], historyIndex: 0, clipboard: [], clipboardSourceTrackId: null,
       activeTab: 'pianoroll',
     });
   },

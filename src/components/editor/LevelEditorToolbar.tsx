@@ -1,16 +1,16 @@
 import React, { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Upload, Music, FileDown, Play, Pause,
-  Undo2, Redo2, ZoomIn, Volume2, Blocks, ChevronDown
+  Undo2, Redo2, ZoomIn, Volume2, Blocks, ChevronDown, Settings
 } from 'lucide-react';
 import { Midi } from '@tonejs/midi';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import type { EditorNote, EditorTrack, ParsedMidiData } from '../../store/useLevelEditorStore';
 import { useStore } from '../../store/useStore';
-import { exportLevel } from '../../utils/levelUtils';
+import { exportLevel, importLevel } from '../../utils/levelUtils';
 import { exportToMidiFile } from '../../utils/midiExport';
 import { HelpModal } from './HelpModal';
+import { ExportModal } from './ExportModal';
 import { ToolbarButton } from '../ui/ToolbarButton';
 
 const formatTime = (seconds: number) => {
@@ -21,17 +21,20 @@ const formatTime = (seconds: number) => {
 };
 
 export const LevelEditorToolbar: React.FC = () => {
-  const navigate = useNavigate();
   const store = useLevelEditorStore();
   const mainStore = useStore();
   const audioInputRef = useRef<HTMLInputElement>(null);
   const midiInputRef = useRef<HTMLInputElement>(null);
+  const yblevelInputRef = useRef<HTMLInputElement>(null);
 
   const [showHelp, setShowHelp] = useState(false);
   const [showFileMenu, setShowFileMenu] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [arrangeBy, setArrangeBy] = useState<'sequence' | 'pitch'>('sequence');
 
-  // --- Import Audio ---
+  // --- Helpers ---
   const handleAudioImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -97,13 +100,85 @@ export const LevelEditorToolbar: React.FC = () => {
         tracks,
       };
 
-      store.setMidiData(parsedData);
+      store.appendMidiData(parsedData);
 
       // Also generate game blocks/events for the Block Arrangement tab
-      generateGameData(parsedData);
+      const combinedData = useLevelEditorStore.getState().midiData;
+      if (combinedData) {
+        generateGameData(combinedData);
+      }
     } catch (err) {
       console.error('Failed to parse MIDI:', err);
       alert('Failed to parse MIDI file.');
+    }
+    e.target.value = '';
+  };
+
+  // --- Import .yblevel ---
+  const handleYblevelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const imported = await importLevel(file);
+      
+      if (imported.audioBlob && imported.audioBuffer) {
+        const url = URL.createObjectURL(imported.audioBlob);
+        store.setAudioFile(new File([imported.audioBlob], 'audio.mp3'), imported.audioBuffer, url);
+      } else {
+        store.removeAudio();
+      }
+
+      store.setBpm(imported.levelData.bpm);
+      store.setOffset(imported.levelData.offset);
+      useLevelEditorStore.setState({
+        levelTitle: imported.levelData.title || '',
+        levelAuthor: imported.levelData.author || '',
+        levelDescription: imported.levelData.description || '',
+        levelMidiCredit: imported.levelData.midiCredit || '',
+      });
+
+      const tracksMap = new Map<number, EditorTrack>();
+      imported.levelData.midiNotes.forEach(n => {
+        const tId = n.trackId ?? 0;
+        if (!tracksMap.has(tId)) {
+          tracksMap.set(tId, {
+            id: tId,
+            name: n.trackName || `Track ${tId + 1}`,
+            instrument: (n.trackInstrument as any) || 'piano',
+            notes: []
+          });
+        }
+        tracksMap.get(tId)!.notes.push({
+          id: n.id,
+          pitch: n.pitch,
+          name: n.name,
+          timeStart: n.timeStart,
+          duration: n.duration,
+          velocity: n.velocity,
+        });
+      });
+      
+      const tracks = Array.from(tracksMap.values());
+      if (tracks.length === 0) {
+        tracks.push({ id: 0, name: 'Track 1', notes: [], instrument: 'piano' });
+      }
+      
+      const parsedData: ParsedMidiData = {
+        bpm: imported.levelData.bpm,
+        duration: imported.levelData.trimEnd || 60,
+        tracks,
+      };
+
+      store.setMidiData(parsedData);
+      
+      mainStore.setGameBlocks(imported.levelData.blocks);
+      mainStore.setGameEvents(imported.levelData.events);
+      store.commitHistory();
+
+    } catch (err) {
+      console.error('Failed to import .yblevel:', err);
+      alert('Failed to import .yblevel file.');
     }
     e.target.value = '';
   };
@@ -113,6 +188,7 @@ export const LevelEditorToolbar: React.FC = () => {
     const uniqueNotes = new Map<string, { pitch: string; instrument: string }>();
 
     for (const track of data.tracks) {
+      if (track.isBackground) continue;
       for (const note of track.notes) {
         const pitchName = note.name;
         const key = `${pitchName}-${track.instrument}`;
@@ -128,14 +204,28 @@ export const LevelEditorToolbar: React.FC = () => {
     const generateId = () => Math.random().toString(36).substring(2, 9);
 
     const cols = 8;
-    const camera = mainStore.camera;
-    const centerX = window.innerWidth / 2;
-    const localCenterX = (centerX - camera.x) / camera.zoom;
-    const startX = localCenterX - (cols * 80) / 2;
-    const localStartY = (100 - camera.y) / camera.zoom;
+    const totalBlocks = uniqueNotes.size;
+    const rows = Math.ceil(totalBlocks / cols);
+    const startX = -(cols * 80) / 2 + 40;
+    const localStartY = -(rows * 80) / 2 + 40;
+
+    mainStore.updateCamera({ x: 0, y: 0, zoom: 1 });
+
+    const pitchToNumber = (pitch: string) => {
+      const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+      const match = pitch.match(/([A-Z]#?)(\d+)/);
+      if (!match) return 0;
+      const [, note, oct] = match;
+      return parseInt(oct) * 12 + notes.indexOf(note);
+    };
+
+    let entries = Array.from(uniqueNotes.entries());
+    if (arrangeBy === 'pitch') {
+      entries.sort((a, b) => pitchToNumber(a[1].pitch) - pitchToNumber(b[1].pitch));
+    }
 
     let i = 0;
-    for (const [key, info] of uniqueNotes.entries()) {
+    for (const [key, info] of entries) {
       const id = generateId();
       blockIdMap.set(key, id);
       gameBlocks.push({
@@ -150,15 +240,26 @@ export const LevelEditorToolbar: React.FC = () => {
     }
 
     for (const track of data.tracks) {
-      for (const note of track.notes) {
-        const key = `${note.name}-${track.instrument}`;
-        const blockId = blockIdMap.get(key)!;
-        gameEvents.push({
-          time: note.timeStart * 1000,
-          pitch: note.name,
-          instrument: track.instrument,
-          blockId,
-        });
+      if (track.isBackground) {
+        for (const note of track.notes) {
+          gameEvents.push({
+            time: note.timeStart * 1000,
+            pitch: note.name,
+            instrument: track.instrument,
+            blockId: 'background',
+          });
+        }
+      } else {
+        for (const note of track.notes) {
+          const key = `${note.name}-${track.instrument}`;
+          const blockId = blockIdMap.get(key)!;
+          gameEvents.push({
+            time: note.timeStart * 1000,
+            pitch: note.name,
+            instrument: track.instrument,
+            blockId,
+          });
+        }
       }
     }
 
@@ -170,31 +271,33 @@ export const LevelEditorToolbar: React.FC = () => {
   };
 
   // --- Export .yblevel ---
-  const handleExport = async () => {
-    let defaultName = 'level';
-    if (store.audioFile) {
-      defaultName = store.audioFile.name.replace(/\.[^/.]+$/, ""); // Strip extension
-    }
-    const fileName = window.prompt("請輸入匯出檔案名稱：", defaultName);
-    if (!fileName) {
-      return; // user cancelled
-    }
-
+  const handleExport = async (fileName: string, compressAudio: boolean) => {
     setIsExporting(true);
 
     // Sync gameEvents one last time before export
     const gameEvents: typeof mainStore.gameEvents = [];
     if (store.midiData) {
       for (const track of store.midiData.tracks) {
-        for (const note of track.notes) {
-          const block = mainStore.gameBlocks.find(b => b.pitch === note.name && b.instrument === track.instrument);
-          if (block) {
+        if (track.isBackground) {
+          for (const note of track.notes) {
             gameEvents.push({
               time: note.timeStart * 1000,
               pitch: note.name,
               instrument: track.instrument,
-              blockId: block.id,
+              blockId: 'background',
             });
+          }
+        } else {
+          for (const note of track.notes) {
+            const block = mainStore.gameBlocks.find(b => b.pitch === note.name && b.instrument === track.instrument);
+            if (block) {
+              gameEvents.push({
+                time: note.timeStart * 1000,
+                pitch: note.name,
+                instrument: track.instrument,
+                blockId: block.id,
+              });
+            }
           }
         }
       }
@@ -208,7 +311,14 @@ export const LevelEditorToolbar: React.FC = () => {
         trimStart: 0, // Default to 0 for now
         trimEnd: store.chartEndPosition,
         audioBuffer: store.audioBuffer,
+        audioFile: store.audioFile,
+        compressAudio,
         midiData: store.midiData,
+        title: store.levelTitle,
+        author: store.levelAuthor,
+        description: store.levelDescription,
+        midiCredit: store.levelMidiCredit,
+        musicCredit: store.levelMusicCredit,
         gameBlocks: mainStore.gameBlocks,
         gameEvents: gameEvents,
       });
@@ -226,6 +336,7 @@ export const LevelEditorToolbar: React.FC = () => {
       alert('Failed to export level.');
     }
     setIsExporting(false);
+    setShowExportModal(false);
   };
 
   const handleExportMidi = () => {
@@ -273,6 +384,11 @@ export const LevelEditorToolbar: React.FC = () => {
                       <Music size={14} /> Import MIDI
                     </div>
                   </button>
+                  <button className="le-cm-item" onClick={() => { yblevelInputRef.current?.click(); setShowFileMenu(false); }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Upload size={14} /> Import .yblevel
+                    </div>
+                  </button>
                   <div className="le-cm-divider" />
                   <button 
                     className="le-cm-item" 
@@ -286,7 +402,7 @@ export const LevelEditorToolbar: React.FC = () => {
                   </button>
                   <button 
                     className="le-cm-item" 
-                    onClick={() => { handleExport(); setShowFileMenu(false); }} 
+                    onClick={() => { setShowExportModal(true); setShowFileMenu(false); }} 
                     disabled={isExporting}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -346,11 +462,13 @@ export const LevelEditorToolbar: React.FC = () => {
             onFocus={(e) => e.target.blur()}
             onKeyDown={(e) => e.preventDefault()}
           >
+            <option value={0.25}>0.25x</option>
             <option value={0.5}>0.5x</option>
             <option value={0.75}>0.75x</option>
             <option value={1.0}>1.0x</option>
             <option value={1.25}>1.25x</option>
             <option value={1.5}>1.5x</option>
+            <option value={2.0}>2.0x</option>
           </select>
         </div>
 
@@ -361,46 +479,108 @@ export const LevelEditorToolbar: React.FC = () => {
 
           <div className="le-toolbar-divider" style={{ margin: '0 8px' }} />
 
-          <div className="le-toolbar-btn" style={{ cursor: 'default' }} title="Zoom">
-            <ZoomIn size={18} style={{ marginRight: 4 }} />
-            <input 
-              type="range" 
-              min="10" max="500" step="10" 
-              value={store.zoomLevel} 
-              onChange={(e) => store.setZoomLevel(Number(e.target.value))}
-              style={{ width: 60, accentColor: '#a5b4fc' }}
-              tabIndex={-1}
-              onFocus={(e) => e.target.blur()}
-              onKeyDown={(e) => e.preventDefault()}
-            />
-          </div>
+          {/* Settings Dropdown */}
+          <div style={{ position: 'relative' }}>
+            <ToolbarButton 
+              variant="editor"
+              active={showSettingsMenu} 
+              onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+              title="Editor Settings"
+            >
+              <Settings size={18} />
+            </ToolbarButton>
 
-          <div className="le-toolbar-btn" style={{ cursor: 'default' }} title="Audio Volume">
-            <Volume2 size={16} style={{ marginRight: 4, color: '#4ae2a8' }} />
-            <input 
-              type="range" 
-              min="0" max="100" 
-              value={store.audioVolume} 
-              onChange={(e) => store.setAudioVolume(Number(e.target.value))}
-              style={{ width: 50, accentColor: '#4ae2a8' }}
-              tabIndex={-1}
-              onFocus={(e) => e.target.blur()}
-              onKeyDown={(e) => e.preventDefault()}
-            />
-          </div>
-          
-          <div className="le-toolbar-btn" style={{ cursor: 'default' }} title="MIDI Volume">
-            <Music size={16} style={{ marginRight: 4, color: '#a5b4fc' }} />
-            <input 
-              type="range" 
-              min="0" max="100" 
-              value={store.midiVolume} 
-              onChange={(e) => store.setMidiVolume(Number(e.target.value))}
-              style={{ width: 50, accentColor: '#a5b4fc' }}
-              tabIndex={-1}
-              onFocus={(e) => e.target.blur()}
-              onKeyDown={(e) => e.preventDefault()}
-            />
+            {showSettingsMenu && (
+              <>
+                <div 
+                  style={{ position: 'fixed', inset: 0, zIndex: 35 }} 
+                  onClick={() => setShowSettingsMenu(false)} 
+                />
+                <div 
+                  className="le-context-menu" 
+                  style={{ position: 'absolute', top: '100%', right: 0, marginTop: 8, zIndex: 40, width: 240, padding: '12px' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <span style={{ color: '#9ca3af', fontSize: 13, fontWeight: 600 }}>EDITOR SETTINGS</span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <span style={{ color: 'white', fontSize: 13 }}>BPM</span>
+                    <input 
+                      type="number" 
+                      value={store.bpm} 
+                      onChange={(e) => store.setBpm(Number(e.target.value))}
+                      style={{ width: 60, padding: '4px 8px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 4, fontSize: 13, outline: 'none' }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <span style={{ color: 'white', fontSize: 13 }}>Sort Blocks By</span>
+                    <select 
+                      value={arrangeBy} 
+                      onChange={(e) => setArrangeBy(e.target.value as 'sequence' | 'pitch')}
+                      style={{ padding: '4px 8px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 4, fontSize: 13, cursor: 'pointer', outline: 'none' }}
+                    >
+                      <option value="sequence">Sequence</option>
+                      <option value="pitch">Pitch</option>
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <span style={{ color: 'white', fontSize: 13 }} title="Maximum undo steps">Undo Limit</span>
+                    <input 
+                      type="number" 
+                      min="1" max="500"
+                      value={store.historyLimit} 
+                      onChange={(e) => store.setHistoryLimit(Math.max(1, Number(e.target.value)))}
+                      style={{ width: 60, padding: '4px 8px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 4, fontSize: 13, outline: 'none' }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ color: 'white', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}><ZoomIn size={14} /> Zoom Level</span>
+                      <span style={{ color: '#9ca3af', fontSize: 12 }}>{store.zoomLevel}%</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="10" max="500" step="10" 
+                      value={store.zoomLevel} 
+                      onChange={(e) => store.setZoomLevel(Number(e.target.value))}
+                      style={{ width: '100%', accentColor: '#a5b4fc' }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ color: 'white', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}><Volume2 size={14} color="#4ae2a8" /> Audio Volume</span>
+                      <span style={{ color: '#9ca3af', fontSize: 12 }}>{store.audioVolume}%</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0" max="100" 
+                      value={store.audioVolume} 
+                      onChange={(e) => store.setAudioVolume(Number(e.target.value))}
+                      style={{ width: '100%', accentColor: '#4ae2a8' }}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ color: 'white', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}><Music size={14} color="#a5b4fc" /> MIDI Volume</span>
+                      <span style={{ color: '#9ca3af', fontSize: 12 }}>{store.midiVolume}%</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0" max="100" 
+                      value={store.midiVolume} 
+                      onChange={(e) => store.setMidiVolume(Number(e.target.value))}
+                      style={{ width: '100%', accentColor: '#a5b4fc' }}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           <ToolbarButton variant="editor" onClick={() => setShowHelp(true)} title="Help & Shortcuts">
@@ -438,9 +618,53 @@ export const LevelEditorToolbar: React.FC = () => {
           style={{ display: 'none' }}
           onChange={handleMidiImport}
         />
+
+        <input
+          ref={yblevelInputRef}
+          type="file"
+          accept=".yblevel"
+          style={{ display: 'none' }}
+          onChange={handleYblevelImport}
+        />
       </div>
 
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
+      <ExportModal 
+        isOpen={showExportModal} 
+        onClose={() => setShowExportModal(false)} 
+        onExport={handleExport}
+        defaultFileName={store.audioFile ? store.audioFile.name.replace(/\.[^/.]+$/, "") : 'level'}
+      />
+
+      {isExporting && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.8)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          color: 'white',
+        }}>
+          <div style={{
+             width: 64, height: 64, border: '6px solid rgba(255,255,255,0.2)',
+             borderTopColor: '#a5b4fc', borderRadius: '50%',
+             animation: 'spin 1s linear infinite'
+          }} />
+          <h2 style={{ marginTop: 24, fontSize: 28, fontWeight: 'bold' }}>Exporting .yblevel...</h2>
+          <p style={{ marginTop: 12, fontSize: 16, opacity: 0.8 }}>Encoding audio and packaging files. This may take a moment.</p>
+          <style>
+            {`
+              @keyframes spin {
+                to { transform: rotate(360deg); }
+              }
+            `}
+          </style>
+        </div>
+      )}
     </>
   );
 };

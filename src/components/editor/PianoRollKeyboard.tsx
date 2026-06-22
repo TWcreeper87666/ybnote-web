@@ -17,7 +17,7 @@ export const PianoRollKeyboard: React.FC<PianoRollKeyboardProps> = ({ scrollTop,
 
   const keys: React.ReactNode[] = [];
 
-  for (let pitch = MAX_PITCH; pitch >= 0; pitch--) {
+  for (let pitch = MAX_PITCH; pitch >= 12; pitch--) {
     const noteIndex = pitch % 12;
     const octave = Math.floor(pitch / 12) - 1;
     const noteName = NOTES[noteIndex];

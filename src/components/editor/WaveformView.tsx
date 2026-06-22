@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import Minimap from 'wavesurfer.js/dist/plugins/minimap.js';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
+import { EditorContextMenu, EditorContextMenuItem } from './EditorContextMenu';
 
 const CustomWaveProgress = () => {
   const ref = useRef<HTMLDivElement>(null);
@@ -56,6 +57,12 @@ export const WaveformView: React.FC = () => {
   const panStartMouseX = useRef(0);
   const panStartScrollX = useRef(0);
 
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  
+  // Trimming state
+  const [isTrimming, setIsTrimming] = useState(false);
+
   useEffect(() => {
     if (!containerRef.current || !store.audioUrl) return;
 
@@ -71,6 +78,8 @@ export const WaveformView: React.FC = () => {
       hideScrollbar: true,
       height: 'auto'
     });
+    
+    setIsLoaded(false);
 
     if (minimapRef.current) {
       ws.registerPlugin(Minimap.create({
@@ -89,6 +98,8 @@ export const WaveformView: React.FC = () => {
     ws.on('ready', (duration) => {
       setIsLoaded(true);
       setAudioDuration(duration);
+      ws.setPlaybackRate(useLevelEditorStore.getState().audioPlaybackRate);
+      ws.setVolume(useLevelEditorStore.getState().audioVolume / 100);
     });
 
     wavesurferRef.current = ws;
@@ -210,6 +221,12 @@ export const WaveformView: React.FC = () => {
     }
   };
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
   const handleWindowMouseMove = (e: MouseEvent) => {
     if (isMiddlePanning.current) {
       const dx = e.clientX - panStartMouseX.current;
@@ -314,18 +331,17 @@ export const WaveformView: React.FC = () => {
       className="waveform-wrapper" 
       ref={wrapperRef}
       onMouseDown={handleMouseDown}
+      onContextMenu={handleContextMenu}
     >
-      {isDragging && (
-        <div style={{
-          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-          zIndex: 100, background: 'rgba(30,30,38,0.9)', border: '1px solid #4a90e2',
-          borderRadius: 8, padding: 6, boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: 200, pointerEvents: 'none'
-        }}>
-          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#ffcc00' }}>{dragTimeText}</div>
-          <div ref={minimapRef} style={{ width: '100%', height: 20, background: 'rgba(0,0,0,0.3)', borderRadius: 4, overflow: 'hidden' }} />
-        </div>
-      )}
+      <div style={{
+        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+        zIndex: 100, background: 'rgba(30,30,38,0.9)', border: '1px solid #4a90e2',
+        borderRadius: 8, padding: 6, boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+        display: isDragging ? 'flex' : 'none', flexDirection: 'column', alignItems: 'center', gap: 4, width: 200, pointerEvents: 'none'
+      }}>
+        <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#ffcc00' }}>{dragTimeText}</div>
+        <div ref={minimapRef} style={{ width: '100%', height: 20, background: 'rgba(0,0,0,0.3)', borderRadius: 4, overflow: 'hidden' }} />
+      </div>
 
       <div className="waveform-sticky">
         <div className="waveform-content" style={{ transform: `translateX(${-store.scrollLeft}px)` }}>
@@ -341,6 +357,49 @@ export const WaveformView: React.FC = () => {
           <CustomWaveProgress />
         </div>
       </div>
+
+      {contextMenu && (
+        <EditorContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
+          <EditorContextMenuItem onClick={async () => {
+            setContextMenu(null);
+            setIsTrimming(true);
+            await new Promise(resolve => setTimeout(resolve, 50));
+            await store.trimAudioInPlace('start');
+            setIsTrimming(false);
+          }}>
+            Trim before playhead
+          </EditorContextMenuItem>
+          <EditorContextMenuItem onClick={async () => {
+            setContextMenu(null);
+            setIsTrimming(true);
+            await new Promise(resolve => setTimeout(resolve, 50));
+            await store.trimAudioInPlace('end');
+            setIsTrimming(false);
+          }}>
+            Trim after playhead
+          </EditorContextMenuItem>
+          <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
+          <EditorContextMenuItem danger onClick={() => {
+            setContextMenu(null);
+            store.removeAudio();
+          }}>
+            Remove Audio
+          </EditorContextMenuItem>
+        </EditorContextMenu>
+      )}
+
+      {isTrimming && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,15,0.9)', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', backdropFilter: 'blur(10px)' }}>
+          <div className="loader" style={{ width: 64, height: 64, border: '4px solid rgba(255,255,255,0.1)', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+          <h2 style={{ marginTop: 24, fontSize: 28, fontWeight: 'bold' }}>Trimming Audio...</h2>
+          <style>{`
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      )}
     </div>
   );
 };

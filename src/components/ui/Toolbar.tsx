@@ -79,16 +79,21 @@ export const Toolbar: React.FC = () => {
 
       <div className="toolbar glass-panel">
 
-      <ToolbarButton 
-        onClick={() => undoAction()}
-        title="Undo (Ctrl+Z)"
-        icon={<Undo2 size={24} />}
-      />
-      <ToolbarButton 
-        onClick={() => redoAction()}
-        title="Redo (Ctrl+Y)"
-        icon={<Redo2 size={24} />}
-      />
+      {!window.location.hash.includes('/level-editor') && (
+        <>
+          <ToolbarButton 
+            onClick={undoAction}
+            title="Undo"
+            icon={<Undo2 size={24} />}
+          />
+          <ToolbarButton 
+            onClick={redoAction}
+            title="Redo"
+            icon={<Redo2 size={24} />}
+          />
+          <ToolbarDivider variant="editor" />
+        </>
+      )}
 
       <ToolbarButton 
         className={selectedBlockIds.length > 0 || selectedTrackIds.length > 0 || selectedGroupRectIds.length > 0 ? 'danger-btn' : 'disabled-btn'}

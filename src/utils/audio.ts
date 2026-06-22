@@ -143,6 +143,11 @@ export const playNote = async (pitch: string, volume: number = 1.0, instrument: 
   } else if (Tone.getContext().state !== 'running') {
     await Tone.getContext().resume();
   }
+
+  console.log(
+    Tone.getContext().state,
+    document.visibilityState
+  );
   
   // Volume usually ranges from 0 to 1, we can map it to velocity.
   const velocity = Math.max(0, Math.min(1, volume));

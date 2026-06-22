@@ -247,6 +247,21 @@ interface AppState {
   setMobileControlMode: (mode: 'crosshair' | 'touch') => void;
   resetGamePlay: () => void;
   latestHit: HitEvent | null;
+  gameAudioUrl: string | null;
+  setGameAudioUrl: (url: string | null) => void;
+  gameAudioVolume: number;
+  setGameAudioVolume: (v: number) => void;
+  
+  gameCamera: { x: number; y: number; zoom: number };
+  updateGameCamera: (camera: Partial<{ x: number; y: number; zoom: number }>) => void;
+
+  levelMetadata: {
+    title?: string;
+    author?: string;
+    description?: string;
+    midiCredit?: string;
+  } | null;
+  setLevelMetadata: (metadata: AppState['levelMetadata']) => void;
 
   latestPerformHit: { time: number, color: number } | null;
   setLatestPerformHit: (hit: { time: number, color: number }) => void;
@@ -338,7 +353,12 @@ export const useStore = create<AppState>()(
         maxCombo: 0,
         gameResetCount: 0,
         mobileControlMode: 'touch',
+        levelMetadata: null,
+        gameAudioUrl: null,
+        gameAudioVolume: 1,
         
+        gameCamera: { x: 0, y: 0, zoom: 1 },
+
         toastMessage: null,
 
         addBlock: (block) => {
@@ -977,7 +997,14 @@ export const useStore = create<AppState>()(
         setGameStats: (stats) => set(state => ({ ...state, ...stats })),
         setGameSpeed: (gameSpeed) => set({ gameSpeed }),
         setMobileControlMode: (mobileControlMode) => set({ mobileControlMode }),
-        resetGamePlay: () => set(s => ({ gameResetCount: s.gameResetCount + 1, gameScore: 0, gameCombo: 0, perfectCount: 0, goodCount: 0, badCount: 0, missCount: 0, wrongCount: 0, maxCombo: 0, latestHit: null })),
+        
+        setGameAudioUrl: (url) => set({ gameAudioUrl: url }),
+        setGameAudioVolume: (v) => set({ gameAudioVolume: v }),
+        
+        updateGameCamera: (camera) => set((state) => ({ gameCamera: { ...state.gameCamera, ...camera } })),
+
+        setLevelMetadata: (levelMetadata) => set({ levelMetadata }),
+        resetGamePlay: () => set((s) => ({ gameResetCount: s.gameResetCount + 1, gameScore: 0, gameCombo: 0, perfectCount: 0, goodCount: 0, badCount: 0, missCount: 0, wrongCount: 0, maxCombo: 0, latestHit: null })),
         latestHit: null,
 
         latestPerformHit: null,
@@ -1011,6 +1038,13 @@ export const useStore = create<AppState>()(
     ),
     {
       partialize: (state) => ({ blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks, gameBlocks: state.gameBlocks }), // track history
+      onSave: () => {
+        if (typeof window !== 'undefined' && window.location.hash.includes('/level-editor')) {
+          import('./useLevelEditorStore').then(({ useLevelEditorStore }) => {
+            useLevelEditorStore.getState().commitHistory();
+          });
+        }
+      },
       equality: (pastState, currentState) => {
         if (pastState.groups !== currentState.groups) {
           return false;

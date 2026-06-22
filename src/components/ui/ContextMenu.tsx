@@ -76,14 +76,22 @@ export const ContextMenu: React.FC = () => {
       closeContextMenu();
     };
 
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeContextMenu();
+      }
+    };
+
     window.addEventListener('pointerdown', handleGlobalInteraction, { capture: true });
     window.addEventListener('wheel', handleGlobalInteraction, { capture: true });
     window.addEventListener('contextmenu', handleGlobalInteraction, { capture: true });
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
 
     return () => {
       window.removeEventListener('pointerdown', handleGlobalInteraction, { capture: true });
       window.removeEventListener('wheel', handleGlobalInteraction, { capture: true });
       window.removeEventListener('contextmenu', handleGlobalInteraction, { capture: true });
+      window.removeEventListener('keydown', handleKeyDown, { capture: true });
     };
   }, [contextMenu, closeContextMenu]);
 

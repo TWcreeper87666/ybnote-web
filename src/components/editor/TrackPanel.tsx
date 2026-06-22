@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import { getTrackColor } from '../../utils/trackColors';
-import { Plus, Copy, Trash2, Eye, EyeOff, Volume2, VolumeX } from 'lucide-react';
+import { Plus, Copy, Trash2, Eye, EyeOff, Volume2, VolumeX, Blocks } from 'lucide-react';
+import { EditorContextMenu, EditorContextMenuItem, EditorContextMenuDivider } from './EditorContextMenu';
 
 const getInstrumentIcon = (instrument: string) => {
   switch (instrument) {
@@ -62,34 +63,37 @@ export const TrackPanel: React.FC = () => {
   const handleRemoveTrack = (trackId: number | null = null) => {
     const idToRemove = trackId ?? store.selectedTrackId;
     if (idToRemove !== null && tracks.length > 0) {
-      if (window.confirm('Are you sure you want to delete this track?')) {
-        store.removeTrack(idToRemove);
-      }
+      store.removeTrack(idToRemove);
     }
   };
 
   // Global events
   useEffect(() => {
     const handleGlobalKeydown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+
       if (e.key === 'F2' && store.selectedTrackId !== null) {
         e.preventDefault();
         const track = tracks.find(t => t.id === store.selectedTrackId);
         if (track) startRename(track.id, track.name);
       }
-    };
 
-    const handleGlobalClick = () => {
-      setContextMenu(null);
+      if ((e.key === 'Delete' || e.key === 'Backspace') && store.selectedTrackId !== null) {
+        // If focus is inside TrackPanel or no notes are selected in PianoRoll
+        if (target.closest('.le-track-panel') || store.selectedNoteIds.size === 0) {
+          e.preventDefault();
+          handleRemoveTrack(store.selectedTrackId);
+        }
+      }
     };
 
     window.addEventListener('keydown', handleGlobalKeydown);
-    window.addEventListener('click', handleGlobalClick);
 
     return () => {
       window.removeEventListener('keydown', handleGlobalKeydown);
-      window.removeEventListener('click', handleGlobalClick);
     };
-  }, [store.selectedTrackId, tracks]);
+  }, [store.selectedTrackId, tracks, store.selectedNoteIds.size]);
 
   const openContextMenu = (e: React.MouseEvent, trackId: number | null) => {
     e.preventDefault();
@@ -122,7 +126,7 @@ export const TrackPanel: React.FC = () => {
   };
 
   return (
-    <aside className="le-track-panel">
+    <aside className="le-track-panel" style={{ minHeight: 0 }}>
       <div className="le-tp-header">
         <span className="le-tp-title">Tracks</span>
         <span className="le-tp-count">{tracks.length}</span>
@@ -137,8 +141,12 @@ export const TrackPanel: React.FC = () => {
           return (
             <div
               key={track.id}
+              tabIndex={-1}
               className={`le-tp-item ${isActive ? 'active' : ''}`}
-              onClick={() => store.selectTrack(track.id)}
+              onClick={(e) => {
+                store.selectTrack(track.id);
+                e.currentTarget.focus();
+              }}
               onDoubleClick={() => startRename(track.id, track.name)}
               onContextMenu={(e) => openContextMenu(e, track.id)}
             >
@@ -170,13 +178,6 @@ export const TrackPanel: React.FC = () => {
               </div>
 
               <div className="le-tp-actions">
-                <button
-                  className={`le-tp-icon-btn ${isMuted ? 'muted' : ''}`}
-                  title={isMuted ? 'Unmute Track' : 'Mute Track'}
-                  onClick={(e) => { e.stopPropagation(); store.toggleTrackMute(track.id); }}
-                >
-                  {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                </button>
                 {!isActive && (
                   <button
                     className={`le-tp-icon-btn ${isGhostVisible ? 'ghost-active' : ''}`}
@@ -186,6 +187,24 @@ export const TrackPanel: React.FC = () => {
                     {isGhostVisible ? <Eye size={14} /> : <EyeOff size={14} />}
                   </button>
                 )}
+                <button
+                  className="le-tp-icon-btn"
+                  style={{
+                    color: track.isBackground ? 'rgba(255,255,255,0.4)' : '#a5b4fc',
+                    borderRadius: 4
+                  }}
+                  title={track.isBackground ? 'Play as Background (Hidden in Blocks)' : 'Include in Game Blocks'}
+                  onClick={(e) => { e.stopPropagation(); store.toggleTrackBackground(track.id); }}
+                >
+                  <Blocks size={14} />
+                </button>
+                <button
+                  className={`le-tp-icon-btn ${isMuted ? 'muted' : ''}`}
+                  title={isMuted ? 'Unmute Track' : 'Mute Track'}
+                  onClick={(e) => { e.stopPropagation(); store.toggleTrackMute(track.id); }}
+                >
+                  {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                </button>
               </div>
             </div>
           );
@@ -205,39 +224,35 @@ export const TrackPanel: React.FC = () => {
       </div>
 
       {contextMenu && (
-        <div 
-          className="le-context-menu"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          onClick={(e) => e.stopPropagation()}
-        >
+        <EditorContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
           {contextMenu.trackId !== null ? (
             <>
-              <button className="le-cm-item" onClick={() => handleContextAction('rename')}>Rename (F2)</button>
-              <button className="le-cm-item" onClick={() => handleContextAction('duplicate')}>Duplicate</button>
-              <div className="le-cm-divider" />
+              <EditorContextMenuItem onClick={() => handleContextAction('rename')}>Rename (F2)</EditorContextMenuItem>
+              <EditorContextMenuItem onClick={() => handleContextAction('duplicate')}>Duplicate</EditorContextMenuItem>
+              <EditorContextMenuDivider />
               <div style={{ padding: '4px 12px', fontSize: 11, opacity: 0.6, textTransform: 'uppercase', fontWeight: 'bold' }}>Instrument</div>
-              <button className="le-cm-item" onClick={() => handleInstrumentChange('piano')}>
+              <EditorContextMenuItem onClick={() => handleInstrumentChange('piano')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('piano')} Piano</div>
-              </button>
-              <button className="le-cm-item" onClick={() => handleInstrumentChange('bass')}>
+              </EditorContextMenuItem>
+              <EditorContextMenuItem onClick={() => handleInstrumentChange('bass')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('bass')} Bass</div>
-              </button>
-              <button className="le-cm-item" onClick={() => handleInstrumentChange('synth')}>
+              </EditorContextMenuItem>
+              <EditorContextMenuItem onClick={() => handleInstrumentChange('synth')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('synth')} Synth</div>
-              </button>
-              <button className="le-cm-item" onClick={() => handleInstrumentChange('percussion')}>
+              </EditorContextMenuItem>
+              <EditorContextMenuItem onClick={() => handleInstrumentChange('percussion')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('percussion')} Drums</div>
-              </button>
-              <button className="le-cm-item" onClick={() => handleInstrumentChange('group_rect')}>
+              </EditorContextMenuItem>
+              <EditorContextMenuItem onClick={() => handleInstrumentChange('group_rect')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('group_rect')} Group Rect</div>
-              </button>
-              <div className="le-cm-divider" />
-              <button className="le-cm-item danger" onClick={() => handleContextAction('remove')}>Remove</button>
+              </EditorContextMenuItem>
+              <EditorContextMenuDivider />
+              <EditorContextMenuItem danger onClick={() => handleContextAction('remove')}>Remove</EditorContextMenuItem>
             </>
           ) : (
-            <button className="le-cm-item" onClick={() => handleContextAction('add')}>Add Track</button>
+            <EditorContextMenuItem onClick={() => handleContextAction('add')}>Add Track</EditorContextMenuItem>
           )}
-        </div>
+        </EditorContextMenu>
       )}
     </aside>
   );
