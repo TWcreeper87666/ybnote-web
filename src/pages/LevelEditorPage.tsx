@@ -3,7 +3,9 @@ import { useLevelEditorStore } from '../store/useLevelEditorStore';
 import { useStore } from '../store/useStore';
 import { PianoRoll } from '../components/editor/PianoRoll';
 import { LevelEditorToolbar } from '../components/editor/LevelEditorToolbar';
-import { GameCanvas } from '../components/canvas/GameCanvas';
+import { Canvas } from '../components/canvas/Canvas';
+import { ChartingTab } from '../components/editor/ChartingTab';
+import { syncGameBlocksToCanvas } from '../utils/chartUtils';
 import { WaveformView } from '../components/editor/WaveformView';
 import { TrackPanel } from '../components/editor/TrackPanel';
 import { parseMidiFile } from '../utils/midiImport';
@@ -40,8 +42,15 @@ const BlocksPlaybackSync = () => {
         
         while (lastPlayedIndex < events.length && events[lastPlayedIndex].time <= currentMs) {
           const ev = events[lastPlayedIndex];
-          // Update gameBlock visual state (NoteBlock.tsx will flash)
-          useStore.getState().updateGameBlock(ev.blockId, { playedAt: Date.now() });
+          const main = useStore.getState();
+          const block = main.blocks.find(b => b.id === ev.blockId) ?? main.gameBlocks.find(b => b.id === ev.blockId);
+          if (block) {
+            main.updateBlock(ev.blockId, { playedAt: Date.now() });
+            main.updateGameBlock(ev.blockId, { playedAt: Date.now() });
+          } else {
+            const gr = main.groupRects.find(g => g.id === ev.blockId);
+            if (gr) main.updateGroupRect(ev.blockId, { playedAt: Date.now() });
+          }
           lastPlayedIndex++;
         }
       } else {
@@ -141,8 +150,7 @@ const GlobalPlayhead = () => {
 export const LevelEditorPage: React.FC = () => {
   const { activeTab } = useLevelEditorStore();
   const theme = useStore((s) => s.theme);
-  const gameState = useStore((s) => s.gameState);
-  const setGameState = useStore((s) => s.setGameState);
+  const setMode = useStore((s) => s.setMode);
   const store = useLevelEditorStore();
 
   const [trackPanelWidth, setTrackPanelWidth] = React.useState(250);
@@ -150,85 +158,12 @@ export const LevelEditorPage: React.FC = () => {
   const [isDragging, setIsDragging] = React.useState(false);
   const dragState = React.useRef<{ type: string; startX: number; startY: number; initialW: number; initialH: number } | null>(null);
 
-  const generateMissingBlocks = React.useCallback(() => {
-    const midiData = useLevelEditorStore.getState().midiData;
-    const mainState = useStore.getState();
-    if (!midiData) return;
-
-    const uniqueNotes = new Map<string, { pitch: string; instrument: string }>();
-
-    for (const track of midiData.tracks) {
-      for (const note of track.notes) {
-        const pitchName = note.name;
-        const key = `${pitchName}-${track.instrument}`;
-        if (!uniqueNotes.has(key)) {
-          uniqueNotes.set(key, { pitch: pitchName, instrument: track.instrument });
-        }
-      }
-    }
-
-    const currentBlocks = [...mainState.gameBlocks];
-    let added = false;
-    
-    // Spawn new blocks nicely in a grid
-    let i = 0;
-    const cols = 8;
-    const camera = mainState.camera;
-    const centerX = window.innerWidth / 2;
-    const localCenterX = (centerX - camera.x) / camera.zoom;
-    const startX = localCenterX - (cols * 80) / 2;
-    const localStartY = (100 - camera.y) / camera.zoom;
-
-    for (const info of uniqueNotes.values()) {
-      const exists = currentBlocks.some(b => b.pitch === info.pitch && b.instrument === info.instrument);
-      if (!exists) {
-        const id = Math.random().toString(36).substring(2, 9);
-        currentBlocks.push({
-          id,
-          x: startX + (i % cols) * 80,
-          y: localStartY + Math.floor(i / cols) * 80,
-          pitch: info.pitch,
-          instrument: info.instrument,
-          volume: 1,
-        });
-        added = true;
-      }
-      // increment i even for existing blocks to maintain grid structure for newly added ones
-      i++; 
-    }
-    
-    // Sync gameEvents to match current midiData
-    const gameEvents: typeof mainState.gameEvents = [];
-    for (const track of midiData.tracks) {
-      for (const note of track.notes) {
-        const block = currentBlocks.find(b => b.pitch === note.name && b.instrument === track.instrument);
-        if (block) {
-          gameEvents.push({
-            time: note.timeStart * 1000,
-            pitch: note.name,
-            instrument: track.instrument,
-            blockId: block.id,
-          });
-        }
-      }
-    }
-    gameEvents.sort((a, b) => a.time - b.time);
-    mainState.setGameEvents(gameEvents);
-    
-    if (added) {
-      mainState.setGameBlocks(currentBlocks);
-    }
-  }, []);
-
-  // Ensure game is in arrange mode for block arrangement
   useEffect(() => {
-    if (activeTab === 'blocks') {
-      if (gameState !== 'arrange') {
-        setGameState('arrange');
-      }
-      generateMissingBlocks();
+    if (activeTab === 'blocks' || activeTab === 'charting') {
+      syncGameBlocksToCanvas();
+      setMode('select');
     }
-  }, [activeTab, gameState, setGameState, generateMissingBlocks]);
+  }, [activeTab, setMode]);
 
   // Prevent global browser zoom via Ctrl+Wheel
   useEffect(() => {
@@ -364,16 +299,18 @@ export const LevelEditorPage: React.FC = () => {
             </div>
             <div style={{
           position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          visibility: activeTab === 'blocks' ? 'visible' : 'hidden',
-          pointerEvents: activeTab === 'blocks' ? 'auto' : 'none'
+          visibility: activeTab === 'blocks' || activeTab === 'charting' ? 'visible' : 'hidden',
+          pointerEvents: activeTab === 'blocks' || activeTab === 'charting' ? 'auto' : 'none'
         }}>
           <div className="le-blocks-container" style={{ position: 'relative', width: '100%', height: '100%' }}>
                 <ShortcutsEnabler />
                 <BlocksPlaybackSync />
-                <GameCanvas />
-                <div className="le-blocks-hint">
-                  Drag blocks to arrange your beatmap layout
-                </div>
+                <Canvas />
+                {activeTab === 'blocks' && (
+                  <div className="le-blocks-hint">
+                    Drag blocks to arrange your beatmap layout
+                  </div>
+                )}
                 
                 {/* Editor UI overlays for blocks mode */}
                 <div className="ui-overlay" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10 }}>
@@ -395,7 +332,10 @@ export const LevelEditorPage: React.FC = () => {
                   )}
                 </div>
                 
-                {/* Bottom Mini Player */}
+                {activeTab === 'charting' && <ChartingTab />}
+
+                {/* Bottom Mini Player (blocks tab only) */}
+                {activeTab === 'blocks' && (
                 <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 24px', background: 'linear-gradient(to top, rgba(0,0,0,0.9), transparent)', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
                    <div style={{ color: 'white', fontSize: 14, opacity: 0.8 }}>Preview Playback</div>
                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -425,6 +365,7 @@ export const LevelEditorPage: React.FC = () => {
                       </div>
                    </div>
                 </div>
+                )}
               </div>
             </div>
           </div>

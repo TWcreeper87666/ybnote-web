@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
-import { Search, Music, LayoutList, GitBranch, Square, X, ChevronRight, ChevronDown, Keyboard, Check, CheckSquare, Play, Pause } from 'lucide-react';
+import { Search, Music, LayoutList, GitBranch, Square, ChevronRight, ChevronDown, Keyboard, Check, CheckSquare, Play, Pause } from 'lucide-react';
+import { FloatingWindow } from './FloatingWindow';
 
 // Smooth camera animation helper
 const animateCameraTo = (targetX: number, targetY: number, duration = 300) => {
@@ -49,7 +50,7 @@ export const OutlinerPanel: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const handleFind = (e: any) => {
+    const handleFind = (e: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
       const id = e.detail;
       
       // Force open outliner panel if closed
@@ -74,7 +75,7 @@ export const OutlinerPanel: React.FC = () => {
          needsNotes = true;
          const block = state.blocks.find(b => b.id === id);
          if (block) {
-           if ((block as any).enabled === false) isDisabled = true;
+           if ((block as any /* eslint-disable-line @typescript-eslint/no-explicit-any */).enabled === false) isDisabled = true;
            for (const gr of state.groupRects) {
              const bCenterX = block.x + 30;
              const bCenterY = block.y + 30;
@@ -114,33 +115,6 @@ export const OutlinerPanel: React.FC = () => {
     window.addEventListener('find-in-outliner', handleFind);
     return () => window.removeEventListener('find-in-outliner', handleFind);
   }, []);
-
-  const [position, setPosition] = useState({ x: 24, y: 24 });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStart = useRef({ x: 0, y: 0 });
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    setIsDragging(true);
-    dragStart.current = {
-      x: e.clientX - position.x,
-      y: e.clientY - position.y
-    };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (isDragging) {
-      setPosition({
-        x: e.clientX - dragStart.current.x,
-        y: e.clientY - dragStart.current.y
-      });
-    }
-  };
-
-  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    setIsDragging(false);
-    e.currentTarget.releasePointerCapture(e.pointerId);
-  };
 
   const handleShiftClick = (clickedId: string, clickedType: 'block' | 'groupRect' | 'track') => {
     const state = useStore.getState();
@@ -202,7 +176,21 @@ export const OutlinerPanel: React.FC = () => {
     });
   };
 
-  if (!isOutlinerOpen) return null;
+  if (!isOutlinerOpen) {
+    return (
+      <FloatingWindow
+        title={<><LayoutList size={18} /> Outliner</>}
+        isOpen={false}
+        onClose={() => {}}
+        initialSize={{ width: '310px', height: '400px' }}
+        minSize={{ width: '250px', height: '400px' }}
+        headerStyle={{ marginBottom: '8px' }}
+        anchorSelector='button[title="Toggle Outliner"], button[title="Outliner"]'
+      >
+        {null}
+      </FloatingWindow>
+    );
+  }
 
   const query = searchQuery.toLowerCase();
 
@@ -210,7 +198,7 @@ export const OutlinerPanel: React.FC = () => {
   const filteredBlocks = blocks.filter(b =>
     (b.pitch.toLowerCase().includes(query) ||
     (b.keyBinding && b.keyBinding.toLowerCase().includes(query))) &&
-    (!filters.enable || (b as any).enabled !== false)
+    (!filters.enable || (b as any /* eslint-disable-line @typescript-eslint/no-explicit-any */).enabled !== false)
   );
 
   // Filter groupRects by search and enabled
@@ -274,28 +262,15 @@ export const OutlinerPanel: React.FC = () => {
   };
 
   return (
-    <div 
-      className="outliner-panel glass-panel"
-      style={{ left: position.x, top: position.y, margin: 0, position: 'absolute', resize: 'both', overflow: 'hidden', minWidth: '250px', minHeight: '400px', height: '400px' }}
-      onWheel={(e) => e.stopPropagation()}
+    <FloatingWindow
+      title={<><LayoutList size={18} /> Outliner</>}
+      isOpen={isOutlinerOpen}
+      onClose={() => useStore.setState({ isOutlinerOpen: false })}
+      anchorSelector='button[title="Toggle Outliner"], button[title="Outliner"]'
+      initialSize={{ width: '310px', height: '400px' }}
+      minSize={{ width: '250px', height: '400px' }}
+      headerStyle={{ marginBottom: '8px' }}
     >
-      <div 
-        className="outliner-header select-none"
-        style={{ cursor: 'move', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-      >
-        <h2 className="pointer-events-none" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}><LayoutList size={18} /> Outliner</h2>
-        <button 
-          className="icon-btn icon-btn-round" 
-          onClick={() => useStore.setState({ isOutlinerOpen: false })}
-          onPointerDown={(e) => e.stopPropagation()} 
-        >
-          <X size={18} />
-        </button>
-      </div>
-
       {/* Filter Toggles */}
       <div 
         className="outliner-filter-bar"
@@ -400,13 +375,13 @@ export const OutlinerPanel: React.FC = () => {
           />
         ))}
       </div>
-    </div>
+    </FloatingWindow>
   );
 };
 
 // ─── GroupRect Item ───────────────────────────────────────────────────────────
 
-const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds, selectBlock, selectGroupRect, selectTrack, updateBlock, updateGroupRect, camera, tracks, handleShiftClick }: any) => {
+const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds, selectBlock, selectGroupRect, selectTrack, updateBlock, updateGroupRect, camera, tracks, handleShiftClick }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -414,8 +389,8 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
   const hasChildren = childBlocks.length > 0 || childTracks.length > 0;
   const wasSelectedRef = useRef(false);
 
-  const blockIdsToSelect = childBlocks.map((b: any) => b.id);
-  const trackIdsToSelect = childTracks.map((t: any) => t.id);
+  const blockIdsToSelect = childBlocks.map((b: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => b.id);
+  const trackIdsToSelect = childTracks.map((t: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => t.id);
   const isAllSelected = 
     isSelected &&
     blockIdsToSelect.every((id: string) => selectedBlockIds.includes(id)) &&
@@ -438,7 +413,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
   }, [isSelected, isEditing, groupRect.name, index]);
 
   useEffect(() => {
-    const handleExpand = (e: any) => {
+    const handleExpand = (e: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
       if (e.detail === groupRect.id) {
         setIsCollapsed(false);
       }
@@ -556,7 +531,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
       </div>
       {!isCollapsed && hasChildren && (
         <div className="outliner-group-children">
-          {childBlocks.map((block: any) => (
+          {childBlocks.map((block: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => (
             <BlockItem 
               key={block.id} 
               block={block} 
@@ -567,7 +542,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
               handleShiftClick={handleShiftClick}
             />
           ))}
-          {childTracks.map((track: any) => (
+          {childTracks.map((track: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => (
             <TrackItem
               key={track.id}
               track={track}
@@ -586,7 +561,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
 
 // ─── Block Item ──────────────────────────────────────────────────────────────
 
-const BlockItem = ({ block, selected, selectBlock, camera, handleShiftClick }: any) => {
+const BlockItem = ({ block, selected, selectBlock, camera, handleShiftClick }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
   const wasSelectedRef = useRef(false);
 
   const handleGoTo = () => {
@@ -639,7 +614,7 @@ const BlockItem = ({ block, selected, selectBlock, camera, handleShiftClick }: a
 
 // ─── Track Item ──────────────────────────────────────────────────────────────
 
-const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftClick }: any) => {
+const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftClick }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const wasSelectedRef = useRef(false);

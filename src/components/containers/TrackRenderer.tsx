@@ -3,6 +3,7 @@ import * as PIXI from 'pixi.js';
 import { useStore } from '../../store/useStore';
 import { computeTrackControlPoints } from '../../utils/spline';
 import { BaseTrack } from './BaseTrack';
+import type { TrackNode } from '../../types';
 
 export const TrackRenderer: React.FC = () => {
   const { tracks, runners, mode, activeTrackId, selectedTrackIds, activeNodeDrag, setActiveNodeDrag, removeTrackNode, updateBlocks, updateTrack, updateGroupRect } = useStore();
@@ -102,7 +103,7 @@ export const TrackRenderer: React.FC = () => {
       window.removeEventListener('pointerup', handleGlobalUp);
       window.removeEventListener('pointercancel', handleGlobalUp);
     };
-  }, [isTrackDragging]);
+  }, [isTrackDragging, updateBlocks, updateTrack, updateGroupRect]);
 
   // Node Dragging
   React.useEffect(() => {
@@ -237,7 +238,7 @@ export const TrackRenderer: React.FC = () => {
                   }
                   if (track.loop === true) {
                     const dist = distToSegment(x, y, track.nodes[track.nodes.length-1].x, track.nodes[track.nodes.length-1].y, track.nodes[0].x, track.nodes[0].y);
-                    if (dist < minDist) { minDist = dist; insertIdx = track.nodes.length; }
+                    if (dist < minDist) { insertIdx = track.nodes.length; }
                   }
                   
                   const newId = state.insertTrackNode(track.id, insertIdx, { x, y });
@@ -248,7 +249,7 @@ export const TrackRenderer: React.FC = () => {
                 setActiveNodeDrag({ trackId: track.id, nodeId: nodeId });
             }}
             onNodeDoubleClick={(nodeId) => {
-              const nodeIndex = track.nodes.findIndex((n: any) => n.id === nodeId);
+              const nodeIndex = track.nodes.findIndex((n: TrackNode) => n.id === nodeId);
               if (nodeIndex !== -1) {
                 const state = useStore.getState();
                 const updatedRunners = [...state.runners];

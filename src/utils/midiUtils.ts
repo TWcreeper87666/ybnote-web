@@ -1,5 +1,6 @@
 import { Midi } from '@tonejs/midi';
 import { useStore } from '../store/useStore';
+import type { Block } from '../types';
 
 export const exportRecordedEventsToMidi = () => {
   const state = useStore.getState();
@@ -83,7 +84,7 @@ export const exportRecordedEventsToMidi = () => {
   });
 
   const arrayBuffer = midi.toArray();
-  const blob = new Blob([arrayBuffer as any], { type: 'audio/midi' });
+  const blob = new Blob([arrayBuffer as unknown as ArrayBuffer], { type: 'audio/midi' });
   const url = URL.createObjectURL(blob);
   
   const a = document.createElement('a');
@@ -95,129 +96,12 @@ export const exportRecordedEventsToMidi = () => {
   URL.revokeObjectURL(url);
 };
 
-export const importMidiToBlocks = async (file: File) => {
-    const arrayBuffer = await file.arrayBuffer();
-    const midi = new Midi(arrayBuffer);
-    
-    const state = useStore.getState();
-    
-    const allNotes: { time: number, pitch: string, instrument: string, volume: number, midiNumber: number }[] = [];
-    midi.tracks.forEach(track => {
-      const instrument = track.instrument.percussion ? 'percussion' : 
-                         (track.instrument.number >= 32 && track.instrument.number <= 39) ? 'bass' :
-                         (track.instrument.number >= 80 && track.instrument.number <= 87) ? 'synth' : 'piano';
-                         
-      track.notes.forEach(note => {
-         const pitch = track.instrument.percussion ? 'kick' : note.name;
-         allNotes.push({ time: note.time, pitch, instrument, volume: note.velocity, midiNumber: note.midi });
-      });
-    });
-
-    allNotes.sort((a, b) => a.time - b.time);
-
-    const chords: { notes: typeof allNotes }[] = [];
-    let currentChord: typeof allNotes = [];
-    let lastTime = -1;
-
-    for (const note of allNotes) {
-        if (lastTime === -1 || Math.abs(note.time - lastTime) < 0.05) {
-            currentChord.push(note);
-            lastTime = note.time;
-        } else {
-            chords.push({ notes: currentChord });
-            currentChord = [note];
-            lastTime = note.time;
-        }
-    }
-    if (currentChord.length > 0) {
-        chords.push({ notes: currentChord });
-    }
-
-    const uniqueChordsMap = new Map<string, { notes: typeof allNotes }>();
-    for (const chord of chords) {
-        const sortedNotes = [...chord.notes].sort((a, b) => b.midiNumber - a.midiNumber);
-        const key = sortedNotes.map(n => `${n.pitch}-${n.instrument}`).join('|');
-        if (!uniqueChordsMap.has(key)) {
-            uniqueChordsMap.set(key, { notes: sortedNotes });
-        }
-    }
-
-    const uniqueChords = Array.from(uniqueChordsMap.values());
-    
-    const newBlocks: typeof state.blocks = [];
-    const newGroupRects: typeof state.groupRects = [];
-    const newGroups: typeof state.groups = [];
-    const generateId = () => Math.random().toString(36).substring(2, 9);
-    
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2;
-    const localCenterX = (centerX - state.camera.x) / state.camera.zoom;
-    const localCenterY = (centerY - state.camera.y) / state.camera.zoom;
-
-    const cols = 8;
-    const rows = Math.ceil(uniqueChords.length / cols);
-    const spacingX = 150;
-    const spacingY_row = 400; 
-    const spacingY_note = 80;
-
-    const startX = localCenterX - (Math.min(cols, uniqueChords.length) * spacingX) / 2 + spacingX / 2;
-    const overallStartY = localCenterY - (rows * spacingY_row) / 2 + spacingY_row / 2;
-
-    uniqueChords.forEach((chord, i) => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        const x = startX + col * spacingX;
-        const notes = chord.notes;
-        
-        const startY = overallStartY + row * spacingY_row - (notes.length * spacingY_note) / 2;
-        
-        let groupId: string | undefined = undefined;
-        if (notes.length > 1) {
-            groupId = generateId();
-            const groupRectId = generateId();
-            newGroups.push({ id: groupId, name: `Chord Group ${i + 1}` });
-            newGroupRects.push({
-                id: groupRectId,
-                name: `Chord ${i + 1}`,
-                x: x - 20,
-                y: startY - 20,
-                w: 100, 
-                h: (notes.length - 1) * spacingY_note + 100,
-                enabled: true,
-                groupId: groupId
-            });
-        }
-
-        notes.forEach((note, j) => {
-            const y = startY + j * spacingY_note;
-            newBlocks.push({
-                id: generateId(),
-                x,
-                y,
-                pitch: note.pitch,
-                instrument: note.instrument,
-                volume: note.volume,
-                playedAt: Date.now(),
-                playedVolumeMultiplier: 1,
-                groupId
-            });
-        });
-    });
-
-    useStore.setState(s => ({
-       blocks: [...s.blocks, ...newBlocks],
-       groupRects: [...s.groupRects, ...newGroupRects],
-       groups: [...s.groups, ...newGroups]
-    }));
-};
-
 export const parseMidiForGame = async (file: File, arrangeBy: 'sequence' | 'pitch' = 'sequence') => {
     const arrayBuffer = await file.arrayBuffer();
     const midi = new Midi(arrayBuffer);
     
-    const state = useStore.getState();
-    const gameBlocks: typeof state.gameBlocks = [];
-    const gameEvents: typeof state.gameEvents = [];
+    const gameBlocks: Block[] = [];
+    const gameEvents: { time: number; pitch: string; instrument: string; blockId: string }[] = [];
     const generateId = () => Math.random().toString(36).substring(2, 9);
     
     // 1. Extract unique pitch/instrument combinations
@@ -248,7 +132,7 @@ export const parseMidiForGame = async (file: File, arrangeBy: 'sequence' | 'pitc
 
     const blockIdMap = new Map<string, string>(); // Maps 'pitch-instrument' to blockId
 
-    let notesArray = Array.from(uniqueNotes.entries());
+    const notesArray = Array.from(uniqueNotes.entries());
     if (arrangeBy === 'pitch') {
         notesArray.sort((a, b) => a[1].midiNumber - b[1].midiNumber);
     }
@@ -291,4 +175,55 @@ export const parseMidiForGame = async (file: File, arrangeBy: 'sequence' | 'pitc
     gameEvents.sort((a, b) => a.time - b.time);
 
     return { gameBlocks, gameEvents };
+};
+
+export const parseMidiToPocketBlocks = async (file: File) => {
+    const arrayBuffer = await file.arrayBuffer();
+    const midi = new Midi(arrayBuffer);
+    
+    const uniqueNotes = new Map<string, { pitch: string, instrument: string, midiNumber: number, firstTime: number }>();
+    
+    midi.tracks.forEach(track => {
+      const instrument = track.instrument.percussion ? 'percussion' : 
+                         (track.instrument.number >= 32 && track.instrument.number <= 39) ? 'bass' :
+                         (track.instrument.number >= 80 && track.instrument.number <= 87) ? 'synth' : 'piano';
+                         
+      track.notes.forEach(note => {
+         const pitch = track.instrument.percussion ? 'kick' : note.name;
+         const key = `${pitch}-${instrument}`;
+         if (!uniqueNotes.has(key)) {
+             uniqueNotes.set(key, { pitch, instrument, midiNumber: note.midi, firstTime: note.time });
+         } else {
+             const existing = uniqueNotes.get(key)!;
+             if (note.time < existing.firstTime) {
+                 existing.firstTime = note.time;
+             }
+         }
+      });
+    });
+
+    const generateId = () => Math.random().toString(36).substring(2, 9);
+    
+    const notesArray = Array.from(uniqueNotes.values());
+    
+    // Initial sort can just be pitch
+    notesArray.sort((a, b) => a.midiNumber - b.midiNumber);
+
+    const pocketBlocks: Block[] = [];
+    
+    notesArray.forEach((noteInfo) => {
+        // We will assign x and y later during the render based on sort mode, but we can store them here
+        pocketBlocks.push({
+            id: generateId(),
+            x: 0,
+            y: 0,
+            pitch: noteInfo.pitch,
+            instrument: noteInfo.instrument,
+            volume: 1,
+            originalTime: noteInfo.firstTime,
+            midiNumber: noteInfo.midiNumber
+        });
+    });
+
+    useStore.getState().setPocketBlocks(pocketBlocks);
 };

@@ -1,17 +1,19 @@
 import React, { useRef, useState } from 'react';
 import {
   Upload, Music, FileDown, Play, Pause,
-  Undo2, Redo2, ZoomIn, Volume2, Blocks, ChevronDown, Settings
+  Undo2, Redo2, ZoomIn, Volume2, Blocks, ChevronDown, Settings, RefreshCw, Target
 } from 'lucide-react';
 import { Midi } from '@tonejs/midi';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
-import type { EditorNote, EditorTrack, ParsedMidiData } from '../../store/useLevelEditorStore';
+import type { EditorNote, EditorTrack, ParsedMidiData } from '../../types';
 import { useStore } from '../../store/useStore';
 import { exportLevel, importLevel } from '../../utils/levelUtils';
 import { exportToMidiFile } from '../../utils/midiExport';
 import { HelpModal } from './HelpModal';
 import { ExportModal } from './ExportModal';
+import { ConvertModal } from './ConvertModal';
 import { ToolbarButton } from '../ui/ToolbarButton';
+import { buildGameEventsFromMidi, syncCanvasToGameBlocks, syncGameEventsFromMidi } from '../../utils/chartUtils';
 
 const formatTime = (seconds: number) => {
   const m = Math.floor(seconds / 60);
@@ -30,6 +32,7 @@ export const LevelEditorToolbar: React.FC = () => {
   const [showHelp, setShowHelp] = useState(false);
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showConvertModal, setShowConvertModal] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [arrangeBy, setArrangeBy] = useState<'sequence' | 'pitch'>('sequence');
@@ -63,7 +66,7 @@ export const LevelEditorToolbar: React.FC = () => {
       const arrayBuffer = await file.arrayBuffer();
       const midi = new Midi(arrayBuffer);
 
-      let bpm = 120; // Hardcode to 120 as per user request
+      const bpm = 120; // Hardcode to 120 as per user request
 
       const tracks: EditorTrack[] = [];
       midi.tracks.forEach((track, index) => {
@@ -101,12 +104,6 @@ export const LevelEditorToolbar: React.FC = () => {
       };
 
       store.appendMidiData(parsedData);
-
-      // Also generate game blocks/events for the Block Arrangement tab
-      const combinedData = useLevelEditorStore.getState().midiData;
-      if (combinedData) {
-        generateGameData(combinedData);
-      }
     } catch (err) {
       console.error('Failed to parse MIDI:', err);
       alert('Failed to parse MIDI file.');
@@ -145,7 +142,7 @@ export const LevelEditorToolbar: React.FC = () => {
           tracksMap.set(tId, {
             id: tId,
             name: n.trackName || `Track ${tId + 1}`,
-            instrument: (n.trackInstrument as any) || 'piano',
+            instrument: (n.trackInstrument as 'piano' | 'bass' | 'synth' | 'percussion') || 'piano',
             notes: []
           });
         }
@@ -156,6 +153,8 @@ export const LevelEditorToolbar: React.FC = () => {
           timeStart: n.timeStart,
           duration: n.duration,
           velocity: n.velocity,
+          ...(n.targetId ? { targetId: n.targetId } : {}),
+          ...(n.targetType ? { targetType: n.targetType } : {}),
         });
       });
       
@@ -174,6 +173,7 @@ export const LevelEditorToolbar: React.FC = () => {
       
       mainStore.setGameBlocks(imported.levelData.blocks);
       mainStore.setGameEvents(imported.levelData.events);
+      syncGameEventsFromMidi(parsedData);
       store.commitHistory();
 
     } catch (err) {
@@ -183,126 +183,14 @@ export const LevelEditorToolbar: React.FC = () => {
     e.target.value = '';
   };
 
-  // --- Generate game data from MIDI for block arrangement ---
-  const generateGameData = (data: ParsedMidiData) => {
-    const uniqueNotes = new Map<string, { pitch: string; instrument: string }>();
-
-    for (const track of data.tracks) {
-      if (track.isBackground) continue;
-      for (const note of track.notes) {
-        const pitchName = note.name;
-        const key = `${pitchName}-${track.instrument}`;
-        if (!uniqueNotes.has(key)) {
-          uniqueNotes.set(key, { pitch: pitchName, instrument: track.instrument });
-        }
-      }
-    }
-
-    const gameBlocks: typeof mainStore.gameBlocks = [];
-    const gameEvents: typeof mainStore.gameEvents = [];
-    const blockIdMap = new Map<string, string>();
-    const generateId = () => Math.random().toString(36).substring(2, 9);
-
-    const cols = 8;
-    const totalBlocks = uniqueNotes.size;
-    const rows = Math.ceil(totalBlocks / cols);
-    const startX = -(cols * 80) / 2 + 40;
-    const localStartY = -(rows * 80) / 2 + 40;
-
-    mainStore.updateCamera({ x: 0, y: 0, zoom: 1 });
-
-    const pitchToNumber = (pitch: string) => {
-      const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-      const match = pitch.match(/([A-Z]#?)(\d+)/);
-      if (!match) return 0;
-      const [, note, oct] = match;
-      return parseInt(oct) * 12 + notes.indexOf(note);
-    };
-
-    let entries = Array.from(uniqueNotes.entries());
-    if (arrangeBy === 'pitch') {
-      entries.sort((a, b) => pitchToNumber(a[1].pitch) - pitchToNumber(b[1].pitch));
-    }
-
-    let i = 0;
-    for (const [key, info] of entries) {
-      const id = generateId();
-      blockIdMap.set(key, id);
-      gameBlocks.push({
-        id,
-        x: startX + (i % cols) * 80,
-        y: localStartY + Math.floor(i / cols) * 80,
-        pitch: info.pitch,
-        instrument: info.instrument,
-        volume: 1,
-      });
-      i++;
-    }
-
-    for (const track of data.tracks) {
-      if (track.isBackground) {
-        for (const note of track.notes) {
-          gameEvents.push({
-            time: note.timeStart * 1000,
-            pitch: note.name,
-            instrument: track.instrument,
-            blockId: 'background',
-          });
-        }
-      } else {
-        for (const note of track.notes) {
-          const key = `${note.name}-${track.instrument}`;
-          const blockId = blockIdMap.get(key)!;
-          gameEvents.push({
-            time: note.timeStart * 1000,
-            pitch: note.name,
-            instrument: track.instrument,
-            blockId,
-          });
-        }
-      }
-    }
-
-    gameEvents.sort((a, b) => a.time - b.time);
-
-    mainStore.setGameBlocks(gameBlocks);
-    mainStore.setGameEvents(gameEvents);
-    mainStore.setGameState('arrange');
-  };
-
   // --- Export .yblevel ---
   const handleExport = async (fileName: string, compressAudio: boolean) => {
     setIsExporting(true);
+    syncCanvasToGameBlocks();
 
-    // Sync gameEvents one last time before export
-    const gameEvents: typeof mainStore.gameEvents = [];
-    if (store.midiData) {
-      for (const track of store.midiData.tracks) {
-        if (track.isBackground) {
-          for (const note of track.notes) {
-            gameEvents.push({
-              time: note.timeStart * 1000,
-              pitch: note.name,
-              instrument: track.instrument,
-              blockId: 'background',
-            });
-          }
-        } else {
-          for (const note of track.notes) {
-            const block = mainStore.gameBlocks.find(b => b.pitch === note.name && b.instrument === track.instrument);
-            if (block) {
-              gameEvents.push({
-                time: note.timeStart * 1000,
-                pitch: note.name,
-                instrument: track.instrument,
-                blockId: block.id,
-              });
-            }
-          }
-        }
-      }
-      gameEvents.sort((a, b) => a.time - b.time);
-    }
+    const gameEvents = store.midiData
+      ? buildGameEventsFromMidi(store.midiData)
+      : [];
 
     try {
       const blob = await exportLevel({
@@ -438,7 +326,27 @@ export const LevelEditorToolbar: React.FC = () => {
             >
               <span>Blocks</span>
             </ToolbarButton>
+            <ToolbarButton
+              variant="editor"
+              active={store.activeTab === 'charting'}
+              onClick={() => store.setActiveTab('charting')}
+              title="Charting"
+              style={{ borderRadius: 12 }}
+              icon={<Target size={16} />}
+            >
+              <span>Charting</span>
+            </ToolbarButton>
           </div>
+
+          <ToolbarButton
+            variant="editor"
+            onClick={() => setShowConvertModal(true)}
+            title="Convert — 補齊方塊 / Auto-Chart"
+            icon={<RefreshCw size={16} />}
+            style={{ marginLeft: 6 }}
+          >
+            Convert
+          </ToolbarButton>
         </div>
 
         {/* Center Section */}
@@ -635,6 +543,7 @@ export const LevelEditorToolbar: React.FC = () => {
         onExport={handleExport}
         defaultFileName={store.audioFile ? store.audioFile.name.replace(/\.[^/.]+$/, "") : 'level'}
       />
+      <ConvertModal isOpen={showConvertModal} onClose={() => setShowConvertModal(false)} />
 
       {isExporting && (
         <div style={{

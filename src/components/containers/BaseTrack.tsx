@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import * as PIXI from 'pixi.js';
 import { computeTrackControlPoints } from '../../utils/spline';
 import { useStore } from '../../store/useStore';
+import type { Track, TrackNode } from '../../types';
 
 const TrackHandle: React.FC<{
   x: number;
@@ -55,7 +56,7 @@ const TrackHandle: React.FC<{
   );
 };
 
-const TrackPath: React.FC<{ track: any; isActive: boolean; isSelected: boolean }> = ({ track, isActive, isSelected }) => {
+const TrackPath: React.FC<{ track: Track; isActive: boolean; isSelected: boolean }> = ({ track, isActive, isSelected }) => {
   const draw = useCallback((g: PIXI.Graphics) => {
     g.clear();
     if (track.nodes.length === 0) return;
@@ -123,7 +124,7 @@ const TrackPath: React.FC<{ track: any; isActive: boolean; isSelected: boolean }
 };
 
 export interface BaseTrackProps {
-  track: any;
+  track: Track;
   isActive: boolean;
   isSelected: boolean;
   isInteractive?: boolean;
@@ -172,10 +173,10 @@ export const BaseTrack: React.FC<BaseTrackProps> = ({
           }
           g.stroke({ width: 12, color: 0x000000, alpha: 0.001 }); // invisible hit area
         }}
-        onPointerDown={onTrackPointerDown as any}
+        onPointerDown={onTrackPointerDown}
       />
 
-      {isActive && isInteractive && track.nodes.map((node: any) => (
+      {isActive && isInteractive && track.nodes.map((node: TrackNode) => (
         <React.Fragment key={node.id}>
           <TrackHandle 
             x={node.x} y={node.y} color={0x6366f1} 

@@ -21,19 +21,22 @@ export interface DrumBlockProps {
   onPointerEnter?: (e: PIXI.FederatedPointerEvent) => void;
   onPointerLeave?: (e: PIXI.FederatedPointerEvent) => void;
   isInvalid?: boolean;
+  isHighlighted?: boolean;
 }
 
 export const DrumBlock: React.FC<DrumBlockProps> = ({
-  x, y, pitch, instrument, volume = 1, isInteractive = true, blockColor, onPointerDown, onPointerUp, onPointerEnter, onPointerLeave, opacity = 1, showPitch, showInstrument, showVolume, playedAt, isSelected = false, isInvalid = false
+  x, y, pitch, instrument, volume = 1, isInteractive = true, blockColor, onPointerDown, onPointerUp, onPointerEnter, onPointerLeave, opacity = 1, showPitch, showInstrument, showVolume, playedAt, isSelected = false, isInvalid = false, isHighlighted = false
 }) => {
   const graphicsRef = useRef<PIXI.Graphics>(null);
   const ripplesRef = useRef<{id: number, progress: number}[]>([]);
-  const lastPlayedRef = useRef(playedAt && Date.now() - playedAt > 2000 ? playedAt : 0);
+  const lastPlayedRef = useRef(playedAt || 0);
 
   useEffect(() => {
     if (playedAt && playedAt !== lastPlayedRef.current) {
+      if (Date.now() - playedAt < 2000) {
+        ripplesRef.current.push({ id: playedAt, progress: 0 });
+      }
       lastPlayedRef.current = playedAt;
-      ripplesRef.current.push({ id: playedAt, progress: 0 });
     }
   }, [playedAt]);
 
@@ -52,6 +55,11 @@ export const DrumBlock: React.FC<DrumBlockProps> = ({
     if (isSelected) {
       g.circle(30, 30, 34);
       g.fill({ color: 0x6366f1, alpha: 0.5 }); // Indigo glow
+    }
+
+    if (isHighlighted) {
+      g.circle(30, 30, 36);
+      g.stroke({ width: 3, color: 0xffcc00, alpha: 0.9 });
     }
 
     g.circle(30, 30, 30); // Circular block
@@ -94,7 +102,7 @@ export const DrumBlock: React.FC<DrumBlockProps> = ({
         g.fill({ color: 0xffffff, alpha: 0.9 });
       }
     }
-  }, [blockColor, opacity, showVolume, volume, isSelected, isInvalid]);
+  }, [blockColor, opacity, showVolume, volume, isSelected, isInvalid, isHighlighted]);
 
   useEffect(() => {
     let animationFrameId: number;
@@ -132,19 +140,17 @@ export const DrumBlock: React.FC<DrumBlockProps> = ({
       eventMode={isInteractive ? "static" : "none"}
       cursor={isInteractive ? "pointer" : "default"}
       hitArea={new PIXI.Circle(30, 30, 30)}
-      onPointerDown={onPointerDown as any}
-      onPointerUp={onPointerUp as any}
-      onPointerEnter={onPointerEnter as any}
-      onPointerLeave={onPointerLeave as any}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
     >
       <pixiGraphics ref={graphicsRef} draw={draw} />
       {showPitch && (
-        // @ts-ignore
-        <pixiText text={pitch} x={30} y={30} anchor={0.5} style={{ fontSize: 26, fill: '#ffffff', fontWeight: 'bold', fontFamily: 'Inter' }} scale={0.5} />
+        <pixiText text={pitch} x={30} y={30} anchor={0.5} style={{ fontSize: 24, fill: '#ffffff', fontWeight: 'bold', fontFamily: 'Inter' }} scale={0.5} />
       )}
       {showInstrument && (
-        // @ts-ignore
-        <pixiText text={instrumentIcon} x={30} y={10} anchor={0.5} style={{ fontSize: 24 }} scale={0.5} />
+        <pixiText text={instrumentIcon} x={42} y={4} style={{ fontSize: 24 }} scale={0.5} />
       )}
     </pixiContainer>
   );

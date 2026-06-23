@@ -1,5 +1,5 @@
 import { Midi } from '@tonejs/midi';
-import type { ParsedMidiData, EditorTrack } from '../store/useLevelEditorStore';
+import type { ParsedMidiData, EditorTrack } from '../types';
 
 export const generateMidiBlob = (midiData: ParsedMidiData): Blob => {
   const midi = new Midi();
@@ -15,7 +15,7 @@ export const generateMidiBlob = (midiData: ParsedMidiData): Blob => {
     }
     
     if (track.instrument !== 'percussion') {
-      // @ts-ignore - The types for @tonejs/midi don't expose instrument directly on track creation easily, 
+      // The types for @tonejs/midi don't expose instrument directly on track creation easily, 
       // but it handles program numbers internally if we could set it. 
       // For now, track names and notes are the most critical data.
     }

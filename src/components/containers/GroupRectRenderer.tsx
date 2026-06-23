@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { BaseGroupRect } from './BaseGroupRect';
+import type { GroupRect } from '../../types';
+import * as PIXI from 'pixi.js';
 
 export const GroupRectRenderer: React.FC = () => {
   const groupRects = useStore(state => state.groupRects);
@@ -13,7 +15,7 @@ export const GroupRectRenderer: React.FC = () => {
   );
 };
 
-const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
+const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
   const { selectGroupRect, selectedGroupRectIds } = useStore();
   const isSelected = selectedGroupRectIds.includes(rect.id);
   const [isDragging, setIsDragging] = useState(false);
@@ -33,7 +35,7 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
 
 
 
-  const handleResizeDown = (type: string, e: any) => {
+  const handleResizeDown = (type: string, e: PIXI.FederatedPointerEvent) => {
     e.stopPropagation();
     setIsResizing(true);
     setResizeType(type);
@@ -144,7 +146,7 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
     };
   }, [isResizing, resizeType, rect.id]);
 
-  const handlePointerDown = (e: any) => {
+  const handlePointerDown = (e: PIXI.FederatedPointerEvent) => {
     const button = e.button; 
     const isMultiSelect = e.ctrlKey || e.shiftKey;
     
@@ -157,7 +159,7 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
       wasSelectedRef.current = isSelected;
       clickStartPosRef.current = { x: e.clientX, y: e.clientY };
 
-      let shouldDrag = false;
+      let shouldDrag: boolean;
       if (isMultiSelect) {
         selectGroupRect(rect.id, true);
         shouldDrag = !isSelected;
@@ -171,7 +173,7 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
 
       if (shouldDrag) {
         setIsDragging(true);
-        const pos = e.currentTarget.parent.toLocal(e.global);
+        const pos = e.currentTarget.parent!.toLocal(e.global);
         setDragOffset({ x: pos.x - rect.x, y: pos.y - rect.y });
       }
     }
@@ -271,7 +273,7 @@ const GroupRectItem: React.FC<{ rect: any }> = ({ rect }) => {
     };
   }, [isDragging, dragOffset, rect.id]);
 
-  const handlePointerUp = (e: any) => {
+  const handlePointerUp = (e: PIXI.FederatedPointerEvent) => {
     if (e.button === 0 && clickStartPosRef.current) {
       const dx = e.clientX - clickStartPosRef.current.x;
       const dy = e.clientY - clickStartPosRef.current.y;

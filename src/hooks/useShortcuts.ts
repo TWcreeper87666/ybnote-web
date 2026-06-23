@@ -6,10 +6,17 @@ import { useLevelEditorStore } from '../store/useLevelEditorStore';
 export const useShortcuts = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const state = useStore.getState();
+      let state = useStore.getState();
 
       // Disable shortcuts during active gameplay
       if (state.gameState === 'play') return;
+
+      // Update interaction context if hovering over pocket canvas
+      const isHoveringPocket = document.querySelector('.pocket-canvas-container:hover') !== null;
+      if (isHoveringPocket && state.interactionContext !== 'pocket') {
+        useStore.getState().setInteractionContext('pocket');
+        state = useStore.getState();
+      }
 
       // Disable canvas shortcuts if we are in the level editor's pianoroll tab
       if (window.location.hash.includes('/level-editor') && useLevelEditorStore.getState().activeTab === 'pianoroll') {
@@ -78,10 +85,14 @@ export const useShortcuts = () => {
             break;
           case 'a':
             e.preventDefault();
-            if (e.shiftKey) {
-              state.selectAllBlocks();
+            if (state.interactionContext === 'pocket') {
+              state.selectAllPocketBlocks();
             } else {
-              state.selectAll();
+              if (e.shiftKey) {
+                state.selectAllBlocks();
+              } else {
+                state.selectAll();
+              }
             }
             break;
           case 'g':
@@ -129,7 +140,7 @@ export const useShortcuts = () => {
         }
       } else {
         if (['1', '2', '3', '4', '5'].includes(e.key)) {
-          const keyToMode: Record<string, any> = {
+          const keyToMode: Record<string, 'select' | 'piano' | 'drum' | 'draw_group' | 'draw_track' | 'play'> = {
             '1': 'piano',
             '2': 'drum',
             '3': 'draw_group',
@@ -155,7 +166,9 @@ export const useShortcuts = () => {
             state.deleteSelected();
           }
         } else if (e.key === 'Escape') {
-          if (state.mode !== 'select') {
+          if (state.interactionContext === 'pocket') {
+            state.clearPocketSelection();
+          } else if (state.mode !== 'select') {
             state.setMode('select');
           } else {
             state.clearSelection();

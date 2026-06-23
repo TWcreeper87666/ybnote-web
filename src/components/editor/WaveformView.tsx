@@ -116,6 +116,7 @@ export const WaveformView: React.FC = () => {
       ws.destroy();
       wavesurferRef.current = null;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.audioUrl]);
 
   // Sync volume & playback rate from store
@@ -177,6 +178,7 @@ export const WaveformView: React.FC = () => {
       isMiddlePanning.current = true;
       panStartMouseX.current = e.clientX;
       panStartScrollX.current = store.scrollLeft;
+      // eslint-disable-next-line react-hooks/immutability
       document.body.style.cursor = 'grabbing';
       
       window.addEventListener('mousemove', handleWindowMouseMove);
@@ -193,6 +195,7 @@ export const WaveformView: React.FC = () => {
       setIsDragging(false);
       dragStartX.current = e.clientX;
       dragStartAudioTime.current = store.audioStartTime;
+      // eslint-disable-next-line react-hooks/purity
       clickStart.current = Date.now();
       
       window.addEventListener('mousemove', handleWindowMouseMove);
@@ -201,6 +204,7 @@ export const WaveformView: React.FC = () => {
       isShiftDragging.current = false;
       isScrubbing.current = true;
       setIsDragging(false);
+      // eslint-disable-next-line react-hooks/purity
       clickStart.current = Date.now();
 
       wasPlayingRef.current = store.isPlaying;
@@ -265,6 +269,7 @@ export const WaveformView: React.FC = () => {
     
     if (isMiddlePanning.current) {
       isMiddlePanning.current = false;
+      // eslint-disable-next-line react-hooks/immutability
       document.body.style.cursor = '';
       return;
     }

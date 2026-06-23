@@ -20,6 +20,7 @@ const ProgressBar: React.FC = () => {
     let rafId: number;
     const tick = () => {
       if (barRef.current) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const current = (window as any).__currentGameTime || 0;
         const progress = Math.max(0, Math.min(1, current / totalTime));
         barRef.current.style.width = `${progress * 100}%`;
@@ -38,7 +39,7 @@ const ProgressBar: React.FC = () => {
 };
 
 export const GamePage: React.FC = () => {
-  const { theme, gameState, setGameState, setGameBlocks, setGameEvents, gameScore, gameCombo, perfectCount, goodCount, badCount, missCount, wrongCount, maxCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, toggleSettings, isTutorialOpen, toggleTutorial, latestHit, mobileControlMode, setMobileControlMode, levelMetadata, setLevelMetadata, gameAudioUrl, setGameAudioUrl, gameAudioVolume, setGameAudioVolume } = useStore();
+  const { theme, gameState, setGameState, setGameBlocks, setGameEvents, gameScore, gameCombo, perfectCount, goodCount, badCount, missCount, wrongCount, maxCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, toggleSettings, isTutorialOpen, toggleTutorial, latestHit, mobileControlMode, setMobileControlMode, levelMetadata, setLevelMetadata, gameAudioUrl, setGameAudioUrl, gameAudioVolume, setGameAudioVolume, isOutlinerOpen } = useStore();
   const isMobile = useIsMobile();
   useShortcuts();
   const [previewPlaying, setPreviewPlaying] = useState(false);
@@ -46,6 +47,7 @@ export const GamePage: React.FC = () => {
   const [arrangeBy, setArrangeBy] = useState<'sequence' | 'pitch'>('sequence');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
+  // eslint-disable-next-line react-hooks/purity
   const previewStartTimeRef = useRef(Date.now());
   const previewTimeOffsetRef = useRef(0);
   const lastPlayedEventIndexRef = useRef(0);
@@ -64,6 +66,7 @@ export const GamePage: React.FC = () => {
         const timer = setTimeout(() => setResumeCount(resumeCount - 1), 500);
         return () => clearTimeout(timer);
       } else {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setIsResuming(false);
         setGameState('play');
       }
@@ -77,7 +80,7 @@ export const GamePage: React.FC = () => {
           console.warn(`Error attempting to enable fullscreen: ${err.message}`);
         });
       }
-    } catch (e) {
+    } catch {
       console.warn("Fullscreen API not supported");
     }
   };
@@ -146,6 +149,7 @@ export const GamePage: React.FC = () => {
     let rafId: number;
     let started = false;
     const tick = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const currentSyncTime = (window as any).__currentGameTime;
       const offset = useLevelEditorStore.getState().offset;
 
@@ -159,10 +163,11 @@ export const GamePage: React.FC = () => {
       }
       rafId = requestAnimationFrame(tick);
     };
+    const audio = audioRef.current;
     rafId = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(rafId);
-      if (audioRef.current) audioRef.current.pause();
+      if (audio) audio.pause();
     };
   }, [gameState]);
 
@@ -230,6 +235,7 @@ export const GamePage: React.FC = () => {
      rafId = requestAnimationFrame(tick);
      
      return () => cancelAnimationFrame(rafId);
+     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState, previewPlaying, gameEvents]);
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -251,6 +257,7 @@ export const GamePage: React.FC = () => {
 
   useEffect(() => {
     if (gameState === 'play') {
+       // eslint-disable-next-line @typescript-eslint/no-explicit-any
        useStore.setState({ isTutorialOpen: false, isSettingsOpen: false, isHelpOpen: false } as any);
     }
   }, [gameState]);
@@ -479,14 +486,14 @@ export const GamePage: React.FC = () => {
               >
                 <button className="toolbar-btn glass-panel" onClick={() => undoAction()} title="Undo"><Undo2 size={24} /></button>
                 <button className="toolbar-btn glass-panel" onClick={() => redoAction()} title="Redo"><Redo2 size={24} /></button>
-                <button className="toolbar-btn glass-panel" onClick={() => useStore.getState().toggleOutliner()} title="Outliner"><LayoutList size={24} /></button>
+                <button className={`toolbar-btn glass-panel ${isOutlinerOpen ? 'active-panel-btn' : ''}`.trim()} onClick={() => useStore.getState().toggleOutliner()} title="Outliner"><LayoutList size={24} /></button>
                 <button className="toolbar-btn glass-panel" onClick={toggleSettings} title="Settings"><Settings size={24} /></button>
                 <button className="toolbar-btn glass-panel" onClick={toggleTutorial} title="Tutorial"><HelpCircle size={24} /></button>
               </div>
 
               {/* Outliner Panel Render */}
               <OutlinerPanel />
-
+              
               {/* Bottom Mini Player */}
               <div 
                  style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 24px', background: 'linear-gradient(to top, rgba(0,0,0,0.9), transparent)', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 12, pointerEvents: 'none' }}

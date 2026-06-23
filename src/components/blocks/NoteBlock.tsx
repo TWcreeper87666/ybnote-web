@@ -32,18 +32,31 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
   const blockColor = getPitchColorNumber(pitch, pianoKeysCount);
 
   const playedVolumeMultiplier = block?.playedVolumeMultiplier ?? 1;
-  const lastPlayedRef = React.useRef(playedAt && Date.now() - playedAt > 2000 ? playedAt : 0);
+  const lastPlayedRef = React.useRef(playedAt || 0);
+
+  const isEditor = window.location.hash.includes('editor');
+  const isRecordingChart = useLevelEditorStore((s) => isEditor ? s.isRecordingChart : false);
+  const chartingHighlightIds = useLevelEditorStore((s) => s.chartingHighlightIds);
+  const isChartingHighlight = chartingHighlightIds.includes(id);
+  const midiData = useLevelEditorStore((s) => isEditor ? s.midiData : null);
 
   React.useEffect(() => {
     if (playedAt && playedAt !== lastPlayedRef.current) {
+      const isInitial = Date.now() - playedAt > 2000 && lastPlayedRef.current === 0;
       lastPlayedRef.current = playedAt;
+
+      if (isInitial) return;
+
+      if (isEditor && isRecordingChart) {
+        useLevelEditorStore.getState().recordChartHit(id, 'block');
+      }
       
       const isLevelEditorPlaying = window.location.hash.includes('editor') && 
         (() => {
            try {
-             const state = (window as any).levelEditorStore.getState();
-             return state.isPlaying;
-           } catch (e) {
+             const state = (window as { levelEditorStore?: { getState: () => { isPlaying: boolean } } }).levelEditorStore?.getState();
+             return state?.isPlaying ?? false;
+           } catch {
              return false;
            }
         })();
@@ -57,7 +70,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
           });
       }
     }
-  }, [playedAt, pitch, volume, instrument, playedVolumeMultiplier, blockColor]);
+  }, [playedAt, pitch, volume, instrument, playedVolumeMultiplier, blockColor, isEditor, isRecordingChart, id]);
 
 
 
@@ -70,9 +83,6 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
   };
 
   const BlockComponent = instrument === 'percussion' ? DrumBlock : BaseBlock;
-
-  const isEditor = window.location.hash.includes('editor');
-  const midiData = useLevelEditorStore((s) => isEditor ? s.midiData : null);
 
   const isInvalid = React.useMemo(() => {
     if (!isEditor || !midiData) return false;
@@ -105,6 +115,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}
       isInvalid={isInvalid}
+      isHighlighted={isChartingHighlight}
     />
   );
 };

@@ -16,6 +16,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, onExp
   
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFileName(defaultFileName);
     }
   }, [isOpen, defaultFileName]);

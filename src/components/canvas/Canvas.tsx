@@ -12,6 +12,7 @@ import { GridBackground } from './shared/GridBackground';
 import { SelectionBoxRenderer, GroupDrawBoxRenderer } from './shared/SelectionBoxRenderer';
 import { useCanvasCamera } from '../../hooks/useCanvasCamera';
 import { useCanvasInteractions } from '../../hooks/useCanvasInteractions';
+import { lineIntersectsRect } from '../../utils/geometry';
 
 export const Canvas: React.FC = () => {
   const { blocks, camera, showGrid, theme, mode, latestPerformHit } = useStore();
@@ -44,15 +45,8 @@ export const Canvas: React.FC = () => {
   const lastClickPosRef = useRef<{x: number, y: number} | null>(null);
 
   useEffect(() => {
-    const handleGlobalUp = (e: PointerEvent) => {
-      endPan();
-      endSelection();
+    const handleGlobalUp = () => {
       finishGroupDraw();
-
-      if (e.button === 2 || e.buttons === 0) {
-        intersectedBlocksRef.current.clear();
-        endTrail();
-      }
     };
     window.addEventListener('pointerup', handleGlobalUp);
     window.addEventListener('pointercancel', handleGlobalUp);
@@ -60,7 +54,7 @@ export const Canvas: React.FC = () => {
       window.removeEventListener('pointerup', handleGlobalUp);
       window.removeEventListener('pointercancel', handleGlobalUp);
     };
-  }, [endPan, endSelection, endTrail, finishGroupDraw]);
+  }, [finishGroupDraw]);
 
   useCanvasCamera({
     isPlayMode: mode === 'play',
@@ -131,27 +125,9 @@ export const Canvas: React.FC = () => {
     }, [])
   });
 
-  const lineIntersectsRect = (x1: number, y1: number, x2: number, y2: number, rx: number, ry: number, rw: number, rh: number) => {
-    if (x1 >= rx && x1 <= rx + rw && y1 >= ry && y1 <= ry + rh) return true;
-    if (x2 >= rx && x2 <= rx + rw && y2 >= ry && y2 <= ry + rh) return true;
 
-    const intersects = (x3: number, y3: number, x4: number, y4: number) => {
-      const denom = (y4-y3)*(x2-x1) - (x4-x3)*(y2-y1);
-      if (denom === 0) return false;
-      const uA = ((x4-x3)*(y1-y3) - (y4-y3)*(x1-x3)) / denom;
-      const uB = ((x2-x1)*(y1-y3) - (y2-y1)*(x1-x3)) / denom;
-      return uA >= 0 && uA <= 1 && uB >= 0 && uB <= 1;
-    };
 
-    if (intersects(rx, ry, rx+rw, ry)) return true; 
-    if (intersects(rx, ry+rh, rx+rw, ry+rh)) return true; 
-    if (intersects(rx, ry, rx, ry+rh)) return true; 
-    if (intersects(rx+rw, ry, rx+rw, ry+rh)) return true; 
-
-    return false;
-  };
-
-  const checkTrailIntersection = (x1: number, y1: number, x2: number, y2: number, isFirstPoint = false, startedOnBlock = false) => {
+  const checkTrailIntersection = useCallback((x1: number, y1: number, x2: number, y2: number, isFirstPoint = false, startedOnBlock = false) => {
     const state = useStore.getState();
     const blocks = state.blocks;
     const groupRects = state.groupRects;
@@ -194,7 +170,7 @@ export const Canvas: React.FC = () => {
     });
 
     intersectedBlocksRef.current = currentFrameIntersected;
-  };
+  }, [intersectedBlocksRef]);
 
   // Play Mode logic
   useEffect(() => {
@@ -294,9 +270,10 @@ export const Canvas: React.FC = () => {
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [mode]);
+  }, [mode, checkTrailIntersection, intersectedBlocksRef]);
 
-  const handlePointerDown = (e: any) => {
+  const handlePointerDown = (e: PIXI.FederatedPointerEvent) => {
+    useStore.getState().setInteractionContext('main');
     if (useStore.getState().mode === 'play') return;
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
@@ -317,8 +294,9 @@ export const Canvas: React.FC = () => {
           }
           const nodeId = state.addTrackNode(trackId, { x: pos.x, y: pos.y });
           state.setActiveNodeDrag({ trackId, nodeId, isNewNode: true });
-          if (e.pointerId !== undefined && e.target.setPointerCapture) {
-            e.target.setPointerCapture(e.pointerId);
+          const target = e.target as unknown as { setPointerCapture?: (id: number) => void };
+          if (e.pointerId !== undefined && target.setPointerCapture) {
+            target.setPointerCapture(e.pointerId);
           }
         }
         return;
@@ -355,8 +333,9 @@ export const Canvas: React.FC = () => {
           const newBox = { x: pos.x, y: pos.y, w: 0, h: 0 };
           setGroupDrawBox(newBox);
           groupDrawBoxRef.current = newBox;
-          if (e.pointerId !== undefined && e.target.setPointerCapture) {
-            e.target.setPointerCapture(e.pointerId);
+          const target = e.target as unknown as { setPointerCapture?: (id: number) => void };
+          if (e.pointerId !== undefined && target.setPointerCapture) {
+            target.setPointerCapture(e.pointerId);
           }
         }
         return;
@@ -373,7 +352,7 @@ export const Canvas: React.FC = () => {
           const dx = posLocal.x - lastClickPosRef.current.x;
           const dy = posLocal.y - lastClickPosRef.current.y;
           if (Math.hypot(dx, dy) < 20) {
-            let spawnType: 'block' | 'drum' | 'groupRect' | 'track' | null = null;
+            let spawnType: 'block' | 'drum' | 'groupRect' | 'track';
             if (state.mode === 'drum') spawnType = 'drum';
             else {
               if (state.lastSelectedType === 'groupRect') spawnType = 'groupRect';
@@ -469,8 +448,9 @@ export const Canvas: React.FC = () => {
         // Start marquee selection on left click
         const pos = e.currentTarget.toLocal(e.global);
         startSelection(pos.x, pos.y);
-        if (e.pointerId !== undefined && e.target.setPointerCapture) {
-          e.target.setPointerCapture(e.pointerId);
+        const target = e.target as unknown as { setPointerCapture?: (id: number) => void };
+        if (e.pointerId !== undefined && target.setPointerCapture) {
+          target.setPointerCapture(e.pointerId);
         }
       }
     } else if (button === 2) {
@@ -481,7 +461,7 @@ export const Canvas: React.FC = () => {
       const pos = e.currentTarget.toLocal(e.global);
       startTrail(pos.x, pos.y);
       let startedOnBlock = false;
-      let current = e.target as any;
+      let current = e.target as PIXI.Container | null;
       while (current) {
         if (current.label === 'note-block') {
           startedOnBlock = true;
@@ -494,7 +474,7 @@ export const Canvas: React.FC = () => {
     }
   };
 
-  const handlePointerMove = (e: any) => {
+  const handlePointerMove = (e: PIXI.FederatedPointerEvent) => {
     if (useStore.getState().mode === 'play') return;
     if (updatePan(e.global.x, e.global.y, useStore.getState().updateCamera)) {
       // handled
@@ -549,15 +529,16 @@ export const Canvas: React.FC = () => {
     }
   };
 
-  const handlePointerUp = (e: any) => {
+  const handlePointerUp = (e: PIXI.FederatedPointerEvent) => {
     if (useStore.getState().mode === 'play') return;
     endPan();
     endSelection();
     
     finishGroupDraw();
 
-    if (e.pointerId !== undefined && e.target && e.target.releasePointerCapture) {
-      try { e.target.releasePointerCapture(e.pointerId); } catch (err) {}
+    const target = e.target as unknown as { releasePointerCapture?: (id: number) => void };
+    if (e.pointerId !== undefined && target && target.releasePointerCapture) {
+      try { target.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     }
   };
 
@@ -573,7 +554,7 @@ export const Canvas: React.FC = () => {
         antialias={true}
       >
         <pixiContainer
-          ref={containerRef as any}
+          ref={containerRef}
           x={camera.x}
           y={camera.y}
           scale={camera.zoom}
@@ -618,6 +599,7 @@ export const Canvas: React.FC = () => {
         }}
       />
 
+      {/* eslint-disable-next-line react-hooks/purity */}
       {mode === 'play' && latestPerformHit && Date.now() - latestPerformHit.time < 500 && (
          <div 
            key={`perf-bg-${latestPerformHit.time}`}

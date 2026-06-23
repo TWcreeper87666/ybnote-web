@@ -5,75 +5,7 @@ import { temporal } from 'zundo';
 let historyDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let isHistoryPausedForContinuous = false;
 
-interface Block {
-  id: string;
-  x: number;
-  y: number;
-  pitch: string; // e.g., 'C4', 'D#4'
-  instrument: string; // e.g., 'piano'
-  volume?: number; // 0.0 to 1.0
-  keyBinding?: string; // Key to trigger this block
-  groupId?: string; // ID of the group this block belongs to
-  playedAt?: number; // Timestamp of last play for animation
-  playedVolumeMultiplier?: number; // Multiplier to use when playing this block
-}
-
-interface Group {
-  id: string;
-  name: string;
-}
-
-export interface GroupRect {
-  id: string;
-  name?: string; // Optional custom name
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  playedAt?: number;
-  volume?: number; // 0.0 to 1.0, master volume for group
-  keyBinding?: string;
-  enabled?: boolean;
-  groupId?: string;
-}
-
-interface CameraState {
-  x: number;
-  y: number;
-  zoom: number;
-}
-
-interface TrackNode {
-  id: string;
-  x: number;
-  y: number;
-}
-
-interface Track {
-  id: string;
-  name?: string;
-  nodes: TrackNode[];
-  bpm: number;
-  loop: boolean | 'restart';
-  enabled?: boolean;
-  groupId?: string;
-}
-
-interface Runner {
-  id: string;
-  trackId: string;
-  progress: number;
-}
-
-export type Theme = 'light' | 'dark';
-export type Mode = 'select' | 'draw_track' | 'piano' | 'drum' | 'draw_group' | 'play';
-
-export interface HitEvent {
-  type: 'Perfect' | 'Good' | 'Bad' | 'Miss' | 'Wrong';
-  offset: number; // in ms
-  time: number; // Date.now() timestamp
-  color: number;
-}
+import type { Block, Group, GroupRect, CameraState, TrackNode, Track, Runner, Theme, Mode, HitEvent } from '../types';
 
 interface AppState {
   blocks: Block[];
@@ -97,6 +29,7 @@ interface AppState {
   isSettingsOpen: boolean;
   isHelpOpen: boolean;
   isOutlinerOpen: boolean;
+  isPocketCanvasOpen: boolean;
   isTutorialOpen: boolean;
   uiStateBeforePlay?: {
     isPianoOpen: boolean;
@@ -111,6 +44,14 @@ interface AppState {
   };
   searchQuery: string;
   isSearchOpen: boolean;
+
+  pocketBlocks: Block[];
+  arrangedPocketBlocks: Block[];
+  pocketSortMode: 'pitch' | 'time';
+  selectedPocketBlockIds: string[];
+  pocketCamera: CameraState;
+  interactionContext: 'main' | 'pocket';
+  activePocketDrag: { offsetX: number, offsetY: number, blocks: Block[], clickedBlockId: string, initialX?: number, initialY?: number } | null;
 
   // Display Settings
   showGroupName: boolean;
@@ -140,6 +81,7 @@ interface AppState {
 
   // Actions
   addBlock: (block: Omit<Block, 'id'>) => string;
+  addBlocks: (blocks: Omit<Block, 'id'>[]) => string[];
   removeBlock: (id: string) => void;
   updateBlock: (id: string, updates: Partial<Block>) => void;
   updateBlocks: (updates: { id: string, updates: Partial<Block> }[]) => void;
@@ -186,11 +128,23 @@ interface AppState {
   toggleSettings: () => void;
   toggleHelp: () => void;
   toggleOutliner: () => void;
+  togglePocketCanvas: () => void;
   toggleTutorial: () => void;
   setSearchQuery: (query: string) => void;
   setSearchOpen: (isOpen: boolean) => void;
+  setPocketBlocks: (blocks: Block[]) => void;
+  updatePocketBlock: (id: string, updates: Partial<Block>) => void;
+  setArrangedPocketBlocks: (blocks: Block[]) => void;
+  setPocketSortMode: (mode: 'pitch' | 'time') => void;
+  selectPocketBlock: (id: string, multi?: boolean) => void;
+  clearPocketSelection: () => void;
+  selectAllPocketBlocks: () => void;
+  copyPocketSelectedToMain: () => void;
   setHoveredBlockId: (id: string | null) => void;
   setHoveredGroupRectId: (id: string | null) => void;
+  updatePocketCamera: (camera: Partial<CameraState>) => void;
+  setInteractionContext: (context: 'main' | 'pocket') => void;
+  setActivePocketDrag: (drag: { offsetX: number, offsetY: number, blocks: Block[], clickedBlockId: string, initialX?: number, initialY?: number } | null) => void;
   setDisplaySettings: (settings: Partial<{ showGroupName: boolean, showBlockPitch: boolean, showBlockVolume: boolean, showBlockInstrument: boolean }>) => void;
 
   // Track & Playback Actions
@@ -306,9 +260,17 @@ export const useStore = create<AppState>()(
         isSettingsOpen: false,
         isHelpOpen: false,
         isOutlinerOpen: false,
+        isPocketCanvasOpen: false,
         isTutorialOpen: false,
         searchQuery: '',
         isSearchOpen: false,
+        pocketBlocks: [],
+        arrangedPocketBlocks: [],
+        pocketSortMode: 'pitch',
+        selectedPocketBlockIds: [],
+        pocketCamera: { x: 0, y: 0, zoom: 1 },
+        interactionContext: 'main',
+        activePocketDrag: null,
 
         showGroupName: true,
         showBlockPitch: true,
@@ -369,6 +331,14 @@ export const useStore = create<AppState>()(
           return id;
         },
 
+        addBlocks: (newBlocks) => {
+          const blocksWithIds = newBlocks.map(b => ({ ...b, id: (b as Block).id || generateId(), playedAt: Date.now(), playedVolumeMultiplier: 1 }));
+          set((state) => ({
+            blocks: [...state.blocks, ...blocksWithIds]
+          }));
+          return blocksWithIds.map(b => b.id);
+        },
+
         removeBlock: (id) => set((state) => ({
           blocks: state.blocks.filter((b) => b.id !== id),
           selectedBlockIds: state.selectedBlockIds.filter((selId) => selId !== id)
@@ -423,12 +393,14 @@ export const useStore = create<AppState>()(
             });
             
             // Try to get editor state to check validity
-            let editorState: any = null;
+            let editorState: { midiData: { tracks: { instrument: string, notes: { name: string }[] }[] } } | null = null;
             const isEditor = window.location.hash.includes('editor');
             if (isEditor) {
               try {
-                editorState = (window as any).levelEditorStore.getState();
-              } catch (e) {}
+                editorState = (window as { levelEditorStore?: { getState: () => { midiData: { tracks: { instrument: string, notes: { name: string }[] }[] } } } }).levelEditorStore?.getState() || null;
+              } catch {
+                // Ignore error
+              }
             }
 
             gameBlocksToRemove = gameBlocksToRemove.filter(b => {
@@ -438,7 +410,7 @@ export const useStore = create<AppState>()(
                 const bInst = b.instrument || 'piano';
                 for (const track of editorState.midiData.tracks) {
                   if (track.instrument === bInst) {
-                    if (track.notes.some((n: any) => n.name === b.pitch)) {
+                    if (track.notes.some((n) => n.name === b.pitch)) {
                       isInvalid = false;
                       break;
                     }
@@ -496,10 +468,11 @@ export const useStore = create<AppState>()(
               activeTrackId: null,
               editingTrackId: null,
               lastSelectedId: id,
-              lastSelectedType: 'block'
+              lastSelectedType: 'block',
+              interactionContext: 'main'
             };
           }
-          return { selectedBlockIds: targetBlockIds, selectedTrackIds: targetTrackIds, selectedGroupRectIds: targetGroupRectIds, activeTrackId: null, editingTrackId: null, lastSelectedId: id, lastSelectedType: 'block' };
+          return { selectedBlockIds: targetBlockIds, selectedTrackIds: targetTrackIds, selectedGroupRectIds: targetGroupRectIds, activeTrackId: null, editingTrackId: null, lastSelectedId: id, lastSelectedType: 'block', interactionContext: 'main' };
         }),
 
         selectTrack: (id, multi) => set((state) => {
@@ -523,10 +496,11 @@ export const useStore = create<AppState>()(
                 : [...new Set([...state.selectedGroupRectIds, ...targetGroupRectIds])],
               activeTrackId: id,
               lastSelectedId: id,
-              lastSelectedType: 'track'
+              lastSelectedType: 'track',
+              interactionContext: 'main'
             };
           }
-          return { selectedTrackIds: targetTrackIds, selectedBlockIds: targetBlockIds, selectedGroupRectIds: targetGroupRectIds, activeTrackId: id, lastSelectedId: id, lastSelectedType: 'track' };
+          return { selectedTrackIds: targetTrackIds, selectedBlockIds: targetBlockIds, selectedGroupRectIds: targetGroupRectIds, activeTrackId: id, lastSelectedId: id, lastSelectedType: 'track', interactionContext: 'main' };
         }),
 
         selectGroupRect: (id, multi) => set((state) => {
@@ -549,10 +523,11 @@ export const useStore = create<AppState>()(
                 ? state.selectedGroupRectIds.filter(gId => !targetGroupRectIds.includes(gId))
                 : [...new Set([...state.selectedGroupRectIds, ...targetGroupRectIds])],
               lastSelectedId: id,
-              lastSelectedType: 'groupRect'
+              lastSelectedType: 'groupRect',
+              interactionContext: 'main'
             };
           }
-          return { selectedGroupRectIds: targetGroupRectIds, selectedBlockIds: targetBlockIds, selectedTrackIds: targetTrackIds, lastSelectedId: id, lastSelectedType: 'groupRect' };
+          return { selectedGroupRectIds: targetGroupRectIds, selectedBlockIds: targetBlockIds, selectedTrackIds: targetTrackIds, lastSelectedId: id, lastSelectedType: 'groupRect', interactionContext: 'main' };
         }),
 
         selectAll: () => set((state) => {
@@ -615,7 +590,7 @@ export const useStore = create<AppState>()(
           };
         }),
 
-        clearSelection: () => set({ selectedBlockIds: [], selectedTrackIds: [], selectedGroupRectIds: [], activeTrackId: null, editingTrackId: null }),
+        clearSelection: () => set({ selectedBlockIds: [], selectedTrackIds: [], selectedGroupRectIds: [], activeTrackId: null, editingTrackId: null, interactionContext: 'main' }),
 
         mutateBlocks: (targetIds, mutator, options) => {
           const state = get();
@@ -644,7 +619,7 @@ export const useStore = create<AppState>()(
               isHistoryPausedForContinuous = true;
             }
             if (historyDebounceTimer) {
-              clearTimeout(historyDebounceTimer as any);
+              clearTimeout(historyDebounceTimer);
             }
             historyDebounceTimer = setTimeout(() => {
               useStore.temporal.getState().resume();
@@ -735,6 +710,17 @@ export const useStore = create<AppState>()(
 
         copySelected: () => {
           const state = get();
+          if (state.interactionContext === 'pocket') {
+            const blocksToCopy = state.arrangedPocketBlocks
+                .filter(b => state.selectedPocketBlockIds.includes(b.id))
+                .map((b) => ({
+                    ...b,
+                    x: b.xOffset || 0,
+                    y: b.yOffset || 0
+                }));
+            set({ clipboardBlocks: blocksToCopy, clipboardTracks: [], clipboardGroupRects: [] });
+            return;
+          }
           const blocksToCopy = state.blocks.filter(b => state.selectedBlockIds.includes(b.id));
           const gameBlocksToCopy = state.gameBlocks.filter(b => state.selectedBlockIds.includes(b.id));
           const tracksToCopy = state.tracks.filter(t => state.selectedTrackIds.includes(t.id));
@@ -807,9 +793,63 @@ export const useStore = create<AppState>()(
         toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen, isHelpOpen: false, isTutorialOpen: false })),
         toggleHelp: () => set((state) => ({ isHelpOpen: !state.isHelpOpen, isSettingsOpen: false, isTutorialOpen: false })),
         toggleOutliner: () => set((state) => ({ isOutlinerOpen: !state.isOutlinerOpen })),
+        togglePocketCanvas: () => set((state) => ({ 
+          isPocketCanvasOpen: !state.isPocketCanvasOpen,
+          interactionContext: state.isPocketCanvasOpen && state.interactionContext === 'pocket' ? 'main' : state.interactionContext
+        })),
         toggleTutorial: () => set((state) => ({ isTutorialOpen: !state.isTutorialOpen, isSettingsOpen: false, isHelpOpen: false })),
-        setSearchQuery: (searchQuery) => set({ searchQuery }),
-        setSearchOpen: (isSearchOpen) => set({ isSearchOpen }),
+        setSearchQuery: (query) => set({ searchQuery: query }),
+        setSearchOpen: (isOpen) => set({ isSearchOpen: isOpen }),
+        
+        setPocketBlocks: (blocks) => set({ pocketBlocks: blocks, selectedPocketBlockIds: [] }),
+        updatePocketBlock: (id, updates) => set((state) => {
+          if (updates.playedAt !== undefined) {
+             get().recordEvent('block', id);
+          }
+          return { pocketBlocks: state.pocketBlocks.map(b => b.id === id ? { ...b, ...updates } : b) };
+        }),
+        setArrangedPocketBlocks: (blocks) => set({ arrangedPocketBlocks: blocks }),
+        setPocketSortMode: (mode) => set({ pocketSortMode: mode }),
+        updatePocketCamera: (cameraUpdates) => set((state) => ({ pocketCamera: { ...state.pocketCamera, ...cameraUpdates } })),
+        setInteractionContext: (context) => set({ interactionContext: context }),
+        setActivePocketDrag: (drag) => set({ activePocketDrag: drag }),
+        selectPocketBlock: (id, multi) => set((state) => {
+          const updates: Partial<AppState> = { interactionContext: 'pocket' };
+          if (multi) {
+            const isSelected = state.selectedPocketBlockIds.includes(id);
+            updates.selectedPocketBlockIds = isSelected
+                ? state.selectedPocketBlockIds.filter((selId) => selId !== id)
+                : [...state.selectedPocketBlockIds, id];
+          } else {
+            updates.selectedPocketBlockIds = [id];
+          }
+          return updates;
+        }),
+        clearPocketSelection: () => set({ selectedPocketBlockIds: [] }),
+        selectAllPocketBlocks: () => set((state) => ({ selectedPocketBlockIds: state.pocketBlocks.map(b => b.id) })),
+        copyPocketSelectedToMain: () => set((state) => {
+          const selectedBlocks = state.pocketBlocks.filter(b => state.selectedPocketBlockIds.includes(b.id));
+          if (selectedBlocks.length === 0) return state;
+
+          const newBlocks = selectedBlocks.map(b => ({
+            ...b,
+            id: generateId(),
+            groupId: undefined
+          }));
+
+          if (state.gameState === 'arrange') {
+            return {
+              gameBlocks: [...state.gameBlocks, ...newBlocks],
+              selectedBlockIds: newBlocks.map(b => b.id),
+              selectedPocketBlockIds: []
+            };
+          }
+          return {
+            blocks: [...state.blocks, ...newBlocks],
+            selectedBlockIds: newBlocks.map(b => b.id),
+            selectedPocketBlockIds: []
+          };
+        }),
         setHoveredBlockId: (hoveredBlockId) => set({ hoveredBlockId }),
         setHoveredGroupRectId: (hoveredGroupRectId) => set({ hoveredGroupRectId }),
         setDisplaySettings: (settings) => set((state) => ({ ...state, ...settings })),

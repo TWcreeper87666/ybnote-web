@@ -21,19 +21,22 @@ export interface BaseBlockProps {
   onPointerEnter?: (e: PIXI.FederatedPointerEvent) => void;
   onPointerLeave?: (e: PIXI.FederatedPointerEvent) => void;
   isInvalid?: boolean;
+  isHighlighted?: boolean;
 }
 
 export const BaseBlock: React.FC<BaseBlockProps> = ({
-  x, y, pitch, instrument, volume = 1, isInteractive = true, blockColor, onPointerDown, onPointerUp, onPointerEnter, onPointerLeave, opacity = 1, showPitch, showInstrument, showVolume, playedAt, isSelected = false, isInvalid = false
+  x, y, pitch, instrument, volume = 1, isInteractive = true, blockColor, onPointerDown, onPointerUp, onPointerEnter, onPointerLeave, opacity = 1, showPitch, showInstrument, showVolume, playedAt, isSelected = false, isInvalid = false, isHighlighted = false
 }) => {
   const graphicsRef = useRef<PIXI.Graphics>(null);
   const ripplesRef = useRef<{id: number, progress: number}[]>([]);
-  const lastPlayedRef = useRef(playedAt && Date.now() - playedAt > 2000 ? playedAt : 0);
+  const lastPlayedRef = useRef(playedAt || 0);
 
   useEffect(() => {
     if (playedAt && playedAt !== lastPlayedRef.current) {
+      if (Date.now() - playedAt < 2000) {
+        ripplesRef.current.push({ id: playedAt, progress: 0 });
+      }
       lastPlayedRef.current = playedAt;
-      ripplesRef.current.push({ id: playedAt, progress: 0 });
     }
   }, [playedAt]);
 
@@ -55,6 +58,11 @@ export const BaseBlock: React.FC<BaseBlockProps> = ({
       g.fill({ color: 0x6366f1, alpha: 0.5 }); // Indigo glow
     }
 
+    if (isHighlighted) {
+      g.roundRect(-6, -6, 72, 72, 10);
+      g.stroke({ width: 3, color: 0xffcc00, alpha: 0.9 + Math.sin(Date.now() / 150) * 0.1 });
+    }
+
     g.roundRect(0, 0, 60, 60, 8); // Square block
     g.fill({ color: blockColor, alpha: opacity });
     
@@ -71,7 +79,7 @@ export const BaseBlock: React.FC<BaseBlockProps> = ({
       g.roundRect(4, 50, 52 * volume, 6, 3);
       g.fill({ color: 0xffffff, alpha: 0.8 });
     }
-  }, [blockColor, opacity, showVolume, volume, isSelected, isInvalid]);
+  }, [blockColor, opacity, showVolume, volume, isSelected, isInvalid, isHighlighted]);
 
   useEffect(() => {
     let animationFrameId: number;
@@ -110,18 +118,16 @@ export const BaseBlock: React.FC<BaseBlockProps> = ({
       eventMode={isInteractive ? "static" : "none"}
       cursor={isInteractive ? "pointer" : "default"}
       hitArea={new PIXI.Rectangle(0, 0, 60, 60)}
-      onPointerDown={onPointerDown as any}
-      onPointerUp={onPointerUp as any}
-      onPointerEnter={onPointerEnter as any}
-      onPointerLeave={onPointerLeave as any}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
     >
       <pixiGraphics ref={graphicsRef} draw={draw} />
       {showPitch && (
-        // @ts-ignore
         <pixiText text={pitch} x={30} y={30} anchor={0.5} style={{ fontSize: 32, fill: '#ffffff', fontWeight: 'bold', fontFamily: 'Inter' }} scale={0.5} />
       )}
       {showInstrument && (
-        // @ts-ignore
         <pixiText text={instrumentIcon} x={42} y={4} style={{ fontSize: 24 }} scale={0.5} />
       )}
     </pixiContainer>

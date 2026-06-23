@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store/useStore';
+import { useLevelEditorStore } from '../store/useLevelEditorStore';
+import { getAllChartNotes } from '../utils/chartUtils';
 import { useIsMobile } from './useIsMobile';
 
 export const useBlockDrag = (id: string, x: number, y: number, isSelected: boolean) => {
@@ -10,9 +12,22 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
   const wasSelectedRef = useRef(false);
   const lastClickTimeRef = useRef(0);
 
-  const handlePointerDown = (e: any) => {
+  const handlePointerDown = (e: import('pixi.js').FederatedPointerEvent) => {
     const state = useStore.getState();
     if (state.gameState === 'play') return;
+
+    const editorState = useLevelEditorStore.getState();
+    if (editorState.activeTab === 'charting' && editorState.chartingAwaitingPick) {
+      const chartNotes = editorState.midiData ? getAllChartNotes(editorState.midiData) : [];
+      const entry = chartNotes[editorState.chartingNoteIndex];
+      if (entry) {
+        e.stopPropagation();
+        editorState.assignNoteTarget(entry.note.id, entry.track.id, id, 'block');
+        useLevelEditorStore.getState().togglePlayback();
+        return;
+      }
+    }
+
     const button = e.button; 
     const isMultiSelect = e.ctrlKey || e.shiftKey;
     
@@ -23,7 +38,7 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
       e.stopPropagation(); // prevent canvas from handling left click box selection
       wasSelectedRef.current = isSelected;
       clickStartPosRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
-      let shouldDrag = false;
+      let shouldDrag: boolean;
       if (isMultiSelect) {
         state.selectBlock(id, true);
         shouldDrag = !isSelected;
@@ -37,7 +52,7 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
       
       if (shouldDrag) {
         setIsDragging(true);
-        const pos = e.currentTarget.parent.toLocal(e.global);
+        const pos = e.currentTarget.parent?.toLocal(e.global) || { x: e.global.x, y: e.global.y };
         setDragOffset({ x: pos.x - x, y: pos.y - y });
       }
     } else if (button === 2) {
@@ -45,7 +60,7 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
     }
   };
 
-  const handlePointerUp = (e: any) => {
+  const handlePointerUp = (e: import('pixi.js').FederatedPointerEvent) => {
     if (e.button === 0 && clickStartPosRef.current) {
       const dx = e.clientX - clickStartPosRef.current.x;
       const dy = e.clientY - clickStartPosRef.current.y;
@@ -92,7 +107,7 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
       if (clickStartPosRef.current && clickStartPosRef.current.pointerId !== undefined && e.pointerId !== clickStartPosRef.current.pointerId) {
         return;
       }
-      if (isMobile && (window as any).__activeTouches > 1) {
+      if (isMobile && (window as { __activeTouches?: number }).__activeTouches && (window as { __activeTouches?: number }).__activeTouches! > 1) {
         setIsDragging(false);
         if (hasPaused) useStore.temporal.getState().resume();
         useStore.getState().clearSelection();

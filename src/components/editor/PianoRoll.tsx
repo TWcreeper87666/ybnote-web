@@ -1,6 +1,9 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
-import type { EditorNote } from '../../store/useLevelEditorStore';
+import type { EditorNote } from '../../types';
+import { useStore } from '../../store/useStore';
+import { getPitchColorHex } from '../../utils/colors';
+import { getCandidateBlocks } from '../../utils/chartUtils';
 import { PianoRollKeyboard } from './PianoRollKeyboard';
 import { playNote } from '../../utils/audio';
 import { getTrackColor } from '../../utils/trackColors';
@@ -255,10 +258,12 @@ export const PianoRoll: React.FC = () => {
     for (const track of store.midiData.tracks) {
       const isSelectedTrack = track.id === store.selectedTrackId;
       const isGhostVisible = store.ghostNoteVisibility[track.id];
+      const isBackground = track.isBackground;
 
       if (!isSelectedTrack && !isGhostVisible) continue;
 
       const trackColor = getTrackColor(track.id);
+      const mainBlocks = useStore.getState().gameBlocks;
 
       for (const note of track.notes) {
         const noteX = note.timeStart * zoom - scrollLeft;
@@ -268,23 +273,46 @@ export const PianoRoll: React.FC = () => {
         if (noteX + noteW < 0 || noteX > width) continue;
         if (noteY + ROW_HEIGHT < 0 || noteY > height) continue;
 
+        const candidates = isBackground ? [] : getCandidateBlocks(note, track);
+        const hasMatchingBlock = candidates.length > 0;
+        const isUnassignedSilent = !note.targetId && !hasMatchingBlock && !isBackground;
+
         if (isSelectedTrack) {
           const isSelected = selectedNoteIds.has(note.id);
-          ctx.fillStyle = isSelected ? '#ffb347' : trackColor;
+          const baseColor = isBackground ? 'rgba(120,120,120,0.45)' : (isSelected ? '#ffb347' : trackColor);
+          ctx.fillStyle = baseColor;
           ctx.fillRect(noteX, noteY, noteW, ROW_HEIGHT - 1);
 
-          ctx.strokeStyle = isSelected ? '#fff' : shadeColor(trackColor, -30);
+          if (isUnassignedSilent) {
+            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = '#ef4444';
+          } else {
+            ctx.setLineDash([]);
+            ctx.strokeStyle = isSelected ? '#fff' : shadeColor(trackColor, -30);
+          }
           ctx.strokeRect(noteX, noteY, noteW, ROW_HEIGHT - 1);
+          ctx.setLineDash([]);
 
-          // Velocity bar
-          ctx.fillStyle = 'rgba(255,255,255,0.4)';
-          ctx.fillRect(noteX, noteY + (ROW_HEIGHT - 4) / 2, noteW * note.velocity, 3);
+          if (note.targetId && !isBackground) {
+            const targetBlock = mainBlocks.find((b) => b.id === note.targetId);
+            const dotColor = targetBlock
+              ? getPitchColorHex(targetBlock.pitch, 36)
+              : '#a5b4fc';
+            ctx.fillStyle = dotColor;
+            ctx.beginPath();
+            ctx.arc(noteX + 4, noteY + ROW_HEIGHT / 2, 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          if (!isBackground) {
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.fillRect(noteX, noteY + (ROW_HEIGHT - 4) / 2, noteW * note.velocity, 3);
+          }
         } else {
-          // Ghost note
-          ctx.strokeStyle = trackColor;
+          ctx.strokeStyle = isBackground ? 'rgba(120,120,120,0.5)' : trackColor;
           ctx.lineWidth = 1;
           ctx.strokeRect(noteX, noteY, noteW, ROW_HEIGHT - 1);
-          ctx.fillStyle = shadeColor(trackColor, -150); // very dark
+          ctx.fillStyle = isBackground ? 'rgba(80,80,80,0.35)' : shadeColor(trackColor, -150);
           ctx.fillRect(noteX + 1, noteY + 1, noteW - 2, ROW_HEIGHT - 3);
         }
       }
@@ -369,7 +397,7 @@ export const PianoRoll: React.FC = () => {
 
   // --- Playback loop ---
 
-  const playbackLoop = useCallback((time: DOMHighResTimeStamp) => {
+  const playbackLoop = useCallback(function loop(time: DOMHighResTimeStamp) {
     const store = useLevelEditorStore.getState();
     if (!store.isPlaying) return;
 
@@ -404,7 +432,7 @@ export const PianoRoll: React.FC = () => {
 
     useLevelEditorStore.setState({ playbackPosition: newPos });
     drawFgCanvas();
-    playbackRafId.current = requestAnimationFrame(playbackLoop);
+    playbackRafId.current = requestAnimationFrame(loop);
   }, [drawFgCanvas]);
 
   // --- Canvas sizing ---
@@ -679,6 +707,7 @@ export const PianoRoll: React.FC = () => {
         dragAction.current = 'none';
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getMouseCoords, getHitTarget]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -879,11 +908,12 @@ export const PianoRoll: React.FC = () => {
         }
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getMouseCoords, getHitTarget, drawBgCanvas, drawFgCanvas]);
 
-  const handleMouseUp = useCallback((e: MouseEvent) => {
+  const handleMouseUp = useCallback(function onMouseUp(e: MouseEvent) {
     window.removeEventListener('mousemove', handleMouseMove);
-    window.removeEventListener('mouseup', handleMouseUp);
+    window.removeEventListener('mouseup', onMouseUp);
 
     if (isMiddlePanning.current) {
       isMiddlePanning.current = false;
@@ -1120,6 +1150,7 @@ export const PianoRoll: React.FC = () => {
       store.clearSelection();
       drawBgCanvas();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawBgCanvas, drawFgCanvas]);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {

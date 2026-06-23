@@ -56,7 +56,7 @@ export const PianoKeyboard: React.FC = () => {
     
     if (e.button === 2) {
       playNote(pitch, 1, instrument);
-      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch(err) {}
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     } else if (e.button === 0) {
       playNote(pitch, 1, instrument);
       setDraggedPitch({ pitch, x: e.clientX, y: e.clientY });

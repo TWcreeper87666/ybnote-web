@@ -9,10 +9,10 @@ let kickSynth: Tone.PolySynth<Tone.MembraneSynth>;
 let tomSynth: Tone.PolySynth<Tone.MembraneSynth>;
 
 class DrumPool {
-  synths: any[];
+  synths: Tone.NoiseSynth[];
   index: number = 0;
 
-  constructor(synthFactory: () => any, count: number = 4) {
+  constructor(synthFactory: () => Tone.NoiseSynth, count: number = 4) {
     this.synths = Array.from({ length: count }, synthFactory);
   }
 
@@ -21,7 +21,7 @@ class DrumPool {
     return this;
   }
 
-  triggerAttackRelease(duration: any, time?: any, velocity?: any) {
+  triggerAttackRelease(duration: string | number, time?: number | string, velocity?: number) {
     const s = this.synths[this.index];
     this.index = (this.index + 1) % this.synths.length;
     s.triggerAttackRelease(duration, time, velocity);

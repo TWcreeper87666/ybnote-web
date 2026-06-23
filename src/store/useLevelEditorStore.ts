@@ -1,30 +1,9 @@
 import { create } from 'zustand';
 import { sliceAudioBuffer, encodeToMp3 } from '../utils/levelUtils';
+import { syncGameEventsFromMidi, applyMatchResult, matchRecordedHits, syncCanvasToGameBlocks, type RecordedHit } from '../utils/chartUtils';
 import { useStore } from './useStore';
 
-// --- Types ---
-export interface EditorNote {
-  id: string;
-  pitch: number;      // MIDI note number 0-127
-  name: string;       // e.g. 'C4', 'D#5'
-  timeStart: number;  // seconds
-  duration: number;   // seconds
-  velocity: number;   // 0-1
-}
-
-export interface EditorTrack {
-  id: number;
-  name: string;
-  notes: EditorNote[];
-  instrument: string;
-  isBackground?: boolean;
-}
-
-export interface ParsedMidiData {
-  bpm: number;
-  duration: number;
-  tracks: EditorTrack[];
-}
+import type { EditorNote, EditorTrack, ParsedMidiData, Block } from '../types';
 
 // --- History ---
 interface HistorySnapshot {
@@ -35,8 +14,8 @@ interface HistorySnapshot {
   audioStartTime?: number;
   playbackAnchor?: number;
   bpm?: number;
-  gameBlocks?: any[];
-  gameEvents?: any[];
+  gameBlocks?: Block[];
+  gameEvents?: { time: number; pitch: string; instrument: string; blockId: string; }[];
 }
 
 interface LevelEditorState {
@@ -90,7 +69,19 @@ interface LevelEditorState {
   clipboardSourceTrackId: number | null;
 
   // Tab
-  activeTab: 'pianoroll' | 'blocks';
+  activeTab: 'pianoroll' | 'blocks' | 'charting';
+
+  // Charting Tab state
+  chartingNoteIndex: number;
+  chartingPaused: boolean;
+  chartingAutoSkipAssigned: boolean;
+  chartingAwaitingPick: boolean;
+  chartingHighlightIds: string[];
+
+  // Record Mode state
+  isRecordingChart: boolean;
+  recordedChartHits: RecordedHit[];
+  recordMatchPreview: import('../utils/chartUtils').MatchResult | null;
 
   // Actions — Audio
   setAudioFile: (file: File, buffer: AudioBuffer, url: string) => void;
@@ -157,7 +148,22 @@ interface LevelEditorState {
   pasteNotes: (pasteTime?: number) => void;
 
   // Actions — Tab
-  setActiveTab: (tab: 'pianoroll' | 'blocks') => void;
+  setActiveTab: (tab: 'pianoroll' | 'blocks' | 'charting') => void;
+
+  // Actions — Charting
+  setChartingNoteIndex: (index: number) => void;
+  setChartingPaused: (paused: boolean) => void;
+  setChartingAutoSkipAssigned: (v: boolean) => void;
+  setChartingAwaitingPick: (v: boolean) => void;
+  setChartingHighlightIds: (ids: string[]) => void;
+  assignNoteTarget: (noteId: string, trackId: number, targetId: string, targetType: 'block' | 'groupRect') => void;
+  clearNoteTarget: (noteId: string, trackId: number) => void;
+  startChartRecording: () => void;
+  stopChartRecording: () => void;
+  recordChartHit: (blockId: string, blockType: 'block' | 'groupRect') => void;
+  discardChartRecording: () => void;
+  setRecordMatchPreview: (preview: import('../utils/chartUtils').MatchResult | null) => void;
+  applyRecordMatch: () => void;
 
   // Actions — Reset
   reset: () => void;
@@ -239,7 +245,17 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
   clipboard: [],
   clipboardSourceTrackId: null,
 
-  activeTab: 'pianoroll',
+  activeTab: 'pianoroll' as const,
+
+  chartingNoteIndex: 0,
+  chartingPaused: false,
+  chartingAutoSkipAssigned: true,
+  chartingAwaitingPick: false,
+  chartingHighlightIds: [],
+
+  isRecordingChart: false,
+  recordedChartHits: [],
+  recordMatchPreview: null,
 
   // --- Audio actions ---
   setAudioFile: (file, buffer, url) => {
@@ -406,12 +422,12 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
     
     // Also sync BPM to all game tracks so the runner speed updates
     const mainStoreState = useStore.getState();
-    const trackUpdates = mainStoreState.tracks.map((t: any) => ({
+    const trackUpdates = mainStoreState.tracks.map((t) => ({
       id: t.id,
       updates: { bpm }
     }));
     if (trackUpdates.length > 0) {
-      trackUpdates.forEach((tu: any) => mainStoreState.updateTrack(tu.id, tu.updates));
+      trackUpdates.forEach((tu) => mainStoreState.updateTrack(tu.id, tu.updates));
     }
   },
   setOffset: (offset) => set({ offset }),
@@ -620,6 +636,7 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
   commitHistory: () => {
     const s = get();
     if (!s.midiData) return;
+    syncCanvasToGameBlocks();
     const mainState = useStore.getState();
     const snapshot: HistorySnapshot = {
       tracks: JSON.parse(JSON.stringify(s.midiData.tracks)),
@@ -785,6 +802,86 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
   // --- Tab ---
   setActiveTab: (tab) => set({ activeTab: tab }),
 
+  // --- Charting ---
+  setChartingNoteIndex: (index) => set({ chartingNoteIndex: index }),
+  setChartingPaused: (paused) => set({ chartingPaused: paused }),
+  setChartingAutoSkipAssigned: (v) => set({ chartingAutoSkipAssigned: v }),
+  setChartingAwaitingPick: (v) => set({ chartingAwaitingPick: v }),
+  setChartingHighlightIds: (ids) => set({ chartingHighlightIds: ids }),
+
+  assignNoteTarget: (noteId, trackId, targetId, targetType) => {
+    const s = get();
+    if (!s.midiData) return;
+    const tracks = JSON.parse(JSON.stringify(s.midiData.tracks)) as EditorTrack[];
+    const track = tracks.find((t) => t.id === trackId);
+    const note = track?.notes.find((n) => n.id === noteId);
+    if (!note) return;
+    note.targetId = targetId;
+    note.targetType = targetType;
+    const midiData = { ...s.midiData, tracks };
+    set({ midiData, chartingAwaitingPick: false, chartingHighlightIds: [] });
+    syncGameEventsFromMidi(midiData);
+    get().commitHistory();
+  },
+
+  clearNoteTarget: (noteId, trackId) => {
+    const s = get();
+    if (!s.midiData) return;
+    const tracks = JSON.parse(JSON.stringify(s.midiData.tracks)) as EditorTrack[];
+    const track = tracks.find((t) => t.id === trackId);
+    const note = track?.notes.find((n) => n.id === noteId);
+    if (!note) return;
+    delete note.targetId;
+    delete note.targetType;
+    const midiData = { ...s.midiData, tracks };
+    set({ midiData });
+    syncGameEventsFromMidi(midiData);
+    get().commitHistory();
+  },
+
+  startChartRecording: () => {
+    set({
+      isRecordingChart: true,
+      recordedChartHits: [],
+      recordMatchPreview: null,
+    });
+    useStore.getState().setMode('select');
+  },
+
+  stopChartRecording: () => {
+    const s = get();
+    set({ isRecordingChart: false });
+    if (!s.midiData || s.recordedChartHits.length === 0) return;
+    const preview = matchRecordedHits(s.midiData, s.recordedChartHits);
+    set({ recordMatchPreview: preview });
+  },
+
+  recordChartHit: (blockId, blockType) => {
+    const s = get();
+    if (!s.isRecordingChart) return;
+    const hit: RecordedHit = {
+      time: s.playbackPosition * 1000,
+      blockId,
+      blockType,
+    };
+    set({ recordedChartHits: [...s.recordedChartHits, hit] });
+  },
+
+  discardChartRecording: () => {
+    set({ recordedChartHits: [], recordMatchPreview: null, isRecordingChart: false });
+  },
+
+  setRecordMatchPreview: (preview) => set({ recordMatchPreview: preview }),
+
+  applyRecordMatch: () => {
+    const s = get();
+    if (!s.midiData || !s.recordMatchPreview) return;
+    const midiData = applyMatchResult(s.midiData, s.recordMatchPreview.matched);
+    set({ midiData, recordMatchPreview: null, recordedChartHits: [], isRecordingChart: false });
+    syncGameEventsFromMidi(midiData);
+    get().commitHistory();
+  },
+
   // --- Reset ---
   reset: () => {
     const prev = get().audioUrl;
@@ -822,11 +919,19 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
         audioStartTime: 0,
         playbackAnchor: 0
       }], historyIndex: 0, clipboard: [], clipboardSourceTrackId: null,
-      activeTab: 'pianoroll',
+      activeTab: 'pianoroll' as const,
+      chartingNoteIndex: 0,
+      chartingPaused: false,
+      chartingAutoSkipAssigned: true,
+      chartingAwaitingPick: false,
+      chartingHighlightIds: [],
+      isRecordingChart: false,
+      recordedChartHits: [],
+      recordMatchPreview: null,
     });
   },
 }));
 
 if (typeof window !== 'undefined') {
-  (window as any).levelEditorStore = useLevelEditorStore;
+  (window as { levelEditorStore?: typeof useLevelEditorStore }).levelEditorStore = useLevelEditorStore;
 }

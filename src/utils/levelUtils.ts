@@ -1,23 +1,30 @@
 import JSZip from 'jszip';
 import lamejsSrc from 'lamejs/lame.min.js?raw';
-import type { ParsedMidiData } from '../store/useLevelEditorStore';
+import type { ParsedMidiData } from '../types';
 
 
 // --- Polyfill for lamejs bug in Vite ---
 // lamejs 1.2.x has circular dependencies and implicit globals (MPEGMode, Lame, BitStream)
 // which throw ReferenceErrors when bundled by Vite. We inject the pre-bundled minified 
 // script directly into the global scope to bypass these module issues entirely.
-let Mp3Encoder: any;
+interface Mp3EncoderClass {
+  new(channels: number, sampleRate: number, bitrate: number): {
+    encodeBuffer(left: Int16Array, right?: Int16Array): Int8Array;
+    flush(): Int8Array;
+  };
+}
+
+let Mp3Encoder: Mp3EncoderClass;
 
 if (typeof window !== 'undefined') {
-  if (!(window as any).lamejs) {
+  if (!(window as { lamejs?: { Mp3Encoder: Mp3EncoderClass } }).lamejs) {
     const script = document.createElement('script');
     script.textContent = lamejsSrc;
     document.head.appendChild(script);
   }
-  Mp3Encoder = (window as any).lamejs.Mp3Encoder;
+  Mp3Encoder = (window as { lamejs?: { Mp3Encoder: Mp3EncoderClass } }).lamejs!.Mp3Encoder;
 } else {
-  // Fallback for SSR / Node context if needed, though mostly client-side
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   Mp3Encoder = require('lamejs').Mp3Encoder;
 }
 // ---------------------------------------
@@ -61,6 +68,8 @@ export interface LevelJson {
     trackId?: number;
     trackName?: string;
     trackInstrument?: string;
+    targetId?: string;
+    targetType?: 'block' | 'groupRect';
   }[];
 }
 

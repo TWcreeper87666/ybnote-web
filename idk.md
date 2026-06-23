@@ -1,6 +1,9 @@
 # bug
 audio delay when no interaction
 
+# midi
+整理樂器script, 方便新增
+
 # level-editor:
 - help panel update
 - remove velocity modify completely

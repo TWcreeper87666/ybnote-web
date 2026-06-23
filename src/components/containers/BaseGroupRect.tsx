@@ -29,12 +29,14 @@ export const BaseGroupRect: React.FC<BaseGroupRectProps> = ({
 }) => {
   const graphicsRef = useRef<PIXI.Graphics>(null);
   const ripplesRef = useRef<{id: number, progress: number}[]>([]);
-  const lastPlayedRef = useRef(playedAt && Date.now() - playedAt > 2000 ? playedAt : 0);
+  const lastPlayedRef = useRef(playedAt || 0);
 
   useEffect(() => {
     if (playedAt && playedAt !== lastPlayedRef.current) {
+      if (Date.now() - playedAt < 2000) {
+        ripplesRef.current.push({ id: playedAt, progress: 0 });
+      }
       lastPlayedRef.current = playedAt;
-      ripplesRef.current.push({ id: playedAt, progress: 0 });
     }
   }, [playedAt]);
 
@@ -132,10 +134,10 @@ export const BaseGroupRect: React.FC<BaseGroupRectProps> = ({
         draw={draw}
         eventMode={isInteractive ? "static" : "none"}
         cursor={isInteractive ? "pointer" : "default"}
-        onPointerDown={onPointerDown as any}
-        onPointerUp={onPointerUp as any}
-        onPointerEnter={onPointerEnter as any}
-        onPointerLeave={onPointerLeave as any}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+        onPointerEnter={onPointerEnter}
+        onPointerLeave={onPointerLeave}
       />
       {isSelected && isInteractive && onResizeDown && handles.map(h => (
         <pixiGraphics
@@ -149,7 +151,6 @@ export const BaseGroupRect: React.FC<BaseGroupRectProps> = ({
         />
       ))}
       {showGroupName && (
-        // @ts-ignore
         <pixiText text={`${name || ''}`} x={x + 8} y={y + 8} style={{ fontSize: 32, fontWeight: 'bold', fill: '#ffffff', fontFamily: 'Inter' }} alpha={(isSelected ? 1 : 0.5) * (enabled !== false ? 1 : 0.3)} scale={0.5} eventMode="none" />
       )}
     </pixiContainer>

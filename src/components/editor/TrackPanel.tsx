@@ -93,6 +93,7 @@ export const TrackPanel: React.FC = () => {
     return () => {
       window.removeEventListener('keydown', handleGlobalKeydown);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.selectedTrackId, tracks, store.selectedNoteIds.size]);
 
   const openContextMenu = (e: React.MouseEvent, trackId: number | null) => {

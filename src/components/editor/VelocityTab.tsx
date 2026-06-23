@@ -53,6 +53,7 @@ export const VelocityTab: React.FC = () => {
 
   useEffect(() => {
     drawCanvas();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.zoomLevel, store.selectedTrackId, store.midiData, store.selectedNoteIds, store.getCurrentTrack()?.notes, store.scrollLeft]);
 
   // --- Resizing ---
@@ -79,10 +80,12 @@ export const VelocityTab: React.FC = () => {
     }
     resizeCanvas();
     return () => observer.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     resizeCanvas();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.zoomLevel, store.midiData?.duration]);
 
   // --- Interaction ---
@@ -149,16 +152,16 @@ export const VelocityTab: React.FC = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDragging]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
     // Call drag once immediately
-    // Temporarily set isDragging to true for this call
-    isDragging || (() => {
+    if (!isDragging) {
       setIsDragging(true);
       setTimeout(() => handleVelocityDrag(e), 0);
-    })();
+    }
   };
 
   if (!store.showVelocityTab) return null;

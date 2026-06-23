@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import { computeTrackControlPoints } from '../utils/spline';
 
-function getBezierPoint(t: number, p0: any, p1: any, p2: any, p3: any) {
+function getBezierPoint(t: number, p0: { x: number; y: number }, p1: { x: number; y: number }, p2: { x: number; y: number }, p3: { x: number; y: number }) {
   const cX = 3 * (p1.x - p0.x);
   const bX = 3 * (p2.x - p1.x) - cX;
   const aX = p3.x - p0.x - cX - bX;
@@ -27,9 +27,10 @@ export function useGameLoop() {
   // Store previously triggered blocks to only trigger once per intersection
   const triggeredBlocksRef = useRef<Map<string, Set<string>>>(new Map());
 
-  const animate = (time: number) => {
-    if (lastTimeRef.current !== undefined) {
-      const deltaTime = (time - lastTimeRef.current) / 1000; // in seconds
+  useEffect(() => {
+    const animate = (time: number) => {
+      if (lastTimeRef.current !== undefined) {
+        const deltaTime = (time - lastTimeRef.current) / 1000; // in seconds
       const state = useStore.getState();
 
       const activeTracks = state.tracks.filter(t => 
@@ -176,12 +177,10 @@ export function useGameLoop() {
         }
       }
     }
-    
-    lastTimeRef.current = time;
-    requestRef.current = requestAnimationFrame(animate);
-  };
+      lastTimeRef.current = time;
+      requestRef.current = requestAnimationFrame(animate);
+    };
 
-  useEffect(() => {
     requestRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(requestRef.current!);
   }, []);

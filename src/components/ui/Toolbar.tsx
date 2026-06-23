@@ -1,19 +1,12 @@
 import React from 'react';
 import { useStore, undoAction, redoAction } from '../../store/useStore';
-import { Settings, Music, Drum, Trash2, Undo2, Redo2, LayoutList, PenTool, HelpCircle, Square, Wand2, Circle, Download, Upload } from 'lucide-react';
-import { exportRecordedEventsToMidi, importMidiToBlocks } from '../../utils/midiUtils';
+import { Settings, Music, Drum, Trash2, Undo2, Redo2, LayoutList, LayoutGrid, PenTool, HelpCircle, Square, Wand2, Circle, Download, Upload } from 'lucide-react';
+import { exportRecordedEventsToMidi } from '../../utils/midiUtils';
 import { ToolbarButton } from './ToolbarButton';
 import { ToolbarDivider } from './ToolbarDivider';
 
 export const Toolbar: React.FC = () => {
-  const { toggleSettings, toggleHelp, toggleOutliner, deleteSelected, selectedBlockIds, selectedTrackIds, selectedGroupRectIds, mode, setMode, isRecording, startRecording, stopRecording, gameState } = useStore();
-
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      importMidiToBlocks(file).catch(console.error);
-    }
-  };
+  const { toggleSettings, toggleHelp, toggleOutliner, togglePocketCanvas, deleteSelected, selectedBlockIds, selectedTrackIds, selectedGroupRectIds, mode, setMode, isRecording, startRecording, stopRecording, gameState, isOutlinerOpen, isPocketCanvasOpen } = useStore();
 
 
   return (
@@ -69,11 +62,6 @@ export const Toolbar: React.FC = () => {
           title="Export Recording to MIDI"
           icon={<Upload size={24} />}
         />
-
-        <label className="toolbar-btn" title="Import MIDI" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Download size={24} />
-          <input type="file" accept=".mid,.midi" style={{ display: 'none' }} onChange={handleImport} />
-        </label>
       </div>
       )}
 
@@ -91,7 +79,6 @@ export const Toolbar: React.FC = () => {
             title="Redo"
             icon={<Redo2 size={24} />}
           />
-          <ToolbarDivider variant="editor" />
         </>
       )}
 
@@ -102,12 +89,26 @@ export const Toolbar: React.FC = () => {
         title="Delete Selected"
         icon={<Trash2 size={24} />}
       />
+      
+      <ToolbarDivider variant="editor" orientation="horizontal" />
 
       <ToolbarButton 
         onClick={toggleOutliner}
         title="Toggle Outliner"
         icon={<LayoutList size={24} />}
+        active={isOutlinerOpen}
+        variant="panel-toggle"
       />
+
+      <ToolbarButton 
+        onClick={togglePocketCanvas}
+        title="Toggle Pocket Canvas"
+        icon={<LayoutGrid size={24} />}
+        active={isPocketCanvasOpen}
+        variant="panel-toggle"
+      />
+      
+      <ToolbarDivider variant="editor" orientation="horizontal" />
 
       <ToolbarButton 
         onClick={toggleSettings}

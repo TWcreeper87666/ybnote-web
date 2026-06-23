@@ -1,5 +1,5 @@
 import { Midi } from '@tonejs/midi';
-import type { ParsedMidiData, EditorTrack, EditorNote } from '../store/useLevelEditorStore';
+import type { ParsedMidiData, EditorTrack, EditorNote } from '../types';
 
 export const parseMidiFile = async (arrayBuffer: ArrayBuffer): Promise<ParsedMidiData> => {
   const midi = new Midi(arrayBuffer);

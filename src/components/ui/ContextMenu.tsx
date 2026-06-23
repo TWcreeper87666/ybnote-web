@@ -12,10 +12,10 @@ export const ContextMenu: React.FC = () => {
 
   const menuRef = React.useRef<HTMLDivElement>(null);
   const [measuredPos, setMeasuredPos] = React.useState<{x: number, y: number} | null>(null);
-  const prevContextMenuRef = React.useRef(contextMenu);
+  const [prevContextMenu, setPrevContextMenu] = React.useState(contextMenu);
 
-  if (prevContextMenuRef.current !== contextMenu) {
-    prevContextMenuRef.current = contextMenu;
+  if (prevContextMenu !== contextMenu) {
+    setPrevContextMenu(contextMenu);
     setMeasuredPos(null);
   }
 
@@ -123,7 +123,7 @@ export const ContextMenu: React.FC = () => {
           position: 'fixed',
           left: displayX,
           top: displayY,
-          visibility: visibility as any,
+          visibility: visibility as 'visible' | 'hidden',
           zIndex: 1000,
           padding: '8px',
           display: 'flex',
@@ -237,7 +237,7 @@ export const ContextMenu: React.FC = () => {
               let loopVal: boolean | 'restart' = false;
               if (val === 'circular') loopVal = true;
               if (val === 'restart') loopVal = 'restart';
-              useStore.getState().updateTrack(track.id, { loop: loopVal as any });
+              useStore.getState().updateTrack(track.id, { loop: loopVal });
             }}
             style={{ background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '4px' }}
           >
@@ -278,7 +278,7 @@ export const ContextMenu: React.FC = () => {
           position: 'fixed',
           left: displayX,
           top: displayY,
-          visibility: visibility as any,
+          visibility: visibility as 'visible' | 'hidden',
           zIndex: 1000,
           padding: '8px',
           display: 'flex',
@@ -497,7 +497,7 @@ export const ContextMenu: React.FC = () => {
         position: 'fixed',
         left: displayX,
         top: displayY,
-        visibility: visibility as any,
+        visibility: visibility as 'visible' | 'hidden',
         zIndex: 1000,
         padding: '8px',
         display: 'flex',

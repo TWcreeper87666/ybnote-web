@@ -50,7 +50,7 @@ export const useCanvasCamera = ({ isPlayMode, isActive, isGameCanvas, onWheelInt
 
     document.addEventListener('wheel', handler, { passive: false });
     return () => document.removeEventListener('wheel', handler);
-  }, [isActive, isPlayMode, onWheelIntercept]);
+  }, [isActive, isPlayMode, onWheelIntercept, isGameCanvas]);
 
 
 };

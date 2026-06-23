@@ -55,7 +55,7 @@ export const DrumKeyboard: React.FC = () => {
     if (e.button === 2) {
       triggerHit(pitch);
       playNote(pitch, 1, 'percussion');
-      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch(err) {}
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     } else if (e.button === 0) {
       triggerHit(pitch);
       playNote(pitch, 1, 'percussion');

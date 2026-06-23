@@ -1,7 +1,7 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import type { TrailStroke } from '../components/canvas/shared/TrailRenderer';
 
-export const useCanvasInteractions = () => {
+export const useCanvasInteractions = (options?: { onGlobalUp?: (e: PointerEvent) => void }) => {
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ x: 0, y: 0 });
   
@@ -21,7 +21,7 @@ export const useCanvasInteractions = () => {
     panStartRef.current = { x: x - cameraX, y: y - cameraY };
   }, []);
 
-  const updatePan = useCallback((x: number, y: number, updateCamera: (cam: any) => void) => {
+  const updatePan = useCallback((x: number, y: number, updateCamera: (cam: { x: number; y: number }) => void) => {
     if (isPanningRef.current) {
       updateCamera({
         x: x - panStartRef.current.x,
@@ -71,7 +71,7 @@ export const useCanvasInteractions = () => {
     });
   }, []);
 
-  const updateTrail = useCallback((localX: number, localY: number, onIntersect?: (p1: any, p2: any) => void) => {
+  const updateTrail = useCallback((localX: number, localY: number, onIntersect?: (p1: { x: number; y: number }, p2: { x: number; y: number }) => void) => {
     if (currentStrokeId.current !== null) {
       const stroke = activeStrokesRef.current.find(s => s.id === currentStrokeId.current);
       if (stroke && stroke.points.length > 0) {
@@ -90,6 +90,26 @@ export const useCanvasInteractions = () => {
     isTrailingRef.current = false;
     currentStrokeId.current = null;
   }, []);
+
+  useEffect(() => {
+    const handleGlobalUp = (e: PointerEvent) => {
+      endPan();
+      if (isSelectingRef.current) {
+         endSelection();
+      }
+      if (e.button === 2 || e.buttons === 0) {
+        intersectedBlocksRef.current.clear();
+        endTrail();
+      }
+      options?.onGlobalUp?.(e);
+    };
+    window.addEventListener('pointerup', handleGlobalUp);
+    window.addEventListener('pointercancel', handleGlobalUp);
+    return () => {
+      window.removeEventListener('pointerup', handleGlobalUp);
+      window.removeEventListener('pointercancel', handleGlobalUp);
+    };
+  }, [endPan, endSelection, endTrail, options]);
 
   return {
     isPanningRef,
