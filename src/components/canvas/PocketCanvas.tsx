@@ -23,10 +23,14 @@ const ResizeHandler = ({ width, height }: { width: number; height: number }) => 
 interface PocketCanvasProps {
   containerWidth: number;
   containerHeight: number;
+  showOnlyMissing?: boolean;
 }
 
-export const PocketCanvas: React.FC<PocketCanvasProps> = ({ containerWidth, containerHeight }) => {
+export const PocketCanvas: React.FC<PocketCanvasProps> = ({ containerWidth, containerHeight, showOnlyMissing }) => {
   const pocketBlocks = useStore(state => state.pocketBlocks);
+  const blocks = useStore(state => state.blocks);
+  const gameBlocks = useStore(state => state.gameBlocks);
+  const gameState = useStore(state => state.gameState);
   const pocketSortMode = useStore(state => state.pocketSortMode);
   const pocketCamera = useStore(state => state.pocketCamera);
   const clearPocketSelection = useStore(state => state.clearPocketSelection);
@@ -48,15 +52,23 @@ export const PocketCanvas: React.FC<PocketCanvasProps> = ({ containerWidth, cont
 
   const layoutWidth = Math.max(200, containerWidth);
 
+  const filteredBlocks = useMemo(() => {
+    if (!showOnlyMissing) return pocketBlocks;
+    const allMainBlocks = gameState === 'arrange' ? gameBlocks : blocks;
+    return pocketBlocks.filter(pocketBlock => {
+      return !allMainBlocks.some(b => b.pitch === pocketBlock.pitch && (b.instrument || 'piano') === pocketBlock.instrument);
+    });
+  }, [pocketBlocks, blocks, gameBlocks, gameState, showOnlyMissing]);
+
   const gridBounds = useMemo(() => {
     const availableWidthForBlocks = layoutWidth - PADDING * 2 + SPACING;
     const cols = Math.max(1, Math.floor(availableWidthForBlocks / (BLOCK_SIZE + SPACING)));
-    const maxR = Math.max(0, pocketBlocks.length > 0 ? Math.floor((pocketBlocks.length - 1) / cols) : 0);
+    const maxR = Math.max(0, filteredBlocks.length > 0 ? Math.floor((filteredBlocks.length - 1) / cols) : 0);
     return {
       maxX: PADDING + cols * (BLOCK_SIZE + SPACING),
       maxY: PADDING + (maxR + 1) * (BLOCK_SIZE + SPACING)
     };
-  }, [pocketBlocks.length, layoutWidth]);
+  }, [filteredBlocks.length, layoutWidth]);
 
   const arrangedBlocks = useMemo(() => {
     type SortableBlock = typeof pocketBlocks[0] & {
@@ -64,7 +76,7 @@ export const PocketCanvas: React.FC<PocketCanvasProps> = ({ containerWidth, cont
       originalTime?: number;
     };
     
-    const sorted = [...pocketBlocks] as SortableBlock[];
+    const sorted = [...filteredBlocks] as SortableBlock[];
     
     if (pocketSortMode === 'pitch') {
       sorted.sort((a, b) => (a.midiNumber || 0) - (b.midiNumber || 0));
@@ -84,7 +96,7 @@ export const PocketCanvas: React.FC<PocketCanvasProps> = ({ containerWidth, cont
         yOffset: PADDING + row * (BLOCK_SIZE + SPACING)
       };
     });
-  }, [pocketBlocks, pocketSortMode, layoutWidth]);
+  }, [filteredBlocks, pocketSortMode, layoutWidth]);
 
   useEffect(() => {
     setArrangedPocketBlocks(arrangedBlocks);

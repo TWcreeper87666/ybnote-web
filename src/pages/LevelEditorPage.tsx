@@ -162,6 +162,12 @@ export const LevelEditorPage: React.FC = () => {
     if (activeTab === 'blocks' || activeTab === 'charting') {
       syncGameBlocksToCanvas();
       setMode('select');
+      const midiData = useLevelEditorStore.getState().midiData;
+      if (midiData) {
+         import('../utils/midiUtils').then(({ parseParsedMidiDataToPocketBlocks }) => {
+            parseParsedMidiDataToPocketBlocks(midiData);
+         });
+      }
     }
   }, [activeTab, setMode]);
 

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
-import { Download, SortAsc, LayoutGrid } from 'lucide-react';
+import { Download, SortAsc, LayoutGrid, Filter } from 'lucide-react';
 import { parseMidiToPocketBlocks } from '../../utils/midiUtils';
 import { PocketCanvas } from '../canvas/PocketCanvas';
 import { FloatingWindow } from './FloatingWindow';
@@ -14,6 +14,7 @@ export const PocketCanvasPanel: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(280);
   const [containerHeight, setContainerHeight] = useState(280);
+  const [showOnlyMissing, setShowOnlyMissing] = useState(false);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -46,23 +47,35 @@ export const PocketCanvasPanel: React.FC = () => {
     >
       {isPocketCanvasOpen && (
         <>
-      <div style={{ display: 'flex', gap: '8px', padding: '0 8px 8px 8px', borderBottom: '1px solid var(--panel-border)', flexShrink: 0 }}>
-        <label className="toolbar-btn" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '4px', background: 'var(--panel-bg)', borderRadius: '4px', fontSize: '14px' }}>
-            <Download size={16} style={{ marginRight: '4px' }} /> Load .mid
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '0 8px 8px 8px', borderBottom: '1px solid var(--panel-border)', flexShrink: 0 }}>
+        {window.location.hash.includes('editor') ? null : (
+        <label className="toolbar-btn" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '2px', background: 'var(--panel-bg)', borderRadius: '4px', fontSize: '13px', boxSizing: 'border-box' }}>
+            <Download size={14} style={{ marginRight: '4px' }} /> Load .mid
             <input type="file" accept=".mid,.midi" style={{ display: 'none' }} onChange={handleImport} />
         </label>
+        )}
         
-        <button 
-            className="toolbar-btn" 
-            style={{ flex: 1, padding: '4px', background: 'var(--panel-bg)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}
-            onClick={() => setPocketSortMode(pocketSortMode === 'pitch' ? 'time' : 'pitch')}
-        >
-            <SortAsc size={16} style={{ marginRight: '4px' }} /> Sort: {pocketSortMode === 'pitch' ? 'Pitch' : 'Time'}
-        </button>
+        <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
+            <button 
+                className="toolbar-btn" 
+                style={{ flex: 1, padding: '2px', background: 'var(--panel-bg)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }}
+                onClick={() => setPocketSortMode(pocketSortMode === 'pitch' ? 'time' : 'pitch')}
+            >
+                <SortAsc size={14} style={{ marginRight: '4px' }} /> Sort: {pocketSortMode === 'pitch' ? 'Pitch' : 'Time'}
+            </button>
+
+            <button 
+                className="toolbar-btn" 
+                style={{ flex: 1, padding: '2px', background: showOnlyMissing ? 'var(--panel-border)' : 'var(--panel-bg)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }}
+                onClick={() => setShowOnlyMissing(!showOnlyMissing)}
+            >
+                <Filter size={14} style={{ marginRight: '4px' }} /> Missing
+            </button>
+        </div>
       </div>
 
       <div ref={containerRef} className="pocket-canvas-container" style={{ flex: 1, overflow: 'hidden', position: 'relative', borderRadius: '4px', margin: '0 8px 8px 8px' }}>
-          <PocketCanvas containerWidth={containerWidth} containerHeight={containerHeight} />
+          <PocketCanvas containerWidth={containerWidth} containerHeight={containerHeight} showOnlyMissing={showOnlyMissing} />
       </div>
       </>
       )}

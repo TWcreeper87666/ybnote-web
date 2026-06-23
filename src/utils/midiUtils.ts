@@ -227,3 +227,48 @@ export const parseMidiToPocketBlocks = async (file: File) => {
 
     useStore.getState().setPocketBlocks(pocketBlocks);
 };
+
+export const parseParsedMidiDataToPocketBlocks = (midiData: import('../types').ParsedMidiData) => {
+    const uniqueNotes = new Map<string, { pitch: string, instrument: string, midiNumber: number, firstTime: number }>();
+    
+    midiData.tracks.forEach(track => {
+      const instrument = track.instrument;
+      track.notes.forEach(note => {
+         const pitch = note.name;
+         const key = `${pitch}-${instrument}`;
+         if (!uniqueNotes.has(key)) {
+             // We can guess midiNumber roughly if it's missing, but it's optional
+             // Alternatively, let's just parse the pitch string if we really need it, but note.midi might exist if we add it to EditorNote. 
+             // Wait, EditorNote doesn't have midi number. We can just use string compare for sort, or assume pocketCanvas can sort by pitch name if midiNumber is 0.
+             uniqueNotes.set(key, { pitch, instrument, midiNumber: 0, firstTime: note.timeStart });
+         } else {
+             const existing = uniqueNotes.get(key)!;
+             if (note.timeStart < existing.firstTime) {
+                 existing.firstTime = note.timeStart;
+             }
+         }
+      });
+    });
+
+    const generateId = () => Math.random().toString(36).substring(2, 9);
+    const notesArray = Array.from(uniqueNotes.values());
+    
+    // Simple sort by pitch name since midiNumber isn't strictly available in ParsedMidiData easily
+    notesArray.sort((a, b) => a.pitch.localeCompare(b.pitch));
+
+    const pocketBlocks: Block[] = [];
+    notesArray.forEach((noteInfo) => {
+        pocketBlocks.push({
+            id: generateId(),
+            x: 0,
+            y: 0,
+            pitch: noteInfo.pitch,
+            instrument: noteInfo.instrument,
+            volume: 1,
+            originalTime: noteInfo.firstTime,
+            midiNumber: noteInfo.midiNumber
+        });
+    });
+
+    useStore.getState().setPocketBlocks(pocketBlocks);
+};
