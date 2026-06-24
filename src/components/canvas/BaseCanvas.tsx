@@ -2,19 +2,19 @@
 import React, { useState, useEffect } from "react";
 import { Application } from "@pixi/react";
 import { Plus } from "lucide-react";
-import { useStore } from "../../store/useStore";
-import { isLevelEditor } from "../../utils/routeUtils";
 import { PlayCanvas } from "./PlayCanvas";
-import { EditorCanvas } from "./EditorCanvas";
+import { usePlaygroundStore } from "../../store";
+import { useCanvasStore } from "../../store/useCanvasStore";
+import { EditorCanvasWithStore } from "./EditorCanvasWithStore";
 
 interface BaseCanvasProps {
   children?: React.ReactNode;
 }
 
 export const BaseCanvas: React.FC<BaseCanvasProps> = ({ children }) => {
-  const store = useStore();
+  const store = usePlaygroundStore((s) => s);
   const { mode, latestPerformHit } = store;
-  const blocks = isLevelEditor() ? store.gameBlocks : store.blocks;
+  const blocks = useCanvasStore((s) => s.blocks);
 
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -31,7 +31,7 @@ export const BaseCanvas: React.FC<BaseCanvasProps> = ({ children }) => {
         {isPlay ? (
           <PlayCanvas blocks={blocks}>{children}</PlayCanvas>
         ) : (
-          <EditorCanvas blocks={blocks}>{children}</EditorCanvas>
+          <EditorCanvasWithStore></EditorCanvasWithStore>
         )}
       </Application>
 

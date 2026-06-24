@@ -8,8 +8,8 @@ export type TrailStroke = {
 };
 
 export const TrailRenderer: React.FC<{ 
-  activeStrokesRef: React.MutableRefObject<TrailStroke[]>;
-  currentStrokeId: React.MutableRefObject<number | null>;
+  activeStrokesRef: React.RefObject <TrailStroke[]>;
+  currentStrokeId: React.RefObject <number | null>;
 }> = ({ activeStrokesRef, currentStrokeId }) => {
   const gRef = useRef<PIXI.Graphics>(null);
 

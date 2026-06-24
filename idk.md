@@ -1,3 +1,27 @@
+# shit
+- game outliner can't goto
+
+- [x] settings store
+- [ ] playground
+- [ ] game
+- [ ] level-editor
+
+
+
+
+
+  // eslint-disable-next-line react-hooks/purity
+
+
+
+
+
+
+
+
+
+
+
 # bug
 audio delay when no interaction
 

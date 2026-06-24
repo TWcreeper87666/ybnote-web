@@ -1,9 +1,8 @@
 import { useEffect } from 'react';
-import { isLevelEditor } from '../utils/routeUtils';
 import { useStore, undoAction, redoAction } from '../store/useStore';
-
 import { useLevelEditorStore } from '../store/useLevelEditorStore';
 
+/** Shared shortcuts for all scenarios (Playground, Editor, Game) */
 export const useShortcuts = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -17,11 +16,6 @@ export const useShortcuts = () => {
       if (isHoveringPocket && state.interactionContext !== 'pocket') {
         useStore.getState().setInteractionContext('pocket');
         state = useStore.getState();
-      }
-
-      // Disable canvas shortcuts if we are in the level editor's pianoroll tab
-      if (isLevelEditor() && useLevelEditorStore.getState().activeTab === 'pianoroll') {
-        return;
       }
 
       // Check if user is typing in an input field
@@ -116,27 +110,15 @@ export const useShortcuts = () => {
             break;
           case 'z':
             e.preventDefault();
-            if (isLevelEditor()) {
-              if (e.shiftKey) {
-                useLevelEditorStore.getState().redo();
-              } else {
-                useLevelEditorStore.getState().undo();
-              }
+            if (e.shiftKey) {
+              redoAction();
             } else {
-              if (e.shiftKey) {
-                redoAction();
-              } else {
-                undoAction();
-              }
+              undoAction();
             }
             break;
           case 'y':
             e.preventDefault();
-            if (isLevelEditor()) {
-              useLevelEditorStore.getState().redo();
-            } else {
-              redoAction();
-            }
+            redoAction();
             break;
         }
       } else {
@@ -174,6 +156,46 @@ export const useShortcuts = () => {
           } else {
             state.clearSelection();
           }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+};
+
+/**
+ * Level Editor-specific shortcuts
+ * Handles: pianoroll tab disabling, editor-focused undo/redo
+ */
+export const useLevelEditorShortcuts = () => {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const editorState = useLevelEditorStore.getState();
+
+      // Disable canvas shortcuts if in pianoroll tab
+      if (editorState.activeTab === 'pianoroll') {
+        return;
+      }
+
+      // Editor-specific undo/redo routing (override useShortcuts)
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key.toLowerCase()) {
+          case 'z':
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (e.shiftKey) {
+              editorState.redo();
+            } else {
+              editorState.undo();
+            }
+            break;
+          case 'y':
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            editorState.redo();
+            break;
         }
       }
     };

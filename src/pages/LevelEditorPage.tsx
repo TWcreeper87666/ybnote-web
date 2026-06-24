@@ -1,9 +1,11 @@
 import React, { useEffect } from "react";
 import { useLevelEditorStore } from "../store/useLevelEditorStore";
+import { useLevelEditorCanvasStore } from "../store/useLevelEditorCanvasStore";
 import { useStore } from "../store/useStore";
+import { CanvasStoreProvider } from "../store/CanvasStoreProvider";
 import { PianoRoll } from "../components/editor/PianoRoll";
 import { LevelEditorToolbar } from "../components/editor/LevelEditorToolbar";
-import { EditorCanvas } from "../components/canvas/EditorCanvas";
+import { EditorCanvasWithStore } from "../components/canvas/EditorCanvasWithStore";
 import { ChartingTab } from "../components/editor/ChartingTab";
 import { WaveformView } from "../components/editor/WaveformView";
 import { TrackPanel } from "../components/editor/TrackPanel";
@@ -17,10 +19,11 @@ import { HelpPanel } from "../components/ui/HelpPanel";
 import { OutlinerPanel } from "../components/ui/OutlinerPanel";
 import { PocketCanvasPanel } from "../components/ui/PocketCanvasPanel";
 import { PocketDragOverlay } from "../components/ui/PocketDragOverlay";
-import { useShortcuts } from "../hooks/useShortcuts";
-import type { CameraState, Point } from "../types";
+import { useShortcuts, useLevelEditorShortcuts } from "../hooks/useShortcuts";
+import { useSettingsStore } from "../store";
 
 const ShortcutsEnabler = () => {
+  useLevelEditorShortcuts();
   useShortcuts();
   return null;
 };
@@ -169,17 +172,10 @@ const GlobalPlayhead = () => {
 };
 
 export const LevelEditorPage: React.FC = () => {
+  const { theme } = useSettingsStore((s) => s);
   const store = useLevelEditorStore();
   const { activeTab } = store;
-  const {
-    theme,
-    setMode,
-    editorCamera,
-    editorGroupRects,
-    editorTracks,
-    showGrid,
-    // editorGameBlocks,
-  } = useStore();
+  const { setMode } = useStore();
 
   const [trackPanelWidth, setTrackPanelWidth] = React.useState(250);
   const [waveformHeight, setWaveformHeight] = React.useState(128);
@@ -385,125 +381,136 @@ export const LevelEditorPage: React.FC = () => {
                     : "none",
               }}
             >
-              <div
-                className="le-blocks-container"
-                style={{ position: "relative", width: "100%", height: "100%" }}
-              >
-                <ShortcutsEnabler />
-                <BlocksPlaybackSync />
-                <EditorCanvas blocks={[]}
-                />
-                {activeTab === "blocks" && (
-                  <div className="le-blocks-hint">
-                    Drag blocks to arrange your beatmap layout
-                  </div>
-                )}
-
-                {/* Editor UI overlays for blocks mode */}
+              <CanvasStoreProvider store={useLevelEditorCanvasStore}>
                 <div
-                  className="ui-overlay"
+                  className="le-blocks-container"
                   style={{
-                    position: "absolute",
-                    inset: 0,
-                    pointerEvents: "none",
-                    zIndex: 10,
+                    position: "relative",
+                    width: "100%",
+                    height: "100%",
                   }}
                 >
+                  <ShortcutsEnabler />
+                  <BlocksPlaybackSync />
+                  <EditorCanvasWithStore />
                   {activeTab === "blocks" && (
-                    <div
-                      className="ui-pointer-events"
-                      onPointerDown={(e) => {
-                        e.stopPropagation();
-                        if (e.nativeEvent)
-                          e.nativeEvent.stopImmediatePropagation();
-                      }}
-                    >
-                      <Toolbar />
-                      <OutlinerPanel />
-                      <PocketCanvasPanel />
-                      <PocketDragOverlay />
-                      <SettingsPanel />
-                      <HelpPanel />
-                      <SelectionPropertiesHud />
-                      <ContextMenu />
+                    <div className="le-blocks-hint">
+                      Drag blocks to arrange your beatmap layout
                     </div>
                   )}
-                </div>
 
-                {activeTab === "charting" && <ChartingTab />}
-
-                {/* Bottom Mini Player (blocks tab only) */}
-                {activeTab === "blocks" && (
+                  {/* Editor UI overlays for blocks mode */}
                   <div
+                    className="ui-overlay"
                     style={{
                       position: "absolute",
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      padding: "16px 24px",
-                      background:
-                        "linear-gradient(to top, rgba(0,0,0,0.9), transparent)",
+                      inset: 0,
+                      pointerEvents: "none",
                       zIndex: 10,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 12,
                     }}
                   >
-                    <div style={{ color: "white", fontSize: 14, opacity: 0.8 }}>
-                      Preview Playback
-                    </div>
-                    <div
-                      style={{ display: "flex", alignItems: "center", gap: 16 }}
-                    >
-                      <button
-                        onClick={() => store.togglePlayback()}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          color: "white",
-                          cursor: "pointer",
+                    {activeTab === "blocks" && (
+                      <div
+                        className="ui-pointer-events"
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          if (e.nativeEvent)
+                            e.nativeEvent.stopImmediatePropagation();
                         }}
                       >
-                        {store.isPlaying ? (
-                          <Pause size={28} />
-                        ) : (
-                          <Play size={28} />
-                        )}
-                      </button>
+                        <Toolbar />
+                        <OutlinerPanel />
+                        <PocketCanvasPanel />
+                        <PocketDragOverlay />
+                        <SettingsPanel />
+                        <HelpPanel />
+                        <SelectionPropertiesHud />
+                        <ContextMenu />
+                      </div>
+                    )}
+                  </div>
 
-                      <MiniPlayerSlider />
+                  {activeTab === "charting" && <ChartingTab />}
 
+                  {/* Bottom Mini Player (blocks tab only) */}
+                  {activeTab === "blocks" && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        padding: "16px 24px",
+                        background:
+                          "linear-gradient(to top, rgba(0,0,0,0.9), transparent)",
+                        zIndex: 10,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 12,
+                      }}
+                    >
+                      <div
+                        style={{ color: "white", fontSize: 14, opacity: 0.8 }}
+                      >
+                        Preview Playback
+                      </div>
                       <div
                         style={{
                           display: "flex",
                           alignItems: "center",
-                          gap: 8,
+                          gap: 16,
                         }}
                       >
-                        <Volume2 size={20} color="white" />
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          step="1"
-                          value={store.audioVolume}
-                          onChange={(e) =>
-                            store.setAudioVolume(parseFloat(e.target.value))
-                          }
+                        <button
+                          onClick={() => store.togglePlayback()}
                           style={{
-                            width: 80,
-                            accentColor: "#6366f1",
+                            background: "transparent",
+                            border: "none",
+                            color: "white",
                             cursor: "pointer",
                           }}
-                          tabIndex={-1}
-                          onFocus={(e) => e.target.blur()}
-                          onKeyDown={(e) => e.preventDefault()}
-                        />
+                        >
+                          {store.isPlaying ? (
+                            <Pause size={28} />
+                          ) : (
+                            <Play size={28} />
+                          )}
+                        </button>
+
+                        <MiniPlayerSlider />
+
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <Volume2 size={20} color="white" />
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            step="1"
+                            value={store.audioVolume}
+                            onChange={(e) =>
+                              store.setAudioVolume(parseFloat(e.target.value))
+                            }
+                            style={{
+                              width: 80,
+                              accentColor: "#6366f1",
+                              cursor: "pointer",
+                            }}
+                            tabIndex={-1}
+                            onFocus={(e) => e.target.blur()}
+                            onKeyDown={(e) => e.preventDefault()}
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              </CanvasStoreProvider>
             </div>
           </div>
         </div>

@@ -16,13 +16,13 @@ export function useEditorInteraction(
     endSelection: () => void;
     startTrail: (x: number, y: number) => void;
     updateTrail: (x: number, y: number, cb: (p1: Point, p2: Point) => void) => void;
-    isSelectingRef: React.MutableRefObject<boolean>;
+    isSelectingRef: React.RefObject<boolean>;
   },
   checkTrailIntersection: (
     x1: number, y1: number, x2: number, y2: number,
     isFirstPoint?: boolean, startedOnBlock?: boolean,
   ) => void,
-  intersectedBlocksRef: React.MutableRefObject<Set<string>>,
+  intersectedBlocksRef: React.RefObject<Set<string>>,
 ) {
   const {
     startPan, updatePan, endPan,

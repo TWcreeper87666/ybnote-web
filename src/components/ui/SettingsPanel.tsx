@@ -1,25 +1,35 @@
 import React from "react";
-import { useStore } from "../../store/useStore";
 import { Moon, Sun, Grid } from "lucide-react";
 import { ModalPanel } from "./ModalPanel";
 import { isGame } from "../../utils/routeUtils";
+import { useCanvasStore, useSettingsStore, useStore } from "../../store";
 
 export const SettingsPanel: React.FC = () => {
+  const { isSettingsOpen, toggleSettings } = useStore();
+  const blocks = useCanvasStore((s) => s.blocks);
+
   const {
-    isSettingsOpen,
-    toggleSettings,
     theme,
     setTheme,
     setGridConfig,
-    setBlockOpacity,
     showGrid,
     snapToGrid,
+
+    // Controls & Audio
+    masterVolume,
+    setMasterVolume,
+    mouseSensitivity,
+    setMouseSensitivity,
+
+    // Block Display
+    blockOpacity,
+    setBlockOpacity,
     showGroupName,
     showBlockPitch,
     showBlockVolume,
     showBlockInstrument,
-    blockOpacity,
-  } = useStore();
+    setDisplaySettings,
+  } = useSettingsStore();
 
   return (
     <ModalPanel
@@ -85,7 +95,7 @@ export const SettingsPanel: React.FC = () => {
         <h3>Controls & Audio</h3>
         <label className="switch-row">
           <span>
-            Master Volume ({Math.round(useStore.getState().masterVolume * 100)}
+            Master Volume ({Math.round(masterVolume * 100)}
             %)
           </span>
           <input
@@ -93,29 +103,20 @@ export const SettingsPanel: React.FC = () => {
             min="0"
             max="1"
             step="0.05"
-            value={useStore.getState().masterVolume}
-            onChange={(e) =>
-              useStore.getState().setMasterVolume(parseFloat(e.target.value))
-            }
+            value={masterVolume}
+            onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
             style={{ width: "100px" }}
           />
         </label>
         <label className="switch-row">
-          <span>
-            Mouse Sensitivity ({useStore.getState().mouseSensitivity.toFixed(1)}
-            )
-          </span>
+          <span>Mouse Sensitivity ({mouseSensitivity.toFixed(1)})</span>
           <input
             type="range"
             min="0.1"
             max="3"
             step="0.1"
-            value={useStore.getState().mouseSensitivity}
-            onChange={(e) =>
-              useStore
-                .getState()
-                .setMouseSensitivity(parseFloat(e.target.value))
-            }
+            value={mouseSensitivity}
+            onChange={(e) => setMouseSensitivity(parseFloat(e.target.value))}
             style={{ width: "100px" }}
           />
         </label>
@@ -141,9 +142,7 @@ export const SettingsPanel: React.FC = () => {
             type="checkbox"
             checked={!!showGroupName}
             onChange={(e) =>
-              useStore
-                .getState()
-                .setDisplaySettings({ showGroupName: e.target.checked })
+              setDisplaySettings({ showGroupName: e.target.checked })
             }
           />
         </label>
@@ -153,9 +152,7 @@ export const SettingsPanel: React.FC = () => {
             type="checkbox"
             checked={!!showBlockPitch}
             onChange={(e) =>
-              useStore
-                .getState()
-                .setDisplaySettings({ showBlockPitch: e.target.checked })
+              setDisplaySettings({ showBlockPitch: e.target.checked })
             }
           />
         </label>
@@ -165,9 +162,7 @@ export const SettingsPanel: React.FC = () => {
             type="checkbox"
             checked={!!showBlockVolume}
             onChange={(e) =>
-              useStore
-                .getState()
-                .setDisplaySettings({ showBlockVolume: e.target.checked })
+              setDisplaySettings({ showBlockVolume: e.target.checked })
             }
           />
         </label>
@@ -177,9 +172,7 @@ export const SettingsPanel: React.FC = () => {
             type="checkbox"
             checked={!!showBlockInstrument}
             onChange={(e) =>
-              useStore
-                .getState()
-                .setDisplaySettings({ showBlockInstrument: e.target.checked })
+              setDisplaySettings({ showBlockInstrument: e.target.checked })
             }
           />
         </label>
@@ -191,7 +184,7 @@ export const SettingsPanel: React.FC = () => {
           <button
             className="action-btn"
             onClick={() => {
-              const data = JSON.stringify(useStore.getState().blocks, null, 2);
+              const data = JSON.stringify(blocks, null, 2);
               const blob = new Blob([data], { type: "application/json" });
               const url = URL.createObjectURL(blob);
               const a = document.createElement("a");

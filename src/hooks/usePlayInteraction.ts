@@ -5,7 +5,7 @@ import { isLevelEditor } from "../utils/routeUtils";
 import { lineIntersectsRect } from "../utils/geometry";
 import { shiftPitch } from "../utils/pitchUtils";
 
-export function useTrailIntersection(intersectedBlocksRef: React.MutableRefObject<Set<string>>) {
+export function useTrailIntersection(intersectedBlocksRef: React.RefObject<Set<string>>) {
   return useCallback(
     (
       x1: number,
@@ -72,7 +72,7 @@ export function useTrailIntersection(intersectedBlocksRef: React.MutableRefObjec
 export function usePlayInteraction(
   mode: string,
   checkTrailIntersection: ReturnType<typeof useTrailIntersection>,
-  intersectedBlocksRef: React.MutableRefObject<Set<string>>,
+  intersectedBlocksRef: React.RefObject<Set<string>>,
 ) {
   // 進出 pointer lock
   useEffect(() => {

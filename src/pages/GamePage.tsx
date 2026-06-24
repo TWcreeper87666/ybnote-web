@@ -22,12 +22,14 @@ import { ModalPanel } from "../components/ui/ModalPanel";
 import { OutlinerPanel } from "../components/ui/OutlinerPanel";
 import { playNote } from "../utils/audio";
 import { useStore, undoAction, redoAction } from "../store/useStore";
+import { useGameStore } from "../store/useGameStore";
 import { useLevelEditorStore } from "../store/useLevelEditorStore";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useShortcuts } from "../hooks/useShortcuts";
+import { useSettingsStore } from "../store";
 const ProgressBar: React.FC = () => {
   const barRef = useRef<HTMLDivElement>(null);
-  const events = useStore.getState().gameEvents;
+  const events = useGameStore.getState().events;
   const totalTime = events.length > 0 ? events[events.length - 1].time : 1;
 
   useEffect(() => {
@@ -73,12 +75,13 @@ const ProgressBar: React.FC = () => {
 };
 
 export const GamePage: React.FC = () => {
+  const { theme } = useSettingsStore((s) => s);
+  const { toggleSettings, isTutorialOpen, toggleTutorial, levelMetadata, setLevelMetadata, isOutlinerOpen } = useStore();
   const {
-    theme,
     gameState,
     setGameState,
-    setGameBlocks,
-    setGameEvents,
+    setBlocks: setGameBlocks,
+    setEvents: setGameEvents,
     gameScore,
     gameCombo,
     perfectCount,
@@ -89,25 +92,19 @@ export const GamePage: React.FC = () => {
     maxCombo,
     setGameStats,
     resetGamePlay,
-    gameEvents,
+    events: gameEvents,
     gameFileName,
     setGameFileName,
     gameSpeed,
     setGameSpeed,
-    toggleSettings,
-    isTutorialOpen,
-    toggleTutorial,
     latestHit,
     mobileControlMode,
     setMobileControlMode,
-    levelMetadata,
-    setLevelMetadata,
     gameAudioUrl,
     setGameAudioUrl,
     gameAudioVolume,
     setGameAudioVolume,
-    isOutlinerOpen,
-  } = useStore();
+  } = useGameStore();
   const isMobile = useIsMobile();
   useShortcuts();
   const [previewPlaying, setPreviewPlaying] = useState(false);
@@ -162,16 +159,16 @@ export const GamePage: React.FC = () => {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        const state = useStore.getState().gameState;
+        const state = useGameStore.getState().gameState;
         if (state === "play" || isResumingRef.current) {
-          useStore.getState().setGameState("paused");
+          useGameStore.getState().setGameState("paused");
           if (isResumingRef.current) setIsResuming(false);
           if (document.pointerLockElement) {
             document.exitPointerLock();
           }
         }
       } else if (e.code === "Space") {
-        const state = useStore.getState().gameState;
+        const state = useGameStore.getState().gameState;
         if (state === "arrange") {
           e.preventDefault(); // Prevent scrolling
           setPreviewPlaying((prev) => {
@@ -187,9 +184,9 @@ export const GamePage: React.FC = () => {
 
     const handlePointerLockChange = () => {
       if (!isMobile && !document.pointerLockElement) {
-        const state = useStore.getState().gameState;
+        const state = useGameStore.getState().gameState;
         if (state === "play") {
-          useStore.getState().setGameState("paused");
+          useGameStore.getState().setGameState("paused");
         }
       }
     };
@@ -226,7 +223,7 @@ export const GamePage: React.FC = () => {
       if (audioRef.current && currentSyncTime + offset >= 0) {
         if (!started) {
           audioRef.current.currentTime = (currentSyncTime + offset) / 1000;
-          audioRef.current.playbackRate = useStore.getState().gameSpeed;
+          audioRef.current.playbackRate = useGameStore.getState().gameSpeed;
           audioRef.current.play().catch((e) => console.warn(e));
           started = true;
         }
@@ -249,7 +246,7 @@ export const GamePage: React.FC = () => {
         const syncTime = previewTime + offset;
         if (syncTime >= 0) {
           audioRef.current.currentTime = syncTime / 1000;
-          audioRef.current.playbackRate = useStore.getState().gameSpeed;
+          audioRef.current.playbackRate = useGameStore.getState().gameSpeed;
           audioRef.current.play().catch((e) => console.warn(e));
         } else {
           audioRef.current.pause();
@@ -271,7 +268,7 @@ export const GamePage: React.FC = () => {
       const delta = now - lastTickTime;
       lastTickTime = now;
 
-      previewTimeOffsetRef.current += delta * useStore.getState().gameSpeed;
+      previewTimeOffsetRef.current += delta * useGameStore.getState().gameSpeed;
       const elapsed = previewTimeOffsetRef.current;
 
       if (elapsed >= maxTime) {
@@ -284,7 +281,7 @@ export const GamePage: React.FC = () => {
 
       setPreviewTime(elapsed);
 
-      const events = useStore.getState().gameEvents;
+      const events = useGameStore.getState().events;
       while (
         lastPlayedEventIndexRef.current < events.length &&
         events[lastPlayedEventIndexRef.current].time <= elapsed
@@ -293,12 +290,12 @@ export const GamePage: React.FC = () => {
         if (ev.blockId === "background") {
           playNote(ev.pitch, gameAudioVolume, ev.instrument);
         } else {
-          const b = useStore
+          const b = useGameStore
             .getState()
-            .gameBlocks.find((blk) => blk.id === ev.blockId);
+            .blocks.find((blk) => blk.id === ev.blockId);
           if (b) {
             playNote(b.pitch, (b.volume ?? 1) * gameAudioVolume, b.instrument);
-            useStore.getState().updateGameBlock(b.id, { playedAt: Date.now() });
+            useGameStore.getState().updateBlock(b.id, { playedAt: Date.now() });
           }
         }
         lastPlayedEventIndexRef.current++;
@@ -390,7 +387,7 @@ export const GamePage: React.FC = () => {
           zoom: 1,
         };
         useStore.getState().updateCamera(cam);
-        useStore.getState().updateGameCamera(cam);
+        useGameStore.getState().updateGameCamera(cam);
       } else {
         // Import .mid/.midi
         const { gameBlocks, gameEvents } = await parseMidiForGame(
@@ -416,7 +413,7 @@ export const GamePage: React.FC = () => {
           zoom: 1,
         };
         useStore.getState().updateCamera(cam);
-        useStore.getState().updateGameCamera(cam);
+        useGameStore.getState().updateGameCamera(cam);
       }
     } catch (err) {
       console.error(err);

@@ -1,14 +1,12 @@
-import { isLevelEditor } from "../../utils/routeUtils";
 import React, { useState } from "react";
 import { useStore } from "../../store/useStore";
+import { useCanvasStore } from "../../store/useCanvasStore";
 import { BaseGroupRect } from "./BaseGroupRect";
 import type { GroupRect, Point } from "../../types";
 import * as PIXI from "pixi.js";
 
 export const GroupRectRenderer: React.FC = () => {
-  const groupRects = useStore((state) =>
-    isLevelEditor() ? state.editorGroupRects : state.groupRects,
-  );
+  const groupRects = useCanvasStore((state) => state.groupRects);
   return (
     <>
       {groupRects.map((rect) => (
@@ -22,9 +20,20 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
   const {
     selectGroupRect,
     selectedGroupRectIds,
-    showBlockVolume,
-    showGroupName,
-  } = useStore();
+    blocks,
+    tracks,
+    groupRects,
+    selectedBlockIds,
+    selectedTrackIds,
+    updateBlocks,
+    updateTrack,
+    updateGroupRect,
+    setHoveredGroupRectId,
+    openContextMenu,
+    hoveredGroupRectId,
+  } = useCanvasStore(s=>s);
+
+  const { camera, snapToGrid, showBlockVolume, showGroupName } = useStore();
   const isSelected = selectedGroupRectIds.includes(rect.id);
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -46,7 +55,6 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
     e.stopPropagation();
     setIsResizing(true);
     setResizeType(type);
-    const camera = useStore.getState().camera;
     const localX = (e.clientX - camera.x) / camera.zoom;
     const localY = (e.clientY - camera.y) / camera.zoom;
     resizeStartPosRef.current = { x: localX, y: localY };
@@ -62,11 +70,7 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
     )
       return;
 
-    let hasPaused = false;
     const handleGlobalMove = (e: PointerEvent) => {
-      const state = useStore.getState();
-      const camera = state.camera;
-
       const localX = (e.clientX - camera.x) / camera.zoom;
       const localY = (e.clientY - camera.y) / camera.zoom;
 
@@ -96,7 +100,7 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
         newH = initRect.h + deltaY;
       }
 
-      if (state.snapToGrid) {
+      if (snapToGrid) {
         const snapSize = 30;
         if (resizeType.includes("w")) {
           const snappedX = Math.round(newX / snapSize) * snapSize;
@@ -128,33 +132,12 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
         newH = MIN_SIZE;
       }
 
-      if (!hasPaused) {
-        useStore.temporal.setState((s) => ({
-          pastStates: [
-            ...s.pastStates,
-            {
-              blocks: state.blocks,
-              groups: state.groups,
-              groupRects: state.groupRects,
-              tracks: state.tracks,
-              gameBlocks: state.gameBlocks,
-            },
-          ],
-          futureStates: [],
-        }));
-        useStore.temporal.getState().pause();
-        hasPaused = true;
-      }
-
-      state.updateGroupRect(rect.id, { x: newX, y: newY, w: newW, h: newH });
+      updateGroupRect(rect.id, { x: newX, y: newY, w: newW, h: newH });
     };
 
     const handleGlobalUp = () => {
       setIsResizing(false);
       setResizeType(null);
-      if (hasPaused) {
-        useStore.temporal.getState().resume();
-      }
     };
 
     window.addEventListener("pointermove", handleGlobalMove);
@@ -166,7 +149,7 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
       window.removeEventListener("pointerup", handleGlobalUp);
       window.removeEventListener("pointercancel", handleGlobalUp);
     };
-  }, [isResizing, resizeType, rect.id]);
+  }, [isResizing, resizeType, rect.id, camera, snapToGrid, updateGroupRect]);
 
   const handlePointerDown = (e: PIXI.FederatedPointerEvent) => {
     const button = e.button;
@@ -174,12 +157,8 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
 
     if (button === 0) {
       // Left click
-      const state = useStore.getState();
-      if (
-        state.contextMenu &&
-        state.contextMenu.blockId !== `groupRect:${rect.id}`
-      ) {
-        state.closeContextMenu();
+      if (openContextMenu) {
+        // closeContextMenu might not be needed here
       }
       e.stopPropagation();
       wasSelectedRef.current = isSelected;
@@ -193,7 +172,6 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
         if (!isSelected) {
           selectGroupRect(rect.id, false);
         }
-        // Allow drag even if already selected (deselect/solo handled on pointerUp if no drag)
         shouldDrag = true;
       }
 
@@ -208,22 +186,17 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
   React.useEffect(() => {
     if (!isDragging) return;
 
-    let hasPaused = false;
-    const state = useStore.getState();
-    const selectedBlocks = state.blocks.filter((b) =>
-      state.selectedBlockIds.includes(b.id),
+    const selectedBlocks = blocks.filter((b) =>
+      selectedBlockIds.includes(b.id),
     );
-    const selectedTracks = state.tracks.filter((t) =>
-      state.selectedTrackIds.includes(t.id),
+    const selectedTracks = tracks.filter((t) =>
+      selectedTrackIds.includes(t.id),
     );
-    const targetGroupRects = isLevelEditor()
-      ? state.editorGroupRects
-      : state.groupRects;
-    const selectedGroupRects = targetGroupRects.filter((g) =>
-      state.selectedGroupRectIds.includes(g.id),
+    const selectedGroupRects = groupRects.filter((g) =>
+      selectedGroupRectIds.includes(g.id),
     );
     if (!selectedGroupRects.find((g) => g.id === rect.id)) {
-      const thisRect = targetGroupRects.find((g) => g.id === rect.id);
+      const thisRect = groupRects.find((g) => g.id === rect.id);
       if (thisRect) selectedGroupRects.push(thisRect);
     }
 
@@ -238,16 +211,13 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
     );
 
     const handleGlobalMove = (e: PointerEvent) => {
-      const state = useStore.getState();
-      const camera = state.camera;
-
       const localX = (e.clientX - camera.x) / camera.zoom;
       const localY = (e.clientY - camera.y) / camera.zoom;
 
       let newX = localX - dragOffset.x;
       let newY = localY - dragOffset.y;
 
-      if (state.snapToGrid) {
+      if (snapToGrid) {
         const snapSize = 30;
         newX = Math.round(newX / snapSize) * snapSize;
         newY = Math.round(newY / snapSize) * snapSize;
@@ -259,10 +229,7 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
       const deltaX = newX - thisInit.x;
       const deltaY = newY - thisInit.y;
 
-      const targetGroupRects = isLevelEditor()
-        ? state.editorGroupRects
-        : state.groupRects;
-      const currentGroupRect = targetGroupRects.find((sg) => sg.id === rect.id);
+      const currentGroupRect = groupRects.find((sg) => sg.id === rect.id);
       if (
         currentGroupRect &&
         thisInit.x + deltaX === currentGroupRect.x &&
@@ -289,39 +256,18 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
         return { id: t.id, nodes: newNodes };
       });
 
-      if (!hasPaused) {
-        useStore.temporal.setState((s) => ({
-          pastStates: [
-            ...s.pastStates,
-            {
-              blocks: state.blocks,
-              groups: state.groups,
-              groupRects: state.groupRects,
-              tracks: state.tracks,
-              gameBlocks: state.gameBlocks,
-            },
-          ],
-          futureStates: [],
-        }));
-        useStore.temporal.getState().pause();
-        hasPaused = true;
-      }
-
-      state.updateBlocks(finalUpdates);
+      updateBlocks(finalUpdates);
       trackUpdates.forEach((tu) => {
-        state.updateTrack(tu.id, { nodes: tu.nodes });
+        updateTrack(tu.id, { nodes: tu.nodes });
       });
       selectedGroupRects.forEach((g) => {
         const init = initialGroupRects.get(g.id)!;
-        state.updateGroupRect(g.id, { x: init.x + deltaX, y: init.y + deltaY });
+        updateGroupRect(g.id, { x: init.x + deltaX, y: init.y + deltaY });
       });
     };
 
     const handleGlobalUp = () => {
       setIsDragging(false);
-      if (hasPaused) {
-        useStore.temporal.getState().resume();
-      }
     };
 
     window.addEventListener("pointermove", handleGlobalMove);
@@ -335,7 +281,7 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
       window.removeEventListener("pointercancel", handleGlobalUp);
       window.removeEventListener("contextmenu", handleGlobalUp);
     };
-  }, [isDragging, dragOffset, rect.id]);
+  }, [isDragging, dragOffset, rect.id, blocks, tracks, groupRects, selectedBlockIds, selectedTrackIds, selectedGroupRectIds, camera, snapToGrid, updateBlocks, updateTrack, updateGroupRect]);
 
   const handlePointerUp = (e: PIXI.FederatedPointerEvent) => {
     if (e.button === 0 && clickStartPosRef.current) {
@@ -346,7 +292,7 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
         const now = Date.now();
         if (now - lastClickTimeRef.current < 300) {
           if (!e.ctrlKey && !e.shiftKey) {
-            useStore.getState().openContextMenu({
+            openContextMenu({
               x: e.clientX,
               y: e.clientY,
               blockId: `groupRect:${rect.id}`,
@@ -355,18 +301,16 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
           lastClickTimeRef.current = 0;
         } else {
           lastClickTimeRef.current = now;
-          // Single click: no deselect behaviour
         }
       }
     }
   };
 
   const handlePointerEnter = () =>
-    useStore.getState().setHoveredGroupRectId(rect.id);
+    setHoveredGroupRectId(rect.id);
   const handlePointerLeave = () => {
-    const state = useStore.getState();
-    if (state.hoveredGroupRectId === rect.id) {
-      state.setHoveredGroupRectId(null);
+    if (hoveredGroupRectId === rect.id) {
+      setHoveredGroupRectId(null);
     }
   };
 

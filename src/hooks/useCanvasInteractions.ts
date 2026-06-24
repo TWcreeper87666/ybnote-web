@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import type { TrailStroke } from '../components/canvas/shared/TrailRenderer';
+import type { Point } from '../types';
 
 export const useCanvasInteractions = (options?: { onGlobalUp?: (e: PointerEvent) => void }) => {
   const isPanningRef = useRef(false);

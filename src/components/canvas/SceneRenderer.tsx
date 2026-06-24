@@ -19,7 +19,7 @@ interface SceneRendererProps {
   groupDrawBox: { x: number; y: number; w: number; h: number } | null;
   blocks: { id: string; x: number; y: number; pitch: string }[];
   activeStrokesRef: React.RefObject<TrailStroke[]>
-  currentStrokeId: React.RefObject<number> | null;
+  currentStrokeId: React.RefObject<number | null>;
   children?: React.ReactNode;
 }
 

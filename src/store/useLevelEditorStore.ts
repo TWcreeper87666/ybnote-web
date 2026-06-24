@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { sliceAudioBuffer, encodeToMp3 } from '../utils/levelUtils';
 import { syncGameEventsFromMidi, applyMatchResult, matchRecordedHits, syncCanvasToGameBlocks, type RecordedHit } from '../utils/chartUtils';
 import { useStore } from './useStore';
+import { useGameStore } from './useGameStore';
 
 import type { EditorNote, EditorTrack, ParsedMidiData, Block } from '../types';
 
@@ -374,8 +375,8 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
         audioStartTime: 0,
         playbackAnchor: 0,
         bpm: data.bpm,
-        gameBlocks: useStore.getState().gameBlocks ? JSON.parse(JSON.stringify(useStore.getState().gameBlocks)) : [],
-        gameEvents: useStore.getState().gameEvents ? JSON.parse(JSON.stringify(useStore.getState().gameEvents)) : []
+        gameBlocks: JSON.parse(JSON.stringify(useGameStore.getState().blocks ?? [])),
+        gameEvents: JSON.parse(JSON.stringify(useGameStore.getState().events ?? []))
       }],
       historyIndex: 0,
       ghostNoteVisibility: {},
@@ -637,7 +638,7 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
     const s = get();
     if (!s.midiData) return;
     syncCanvasToGameBlocks();
-    const mainState = useStore.getState();
+    const gs = useGameStore.getState();
     const snapshot: HistorySnapshot = {
       tracks: JSON.parse(JSON.stringify(s.midiData.tracks)),
       selectedTrackId: s.selectedTrackId,
@@ -646,8 +647,8 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
       audioStartTime: s.audioStartTime,
       playbackAnchor: s.playbackAnchor,
       bpm: s.bpm,
-      gameBlocks: JSON.parse(JSON.stringify(mainState.gameBlocks)),
-      gameEvents: JSON.parse(JSON.stringify(mainState.gameEvents)),
+      gameBlocks: JSON.parse(JSON.stringify(gs.blocks)),
+      gameEvents: JSON.parse(JSON.stringify(gs.events)),
     };
     const newHistory = s.history.slice(0, s.historyIndex + 1);
     newHistory.push(snapshot);
@@ -713,10 +714,10 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
       }),
       ...(changedTab ? { activeTab: changedTab } : {})
     });
-    const mainState = useStore.getState();
-    if (snapshot.gameBlocks) mainState.setGameBlocks(JSON.parse(JSON.stringify(snapshot.gameBlocks)));
-    if (snapshot.gameEvents) mainState.setGameEvents(JSON.parse(JSON.stringify(snapshot.gameEvents)));
-    mainState.showToast(msg);
+    const gs = useGameStore.getState();
+    if (snapshot.gameBlocks) gs.setBlocks(JSON.parse(JSON.stringify(snapshot.gameBlocks)));
+    if (snapshot.gameEvents) gs.setEvents(JSON.parse(JSON.stringify(snapshot.gameEvents)));
+    useStore.getState().showToast(msg);
   },
 
   redo: () => {
@@ -760,10 +761,10 @@ export const useLevelEditorStore = create<LevelEditorState>()((set, get) => ({
       }),
       ...(changedTab ? { activeTab: changedTab } : {})
     });
-    const mainState = useStore.getState();
-    if (snapshot.gameBlocks) mainState.setGameBlocks(JSON.parse(JSON.stringify(snapshot.gameBlocks)));
-    if (snapshot.gameEvents) mainState.setGameEvents(JSON.parse(JSON.stringify(snapshot.gameEvents)));
-    mainState.showToast(msg);
+    const gs = useGameStore.getState();
+    if (snapshot.gameBlocks) gs.setBlocks(JSON.parse(JSON.stringify(snapshot.gameBlocks)));
+    if (snapshot.gameEvents) gs.setEvents(JSON.parse(JSON.stringify(snapshot.gameEvents)));
+    useStore.getState().showToast(msg);
   },
 
   // --- Clipboard ---
