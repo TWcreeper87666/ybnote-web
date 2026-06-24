@@ -24,4 +24,4 @@ To run this project locally:
 
 ## Note
 
-This project is built via **vibe coding, using Antigravity**.
+This project is built via **vibe coding, hard working**.
