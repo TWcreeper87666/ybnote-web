@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore';
 import { useLevelEditorStore } from '../store/useLevelEditorStore';
 import { getAllChartNotes } from '../utils/chartUtils';
 import { useIsMobile } from './useIsMobile';
+import { isLevelEditor } from '../utils/routeUtils';
 
 export const useBlockDrag = (id: string, x: number, y: number, isSelected: boolean) => {
   const isMobile = useIsMobile();
@@ -114,8 +115,7 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
         return;
       }
       const state = useStore.getState();
-      const isLevelEditor = window.location.hash.includes('/level-editor');
-      const camera = isLevelEditor ? state.gameCamera : state.camera;
+      const camera = state.camera;
       
       const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
       const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
@@ -176,7 +176,7 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
       setIsDragging(false);
       if (hasPaused) {
         useStore.temporal.getState().resume();
-        if (window.location.hash.includes('/level-editor')) {
+        if (isLevelEditor()) {
           import('../store/useLevelEditorStore').then(({ useLevelEditorStore }) => {
             useLevelEditorStore.getState().commitHistory();
           });

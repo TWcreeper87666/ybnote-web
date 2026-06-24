@@ -3,6 +3,7 @@ import { useStore, undoAction, redoAction } from '../../store/useStore';
 import { Settings, Music, Drum, Trash2, Undo2, Redo2, LayoutList, LayoutGrid, PenTool, HelpCircle, Square, Wand2, Circle, Upload } from 'lucide-react';
 import { exportRecordedEventsToMidi } from '../../utils/midiUtils';
 import { ToolbarButton } from './ToolbarButton';
+import { isLevelEditor } from '../../utils/routeUtils';
 import { ToolbarDivider } from './ToolbarDivider';
 
 export const Toolbar: React.FC = () => {
@@ -66,7 +67,7 @@ export const Toolbar: React.FC = () => {
 
       <div className="toolbar glass-panel">
 
-      {!window.location.hash.includes('/level-editor') && (
+      {!isLevelEditor() && (
         <>
           <ToolbarButton 
             onClick={undoAction}

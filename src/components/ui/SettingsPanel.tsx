@@ -2,6 +2,7 @@ import React from 'react';
 import { useStore } from '../../store/useStore';
 import { Moon, Sun, Grid } from 'lucide-react';
 import { ModalPanel } from './ModalPanel';
+import { isGame } from '../../utils/routeUtils';
 
 export const SettingsPanel: React.FC = () => {
   const { isSettingsOpen, toggleSettings, theme, setTheme, showGrid, snapToGrid, setGridConfig, blockOpacity, setBlockOpacity } = useStore();
@@ -122,7 +123,7 @@ export const SettingsPanel: React.FC = () => {
         </div>
 
         {/* Actions - Hidden in Game Mode */}
-        {!window.location.hash.includes('/game') && (
+        {!isGame() && (
           <div className="settings-actions">
           <button 
             className="action-btn"

@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../../store/useStore';
+import { isLevelEditor } from '../../utils/routeUtils';
 import { getPitchColorNumber } from '../../utils/colors';
 
 export const PocketDragOverlay: React.FC = () => {
   const activePocketDrag = useStore(state => state.activePocketDrag);
   const pianoKeysCount = useStore(state => state.pianoKeysCount);
-  const mainCameraZoom = useStore(state => window.location.hash.includes('/level-editor') ? state.gameCamera.zoom : state.camera.zoom);
+  const mainCameraZoom = useStore(state => state.camera.zoom);
   const pocketCameraZoom = useStore(state => state.pocketCamera.zoom);
   const [mousePos, setMousePos] = useState<{x: number, y: number} | null>(null);
   const [isInsidePocket, setIsInsidePocket] = useState(true);
@@ -42,8 +43,7 @@ export const PocketDragOverlay: React.FC = () => {
         }
 
         // Calculate Main Canvas drop position
-        const isLevelEditor = window.location.hash.includes('/level-editor');
-        const camera = isLevelEditor ? state.gameCamera : state.camera;
+        const camera = state.camera;
         
         // Find canvas rect
         const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('.main-wrapper canvas');

@@ -4,6 +4,7 @@ import { Download, SortAsc, LayoutGrid, Filter } from 'lucide-react';
 import { parseMidiToPocketBlocks } from '../../utils/midiUtils';
 import { PocketCanvas } from '../canvas/PocketCanvas';
 import { FloatingWindow } from './FloatingWindow';
+import { isLevelEditor } from '../../utils/routeUtils';
 
 export const PocketCanvasPanel: React.FC = () => {
   const isPocketCanvasOpen = useStore(state => state.isPocketCanvasOpen);
@@ -47,18 +48,18 @@ export const PocketCanvasPanel: React.FC = () => {
     >
       {isPocketCanvasOpen && (
         <>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '0 8px 8px 8px', borderBottom: '1px solid var(--panel-border)', flexShrink: 0 }}>
-        {window.location.hash.includes('editor') ? null : (
-        <label className="toolbar-btn" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '2px', background: 'var(--panel-bg)', borderRadius: '4px', fontSize: '13px', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '0 4px 4px 4px', borderBottom: '1px solid var(--panel-border)', flexShrink: 0 }}>
+        {isLevelEditor() ? null : (
+        <label className="toolbar-btn" style={{ width: '100%', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '0 4px', background: 'var(--panel-bg)', borderRadius: '4px', fontSize: '12px', boxSizing: 'border-box' }}>
             <Download size={14} style={{ marginRight: '4px' }} /> Load .mid
             <input type="file" accept=".mid,.midi" style={{ display: 'none' }} onChange={handleImport} />
         </label>
         )}
         
-        <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
+        <div style={{ display: 'flex', gap: '2px', width: '100%' }}>
             <button 
                 className="toolbar-btn" 
-                style={{ flex: 1, padding: '2px', background: 'var(--panel-bg)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }}
+                style={{ flex: 1, height: '24px', padding: '0 4px', background: 'var(--panel-bg)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}
                 onClick={() => setPocketSortMode(pocketSortMode === 'pitch' ? 'time' : 'pitch')}
             >
                 <SortAsc size={14} style={{ marginRight: '4px' }} /> Sort: {pocketSortMode === 'pitch' ? 'Pitch' : 'Time'}
@@ -66,7 +67,7 @@ export const PocketCanvasPanel: React.FC = () => {
 
             <button 
                 className="toolbar-btn" 
-                style={{ flex: 1, padding: '2px', background: showOnlyMissing ? 'var(--panel-border)' : 'var(--panel-bg)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }}
+                style={{ flex: 1, height: '24px', padding: '0 4px', background: showOnlyMissing ? 'var(--panel-border)' : 'var(--panel-bg)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}
                 onClick={() => setShowOnlyMissing(!showOnlyMissing)}
             >
                 <Filter size={14} style={{ marginRight: '4px' }} /> Missing

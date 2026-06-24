@@ -237,10 +237,7 @@ export const parseParsedMidiDataToPocketBlocks = (midiData: import('../types').P
          const pitch = note.name;
          const key = `${pitch}-${instrument}`;
          if (!uniqueNotes.has(key)) {
-             // We can guess midiNumber roughly if it's missing, but it's optional
-             // Alternatively, let's just parse the pitch string if we really need it, but note.midi might exist if we add it to EditorNote. 
-             // Wait, EditorNote doesn't have midi number. We can just use string compare for sort, or assume pocketCanvas can sort by pitch name if midiNumber is 0.
-             uniqueNotes.set(key, { pitch, instrument, midiNumber: 0, firstTime: note.timeStart });
+             uniqueNotes.set(key, { pitch, instrument, midiNumber: note.pitch as number, firstTime: note.timeStart });
          } else {
              const existing = uniqueNotes.get(key)!;
              if (note.timeStart < existing.firstTime) {
@@ -253,8 +250,7 @@ export const parseParsedMidiDataToPocketBlocks = (midiData: import('../types').P
     const generateId = () => Math.random().toString(36).substring(2, 9);
     const notesArray = Array.from(uniqueNotes.values());
     
-    // Simple sort by pitch name since midiNumber isn't strictly available in ParsedMidiData easily
-    notesArray.sort((a, b) => a.pitch.localeCompare(b.pitch));
+    notesArray.sort((a, b) => a.midiNumber - b.midiNumber);
 
     const pocketBlocks: Block[] = [];
     notesArray.forEach((noteInfo) => {

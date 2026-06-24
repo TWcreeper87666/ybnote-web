@@ -13,9 +13,12 @@ import { SelectionBoxRenderer, GroupDrawBoxRenderer } from './shared/SelectionBo
 import { useCanvasCamera } from '../../hooks/useCanvasCamera';
 import { useCanvasInteractions } from '../../hooks/useCanvasInteractions';
 import { lineIntersectsRect } from '../../utils/geometry';
+import { isLevelEditor } from '../../utils/routeUtils';
 
 export const Canvas: React.FC = () => {
-  const { blocks, camera, showGrid, theme, mode, latestPerformHit } = useStore();
+  const store = useStore();
+  const { camera, showGrid, theme, mode, latestPerformHit } = store;
+  const blocks = isLevelEditor() ? store.gameBlocks : store.blocks;
   const {
     startPan, updatePan, endPan,
     selectionBox, startSelection, updateSelection, endSelection,
@@ -73,8 +76,9 @@ export const Canvas: React.FC = () => {
         const localX = (globalX - state.camera.x) / state.camera.zoom;
         const localY = (globalY - state.camera.y) / state.camera.zoom;
         
-        for (let i = state.blocks.length - 1; i >= 0; i--) {
-          const b = state.blocks[i];
+        const targetBlocks = isLevelEditor() ? state.gameBlocks : state.blocks;
+        for (let i = targetBlocks.length - 1; i >= 0; i--) {
+          const b = targetBlocks[i];
           if (localX >= b.x && localX <= b.x + 60 && localY >= b.y && localY <= b.y + 60) {
             targetBlockId = b.id;
             break;
@@ -129,12 +133,12 @@ export const Canvas: React.FC = () => {
 
   const checkTrailIntersection = useCallback((x1: number, y1: number, x2: number, y2: number, isFirstPoint = false, startedOnBlock = false) => {
     const state = useStore.getState();
-    const blocks = state.blocks;
+    const blocksList = isLevelEditor() ? state.gameBlocks : state.blocks;
     const groupRects = state.groupRects;
     
     const currentFrameIntersected = new Set<string>();
 
-    blocks.forEach(b => {
+    blocksList.forEach(b => {
       if (lineIntersectsRect(x1, y1, x2, y2, b.x, b.y, 60, 60)) {
         currentFrameIntersected.add(b.id);
         if (!intersectedBlocksRef.current.has(b.id)) {
@@ -157,7 +161,7 @@ export const Canvas: React.FC = () => {
               return bx < g.x + g.w && bx + bw > g.x && by < g.y + g.h && by + bh > g.y;
             };
             
-            const blocksInside = state.blocks.filter(b => isInside(b.x, b.y, 60, 60));
+            const blocksInside = blocksList.filter(b => isInside(b.x, b.y, 60, 60));
             if (blocksInside.length > 0) {
               state.updateBlocks(blocksInside.map(b => ({
                 id: b.id,
@@ -244,7 +248,8 @@ export const Canvas: React.FC = () => {
       const localY = (centerY - state.camera.y) / state.camera.zoom;
       
       let startedOnBlock = false;
-      for (const b of state.blocks) {
+      const targetBlocks = isLevelEditor() ? state.gameBlocks : state.blocks;
+      for (const b of targetBlocks) {
         if (localX >= b.x && localX <= b.x + 60 && localY >= b.y && localY <= b.y + 60) {
           startedOnBlock = true;
           break;
@@ -494,11 +499,11 @@ export const Canvas: React.FC = () => {
       if (!box) return;
       const { x, y, w, h } = box;
       
-      const blocks = useStore.getState().blocks;
+      const blocksList = isLevelEditor() ? useStore.getState().gameBlocks : useStore.getState().blocks;
       const tracks = useStore.getState().tracks;
       const groupRects = useStore.getState().groupRects;
 
-      const directlySelectedBlocks = blocks.filter(b => {
+      const directlySelectedBlocks = blocksList.filter(b => {
         return b.x < x + w && b.x + 60 > x && b.y < y + h && b.y + 60 > y;
       });
       
@@ -516,7 +521,7 @@ export const Canvas: React.FC = () => {
         ...directlySelectedGroupRects.filter(g => g.groupId).map(g => g.groupId as string)
       ]);
 
-      const selectedIds = blocks.filter(b => directlySelectedBlocks.includes(b) || (b.groupId && activeGroupIds.has(b.groupId))).map(b => b.id);
+      const selectedIds = blocksList.filter(b => directlySelectedBlocks.includes(b) || (b.groupId && activeGroupIds.has(b.groupId))).map(b => b.id);
       const selectedTIds = tracks.filter(t => directlySelectedTracks.includes(t) || (t.groupId && activeGroupIds.has(t.groupId))).map(t => t.id);
       const selectedGIds = groupRects.filter(g => directlySelectedGroupRects.includes(g) || (g.groupId && activeGroupIds.has(g.groupId))).map(g => g.id);
       

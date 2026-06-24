@@ -16,6 +16,8 @@ import { SelectionPropertiesHud } from '../components/ui/SelectionPropertiesHud'
 import { ContextMenu } from '../components/ui/ContextMenu';
 import { HelpPanel } from '../components/ui/HelpPanel';
 import { OutlinerPanel } from '../components/ui/OutlinerPanel';
+import { PocketCanvasPanel } from '../components/ui/PocketCanvasPanel';
+import { PocketDragOverlay } from '../components/ui/PocketDragOverlay';
 import { useShortcuts } from '../hooks/useShortcuts';
 
 const ShortcutsEnabler = () => {
@@ -160,7 +162,6 @@ export const LevelEditorPage: React.FC = () => {
 
   useEffect(() => {
     if (activeTab === 'blocks' || activeTab === 'charting') {
-      syncGameBlocksToCanvas();
       setMode('select');
       const midiData = useLevelEditorStore.getState().midiData;
       if (midiData) {
@@ -330,6 +331,8 @@ export const LevelEditorPage: React.FC = () => {
                     >
                       <Toolbar />
                       <OutlinerPanel />
+                      <PocketCanvasPanel />
+                      <PocketDragOverlay />
                       <SettingsPanel />
                       <HelpPanel />
                       <SelectionPropertiesHud />

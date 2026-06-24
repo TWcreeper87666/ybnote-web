@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { temporal } from 'zundo';
+import { isLevelEditor } from '../utils/routeUtils';
 
 let historyDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let isHistoryPausedForContinuous = false;
@@ -394,7 +395,7 @@ export const useStore = create<AppState>()(
             
             // Try to get editor state to check validity
             let editorState: { midiData: { tracks: { instrument: string, notes: { name: string }[] }[] } } | null = null;
-            const isEditor = window.location.hash.includes('editor');
+            const isEditor = isLevelEditor();
             if (isEditor) {
               try {
                 editorState = (window as { levelEditorStore?: { getState: () => { midiData: { tracks: { instrument: string, notes: { name: string }[] }[] } } } }).levelEditorStore?.getState() || null;
@@ -1079,7 +1080,7 @@ export const useStore = create<AppState>()(
     {
       partialize: (state) => ({ blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks, gameBlocks: state.gameBlocks }), // track history
       onSave: () => {
-        if (typeof window !== 'undefined' && window.location.hash.includes('/level-editor')) {
+        if (typeof window !== 'undefined' && isLevelEditor()) {
           import('./useLevelEditorStore').then(({ useLevelEditorStore }) => {
             useLevelEditorStore.getState().commitHistory();
           });

@@ -30,38 +30,49 @@ export const FloatingWindow: React.FC<FloatingWindowProps> = ({
 }) => {
   const [position, setPosition] = useState(() => {
     if (initialPosition) return initialPosition;
-    
-    // Default to right side
-    const widthStr = String(initialSize?.width || '300');
-    const width = parseInt(widthStr.replace(/[^0-9]/g, ''), 10) || 300;
-    
-    return {
-      x: window.innerWidth - width - 95,
-      y: 80
-    };
+    return { x: -9999, y: 80 };
   });
-  const [hasInitializedPosition, setHasInitializedPosition] = useState(!!initialPosition || !anchorSelector);
+  const [hasInitializedPosition, setHasInitializedPosition] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const windowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!hasInitializedPosition && anchorSelector) {
-      requestAnimationFrame(() => {
-        const btn = document.querySelector(anchorSelector);
-        if (btn) {
-            const rect = btn.getBoundingClientRect();
-            const heightStr = String(initialSize?.height || '400');
-            const height = parseInt(heightStr.replace(/[^0-9]/g, ''), 10) || 400;
-            let defaultY = rect.top + rect.height / 2 - height / 2;
-            defaultY = Math.max(24, Math.min(defaultY, window.innerHeight - height - 24));
-            
-            setPosition(prev => ({ ...prev, y: defaultY }));
-        }
+    if (!hasInitializedPosition && windowRef.current) {
+      if (anchorSelector) {
+        requestAnimationFrame(() => {
+          const btn = document.querySelector(anchorSelector);
+          if (btn && windowRef.current) {
+              const rect = btn.getBoundingClientRect();
+              const parentRect = windowRef.current.parentElement?.getBoundingClientRect() || { top: 0, left: 0 };
+              const heightStr = String(initialSize?.height || '400');
+              const height = parseInt(heightStr.replace(/[^0-9]/g, ''), 10) || 400;
+              let defaultY = (rect.top - parentRect.top) + rect.height / 2 - height / 2;
+              defaultY = Math.max(24, Math.min(defaultY, window.innerHeight - height - 24));
+              
+              const widthStr = String(initialSize?.width || '300');
+              const width = parseInt(widthStr.replace(/[^0-9]/g, ''), 10) || 300;
+              const parentWidth = windowRef.current.parentElement?.clientWidth || window.innerWidth;
+              
+              setPosition({ x: Math.max(0, parentWidth - width - 95), y: defaultY });
+          }
+          setHasInitializedPosition(true);
+        });
+      } else if (!initialPosition) {
+        const widthStr = String(initialSize?.width || '300');
+        const width = parseInt(widthStr.replace(/[^0-9]/g, ''), 10) || 300;
+        const parentWidth = windowRef.current.parentElement?.clientWidth || window.innerWidth;
+        setPosition({
+           x: Math.max(0, parentWidth - width - 95),
+           y: 80
+        });
         setHasInitializedPosition(true);
-      });
+      } else {
+        setPosition(initialPosition);
+        setHasInitializedPosition(true);
+      }
     }
-  }, [hasInitializedPosition, anchorSelector, initialSize]);
+  }, [hasInitializedPosition, anchorSelector, initialSize, initialPosition]);
 
   useEffect(() => {
     if (windowRef.current && initialSize) {
@@ -98,10 +109,11 @@ export const FloatingWindow: React.FC<FloatingWindowProps> = ({
       ref={windowRef}
       className={`outliner-panel glass-panel floating-window ${className}`}
       style={{ 
-        left: position.x, 
+        left: position.x === -9999 ? window.innerWidth : position.x, 
         top: position.y, 
         margin: 0, 
         resize: 'both',
+        visibility: position.x === -9999 ? 'hidden' : 'visible',
         display: isOpen ? 'flex' : 'none',
         flexDirection: 'column',
         ...(minSize && { minWidth: minSize.width, minHeight: minSize.height }),

@@ -4,6 +4,7 @@ import { BaseBlock } from './BaseBlock';
 import { DrumBlock } from './DrumBlock';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import { getPitchColorNumber } from '../../utils/colors';
+import { isLevelEditor } from '../../utils/routeUtils';
 import { useBlockDrag } from '../../hooks/useBlockDrag';
 
 interface NoteBlockProps {
@@ -34,7 +35,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
   const playedVolumeMultiplier = block?.playedVolumeMultiplier ?? 1;
   const lastPlayedRef = React.useRef(playedAt || 0);
 
-  const isEditor = window.location.hash.includes('editor');
+  const isEditor = isLevelEditor();
   const isRecordingChart = useLevelEditorStore((s) => isEditor ? s.isRecordingChart : false);
   const chartingHighlightIds = useLevelEditorStore((s) => s.chartingHighlightIds);
   const isChartingHighlight = chartingHighlightIds.includes(id);
@@ -51,7 +52,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
         useLevelEditorStore.getState().recordChartHit(id, 'block');
       }
       
-      const isLevelEditorPlaying = window.location.hash.includes('editor') && 
+      const isLevelEditorPlaying = isLevelEditor() && 
         (() => {
            try {
              const state = (window as { levelEditorStore?: { getState: () => { isPlaying: boolean } } }).levelEditorStore?.getState();

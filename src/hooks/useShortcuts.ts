@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isLevelEditor } from '../utils/routeUtils';
 import { useStore, undoAction, redoAction } from '../store/useStore';
 
 import { useLevelEditorStore } from '../store/useLevelEditorStore';
@@ -19,7 +20,7 @@ export const useShortcuts = () => {
       }
 
       // Disable canvas shortcuts if we are in the level editor's pianoroll tab
-      if (window.location.hash.includes('/level-editor') && useLevelEditorStore.getState().activeTab === 'pianoroll') {
+      if (isLevelEditor() && useLevelEditorStore.getState().activeTab === 'pianoroll') {
         return;
       }
 
@@ -115,7 +116,7 @@ export const useShortcuts = () => {
             break;
           case 'z':
             e.preventDefault();
-            if (window.location.hash.includes('/level-editor')) {
+            if (isLevelEditor()) {
               if (e.shiftKey) {
                 useLevelEditorStore.getState().redo();
               } else {
@@ -131,7 +132,7 @@ export const useShortcuts = () => {
             break;
           case 'y':
             e.preventDefault();
-            if (window.location.hash.includes('/level-editor')) {
+            if (isLevelEditor()) {
               useLevelEditorStore.getState().redo();
             } else {
               redoAction();

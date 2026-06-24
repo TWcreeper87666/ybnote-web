@@ -22,13 +22,6 @@ export const ConvertModal: React.FC<ConvertModalProps> = ({ isOpen, onClose }) =
 
   if (!isOpen) return null;
 
-  const handleGenerateBlocks = () => {
-    if (!store.midiData) return;
-    const result = generateMissingBlocks(store.midiData);
-    setStatus(`已補齊 ${result.addedBlocks} 個方塊、${result.addedGroupRects} 個 GroupRect`);
-    store.commitHistory();
-  };
-
   const handleAutoChart = () => {
     if (!store.midiData) return;
     const updated = autoChart(store.midiData, { cdRadius, strategy, onlyUnassigned });
@@ -73,33 +66,6 @@ export const ConvertModal: React.FC<ConvertModalProps> = ({ isOpen, onClose }) =
             <X size={16} />
           </button>
         </div>
-
-        <section>
-          <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 8, fontWeight: 600 }}>
-            補齊方塊
-          </div>
-          <p style={{ margin: '0 0 10px', fontSize: 13, opacity: 0.8 }}>
-            掃描 MIDI 音調，補齊缺少的方塊或 GroupRect（group_rect 軌道）。
-          </p>
-          <button
-            className="le-cm-item"
-            onClick={handleGenerateBlocks}
-            disabled={!store.midiData}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 12px',
-              cursor: store.midiData ? 'pointer' : 'not-allowed',
-              opacity: store.midiData ? 1 : 0.5,
-            }}
-          >
-            <RefreshCw size={16} /> Generate Missing Blocks
-          </button>
-        </section>
-
-        <div style={{ height: 1, background: 'rgba(255,255,255,0.1)' }} />
 
         <section>
           <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 8, fontWeight: 600 }}>

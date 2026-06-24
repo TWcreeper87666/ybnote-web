@@ -4,6 +4,9 @@ audio delay when no interaction
 # midi
 整理樂器script, 方便新增
 
+# pocket canavs
+- instrument filter
+
 # level-editor:
 - help panel update
 - remove velocity modify completely
@@ -41,6 +44,9 @@ mobile editor/level-editor page
 
 my ToolbarDivider is kinda useless
 css seperate
+template check
+dup code check
+types organize
 mobile interact blue rect remove?
 remove useless module
 
