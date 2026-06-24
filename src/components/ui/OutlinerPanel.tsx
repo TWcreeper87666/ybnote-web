@@ -1,26 +1,30 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
 import { useStore } from '../../store/useStore';
+import { useCanvasStore } from '../../store/useCanvasStore';
+import { CanvasStoreContext } from '../../store/CanvasStoreContext';
 import { Search, Music, LayoutList, GitBranch, Square, ChevronRight, ChevronDown, Keyboard, Check, CheckSquare, Play, Pause } from 'lucide-react';
 import { FloatingWindow } from './FloatingWindow';
 
-// Smooth camera animation helper
-const animateCameraTo = (targetX: number, targetY: number, duration = 300) => {
-  const state = useStore.getState();
-  const startX = state.camera.x;
-  const startY = state.camera.y;
+// Smooth camera animation helper — animates the camera via a provided updateCamera fn
+const animateCameraTo = (
+  targetX: number,
+  targetY: number,
+  startCamera: { x: number; y: number },
+  updateCamera: (c: { x: number; y: number }) => void,
+  duration = 300,
+) => {
+  const startX = startCamera.x;
+  const startY = startCamera.y;
   const startTime = performance.now();
 
   const tick = (now: number) => {
     const elapsed = now - startTime;
     const t = Math.min(elapsed / duration, 1);
-    // ease-out cubic
     const ease = 1 - Math.pow(1 - t, 3);
-
-    useStore.getState().updateCamera({
+    updateCamera({
       x: startX + (targetX - startX) * ease,
       y: startY + (targetY - startY) * ease,
     });
-
     if (t < 1) requestAnimationFrame(tick);
   };
 
@@ -30,13 +34,34 @@ const animateCameraTo = (targetX: number, targetY: number, duration = 300) => {
 type FilterState = { notes: boolean; groups: boolean; tracks: boolean; enable: boolean };
 
 export const OutlinerPanel: React.FC = () => {
+  const canvasStoreCtx = useContext(CanvasStoreContext);
+
+  // Canvas-specific state from context store (playground/editor) or global store fallback
+  const canvasBlocks = useCanvasStore((s) => s.blocks);
+  const canvasGroupRects = useCanvasStore((s) => s.groupRects);
+  const canvasTracks = useCanvasStore((s) => s.tracks);
+  const canvasCamera = useCanvasStore((s) => s.camera);
+  const selectedBlockIds = useCanvasStore((s) => s.selectedBlockIds);
+  const selectedGroupRectIds = useCanvasStore((s) => s.selectedGroupRectIds);
+  const selectedTrackIds = useCanvasStore((s) => s.selectedTrackIds);
+  const selectBlock = useCanvasStore((s) => s.selectBlock);
+  const updateBlock = useCanvasStore((s) => s.updateBlock);
+  const updateGroupRect = useCanvasStore((s) => s.updateGroupRect);
+  const selectGroupRect = useCanvasStore((s) => s.selectGroupRect);
+  const selectTrack = useCanvasStore((s) => s.selectTrack);
+
+  // Game/UI state from global store
   const {
-    blocks: defaultBlocks, groupRects, tracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds,
-    isOutlinerOpen, 
-    selectBlock, updateBlock, updateGroupRect, selectGroupRect, selectTrack,
+    isOutlinerOpen,
     searchQuery, setSearchQuery,
-    camera: defaultCamera, gameState, gameBlocks, updateGameBlock, gameCamera
+    gameState, gameBlocks, updateGameBlock, gameCamera
   } = useStore();
+
+  const defaultBlocks = canvasBlocks;
+  const groupRects = canvasGroupRects;
+  const tracks = canvasTracks;
+  const defaultCamera = canvasCamera;
+
 
   const blocks = gameState === 'arrange' ? gameBlocks : defaultBlocks;
   const activeUpdateBlock = gameState === 'arrange' ? updateGameBlock : updateBlock;
@@ -52,12 +77,11 @@ export const OutlinerPanel: React.FC = () => {
   useEffect(() => {
     const handleFind = (e: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
       const id = e.detail;
-      
+
       // Force open outliner panel if closed
       useStore.setState({ isOutlinerOpen: true });
-      
-      // Determine if we need to expand a group and check if item is disabled
-      const state = useStore.getState();
+
+      const cs = canvasStoreCtx ? (canvasStoreCtx.getState() as any) : useStore.getState();
       let needsNotes = false;
       let needsGroups = false;
       let needsTracks = false;
@@ -65,18 +89,18 @@ export const OutlinerPanel: React.FC = () => {
 
       if (id.startsWith('groupRect:')) {
          needsGroups = true;
-         const gr = state.groupRects.find(g => g.id === id.split(':')[1]);
+         const gr = cs.groupRects?.find((g: any) => g.id === id.split(':')[1]);
          if (gr && gr.enabled === false) isDisabled = true;
       } else if (id.startsWith('track:')) {
          needsTracks = true;
-         const tr = state.tracks.find(t => t.id === id.split(':')[1]);
+         const tr = cs.tracks?.find((t: any) => t.id === id.split(':')[1]);
          if (tr && tr.enabled === false) isDisabled = true;
       } else {
          needsNotes = true;
-         const block = state.blocks.find(b => b.id === id);
+         const block = cs.blocks?.find((b: any) => b.id === id);
          if (block) {
            if ((block as any /* eslint-disable-line @typescript-eslint/no-explicit-any */).enabled === false) isDisabled = true;
-           for (const gr of state.groupRects) {
+           for (const gr of (cs.groupRects ?? [])) {
              const bCenterX = block.x + 30;
              const bCenterY = block.y + 30;
              if (bCenterX >= gr.x && bCenterX <= gr.x + gr.w && bCenterY >= gr.y && bCenterY <= gr.y + gr.h) {
@@ -117,10 +141,10 @@ export const OutlinerPanel: React.FC = () => {
   }, []);
 
   const handleShiftClick = (clickedId: string, clickedType: 'block' | 'groupRect' | 'track') => {
-    const state = useStore.getState();
-    const lastId = state.lastSelectedId;
-    const lastType = state.lastSelectedType;
-    
+    const cs = canvasStoreCtx ? (canvasStoreCtx.getState() as any) : useStore.getState();
+    const lastId = cs.lastSelectedId;
+    const lastType = cs.lastSelectedType;
+
     if (!lastId || !lastType) {
       if (clickedType === 'block') selectBlock(clickedId, false);
       else if (clickedType === 'groupRect') selectGroupRect(clickedId, false);
@@ -129,7 +153,7 @@ export const OutlinerPanel: React.FC = () => {
     }
 
     const itemEls = Array.from(document.querySelectorAll('.outliner-item'));
-    const getElId = (id: string, type: string) => 
+    const getElId = (id: string, type: string) =>
       type === 'groupRect' ? `outliner-item-groupRect-${id}` :
       type === 'track' ? `outliner-item-track-${id}` :
       `outliner-item-${id}`;
@@ -149,12 +173,11 @@ export const OutlinerPanel: React.FC = () => {
 
     const startIdx = Math.min(clickedIdx, lastIdx);
     const endIdx = Math.max(clickedIdx, lastIdx);
-
     const rangeEls = itemEls.slice(startIdx, endIdx + 1);
-    
-    const newSelectedBlocks = new Set(state.selectedBlockIds);
-    const newSelectedGroups = new Set(state.selectedGroupRectIds);
-    const newSelectedTracks = new Set(state.selectedTrackIds);
+
+    const newSelectedBlocks = new Set(cs.selectedBlockIds as string[]);
+    const newSelectedGroups = new Set(cs.selectedGroupRectIds as string[]);
+    const newSelectedTracks = new Set(cs.selectedTrackIds as string[]);
 
     rangeEls.forEach(el => {
       const id = el.id;
@@ -167,12 +190,12 @@ export const OutlinerPanel: React.FC = () => {
       }
     });
 
-    useStore.setState({
+    canvasStoreCtx?.setState({
       selectedBlockIds: Array.from(newSelectedBlocks),
       selectedGroupRectIds: Array.from(newSelectedGroups),
       selectedTrackIds: Array.from(newSelectedTracks),
       lastSelectedId: clickedId,
-      lastSelectedType: clickedType
+      lastSelectedType: clickedType,
     });
   };
 
@@ -266,6 +289,7 @@ export const OutlinerPanel: React.FC = () => {
       title={<><LayoutList size={18} /> Outliner</>}
       isOpen={isOutlinerOpen}
       onClose={() => useStore.setState({ isOutlinerOpen: false })}
+
       anchorSelector='button[title="Toggle Outliner"], button[title="Outliner"]'
       initialSize={{ width: '310px', height: '400px' }}
       minSize={{ width: '250px', height: '400px' }}
@@ -382,6 +406,7 @@ export const OutlinerPanel: React.FC = () => {
 // ─── GroupRect Item ───────────────────────────────────────────────────────────
 
 const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds, selectBlock, selectGroupRect, selectTrack, updateBlock, updateGroupRect, camera, tracks, handleShiftClick }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
+  const canvasCtx = useContext(CanvasStoreContext);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -425,7 +450,8 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
   const handleGoTo = () => {
     const targetX = -(groupRect.x + groupRect.w / 2) * camera.zoom + window.innerWidth / 2;
     const targetY = -(groupRect.y + groupRect.h / 2) * camera.zoom + window.innerHeight / 2;
-    animateCameraTo(targetX, targetY);
+    const cs = canvasCtx?.getState() as any ?? useStore.getState();
+    animateCameraTo(targetX, targetY, cs.camera, (c) => cs.updateCamera(c));
   };
 
   return (
@@ -498,20 +524,21 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
           className="icon-btn"
           onClick={(e) => {
              e.stopPropagation();
+             const cs = canvasCtx?.getState() as any ?? useStore.getState();
              if (isAllSelected) {
-               useStore.setState(s => ({
-                 selectedGroupRectIds: s.selectedGroupRectIds.filter(id => id !== groupRect.id),
-                 selectedBlockIds: s.selectedBlockIds.filter(id => !blockIdsToSelect.includes(id)),
-                 selectedTrackIds: s.selectedTrackIds.filter(id => !trackIdsToSelect.includes(id))
-               }));
+               canvasCtx?.setState({
+                 selectedGroupRectIds: cs.selectedGroupRectIds.filter((id: string) => id !== groupRect.id),
+                 selectedBlockIds: cs.selectedBlockIds.filter((id: string) => !blockIdsToSelect.includes(id)),
+                 selectedTrackIds: cs.selectedTrackIds.filter((id: string) => !trackIdsToSelect.includes(id)),
+               });
              } else {
-               useStore.setState(s => ({
-                 selectedGroupRectIds: [...new Set([...s.selectedGroupRectIds, groupRect.id])],
-                 selectedBlockIds: [...new Set([...s.selectedBlockIds, ...blockIdsToSelect])],
-                 selectedTrackIds: [...new Set([...s.selectedTrackIds, ...trackIdsToSelect])],
+               canvasCtx?.setState({
+                 selectedGroupRectIds: [...new Set([...cs.selectedGroupRectIds, groupRect.id])],
+                 selectedBlockIds: [...new Set([...cs.selectedBlockIds, ...blockIdsToSelect])],
+                 selectedTrackIds: [...new Set([...cs.selectedTrackIds, ...trackIdsToSelect])],
                  lastSelectedId: groupRect.id,
-                 lastSelectedType: 'groupRect'
-               }));
+                 lastSelectedType: 'groupRect',
+               });
              }
           }}
           title={isAllSelected ? "Deselect Group and Children" : "Select Group and Children"}
@@ -562,12 +589,14 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
 // ─── Block Item ──────────────────────────────────────────────────────────────
 
 const BlockItem = ({ block, selected, selectBlock, camera, handleShiftClick }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
+  const canvasCtx = useContext(CanvasStoreContext);
   const wasSelectedRef = useRef(false);
 
   const handleGoTo = () => {
     const targetX = -(block.x + 30) * camera.zoom + window.innerWidth / 2;
     const targetY = -(block.y + 30) * camera.zoom + window.innerHeight / 2;
-    animateCameraTo(targetX, targetY);
+    const cs = canvasCtx?.getState() as any ?? useStore.getState();
+    animateCameraTo(targetX, targetY, cs.camera, (c) => cs.updateCamera(c));
   };
 
   return (
@@ -615,6 +644,7 @@ const BlockItem = ({ block, selected, selectBlock, camera, handleShiftClick }: a
 // ─── Track Item ──────────────────────────────────────────────────────────────
 
 const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftClick }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
+  const canvasCtx = useContext(CanvasStoreContext);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const wasSelectedRef = useRef(false);
@@ -642,10 +672,10 @@ const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftCli
 
   const handleGoTo = () => {
     if (track.nodes.length === 0) return;
-    // Center on the first node
     const targetX = -track.nodes[0].x * camera.zoom + window.innerWidth / 2;
     const targetY = -track.nodes[0].y * camera.zoom + window.innerHeight / 2;
-    animateCameraTo(targetX, targetY);
+    const cs = canvasCtx?.getState() as any ?? useStore.getState();
+    animateCameraTo(targetX, targetY, cs.camera, (c) => cs.updateCamera(c));
   };
 
   return (
@@ -677,12 +707,14 @@ const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftCli
           value={editName}
           onChange={(e) => setEditName(e.target.value)}
           onBlur={() => {
-            useStore.getState().updateTrack(track.id, { name: editName });
+            const cs = canvasCtx?.getState() as any ?? useStore.getState();
+            cs.updateTrack?.(track.id, { name: editName });
             setIsEditing(false);
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
-              useStore.getState().updateTrack(track.id, { name: editName });
+              const cs = canvasCtx?.getState() as any ?? useStore.getState();
+              cs.updateTrack?.(track.id, { name: editName });
               setIsEditing(false);
             } else if (e.key === 'Escape') {
               setIsEditing(false);

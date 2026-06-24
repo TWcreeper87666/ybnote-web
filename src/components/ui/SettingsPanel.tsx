@@ -1,12 +1,13 @@
-import React from "react";
+import React, { useContext } from "react";
 import { Moon, Sun, Grid } from "lucide-react";
 import { ModalPanel } from "./ModalPanel";
 import { isGame } from "../../utils/routeUtils";
-import { useCanvasStore, useSettingsStore, useStore } from "../../store";
+import { useSettingsStore, useStore } from "../../store";
+import { CanvasStoreContext } from "../../store/CanvasStoreContext";
 
 export const SettingsPanel: React.FC = () => {
   const { isSettingsOpen, toggleSettings } = useStore();
-  const blocks = useCanvasStore((s) => s.blocks);
+  const canvasStoreApi = useContext(CanvasStoreContext);
 
   const {
     theme,
@@ -184,7 +185,7 @@ export const SettingsPanel: React.FC = () => {
           <button
             className="action-btn"
             onClick={() => {
-              const data = JSON.stringify(blocks, null, 2);
+              const data = JSON.stringify(canvasStoreApi?.getState().blocks ?? [], null, 2);
               const blob = new Blob([data], { type: "application/json" });
               const url = URL.createObjectURL(blob);
               const a = document.createElement("a");

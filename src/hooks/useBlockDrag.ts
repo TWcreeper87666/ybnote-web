@@ -1,10 +1,13 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useContext } from "react";
+import { useStore as useZustandStore } from "zustand";
 import { useStore } from "../store/useStore";
 import { useLevelEditorStore } from "../store/useLevelEditorStore";
 import { getAllChartNotes } from "../utils/chartUtils";
 import { useIsMobile } from "./useIsMobile";
 import { isLevelEditor } from "../utils/routeUtils";
 import { useSettingsStore } from "../store";
+import { CanvasStoreContext } from "../store/CanvasStoreContext";
+import type { CameraState } from "../types";
 
 export const useBlockDrag = (
   id: string,
@@ -13,7 +16,13 @@ export const useBlockDrag = (
   isSelected: boolean,
 ) => {
   const { snapToGrid } = useSettingsStore((s) => s);
-  const { camera } = useStore();
+
+  // Use canvas context store if available (playground/level editor), else fall back to global store
+  const canvasStoreCtx = useContext(CanvasStoreContext);
+  const camera = useZustandStore(
+    (canvasStoreCtx ?? useStore) as Parameters<typeof useZustandStore>[0],
+    (s: any) => s.camera as CameraState,
+  );
 
   const isMobile = useIsMobile();
   const [isDragging, setIsDragging] = useState(false);
@@ -27,8 +36,10 @@ export const useBlockDrag = (
   const lastClickTimeRef = useRef(0);
 
   const handlePointerDown = (e: import("pixi.js").FederatedPointerEvent) => {
-    const state = useStore.getState();
-    if (state.gameState === "play") return;
+    // Use context store if available
+    const cs = canvasStoreCtx ? (canvasStoreCtx.getState() as any) : useStore.getState();
+    const mode = cs?.mode;
+    if (mode === "play") return;
 
     const editorState = useLevelEditorStore.getState();
     if (
@@ -56,10 +67,12 @@ export const useBlockDrag = (
     const isMultiSelect = e.ctrlKey || e.shiftKey;
 
     if (button === 0) {
-      if (state.contextMenu && state.contextMenu.blockId !== id) {
-        state.closeContextMenu();
+      if (cs?.contextMenu && cs.contextMenu.blockId !== id) {
+        cs.closeContextMenu?.();
+        // Also close in global store for context menu rendering
+        useStore.getState().closeContextMenu();
       }
-      e.stopPropagation(); // prevent canvas from handling left click box selection
+      e.stopPropagation();
       wasSelectedRef.current = isSelected;
       clickStartPosRef.current = {
         x: e.clientX,
@@ -68,13 +81,12 @@ export const useBlockDrag = (
       };
       let shouldDrag: boolean;
       if (isMultiSelect) {
-        state.selectBlock(id, true);
+        cs?.selectBlock(id, true);
         shouldDrag = !isSelected;
       } else {
         if (!isSelected) {
-          state.selectBlock(id, false);
+          cs?.selectBlock(id, false);
         }
-        // Allow drag even if already selected (deselect/solo handled on pointerUp if no drag)
         shouldDrag = true;
       }
 
@@ -99,8 +111,8 @@ export const useBlockDrag = (
       if (isClick) {
         const now = Date.now();
         if (now - lastClickTimeRef.current < 300) {
-          // Double-click → open context menu
           if (!e.ctrlKey && !e.shiftKey) {
+            // Open context menu in global store (ContextMenu component reads from useStore)
             useStore.getState().openContextMenu({
               x: e.clientX,
               y: e.clientY,
@@ -110,7 +122,6 @@ export const useBlockDrag = (
           lastClickTimeRef.current = 0;
         } else {
           lastClickTimeRef.current = now;
-          // Single click: no deselect behaviour
         }
       }
     }
@@ -119,34 +130,30 @@ export const useBlockDrag = (
   useEffect(() => {
     if (!isDragging) return;
 
+    // Get state from context store if available
+    const cs = canvasStoreCtx ? (canvasStoreCtx.getState() as any) : useStore.getState();
+
     let hasPaused = false;
-    const state = useStore.getState();
-    const selectedBlocks = [
-      ...state.blocks.filter((b) => state.selectedBlockIds.includes(b.id)),
-      ...state.gameBlocks.filter((b) => state.selectedBlockIds.includes(b.id)),
-    ];
-    if (!selectedBlocks.find((b) => b.id === id)) {
-      const thisBlock =
-        state.blocks.find((b) => b.id === id) ||
-        state.gameBlocks.find((b) => b.id === id);
+    const selectedBlocks = cs.blocks?.filter((b: any) => cs.selectedBlockIds?.includes(b.id)) ?? [];
+    if (!selectedBlocks.find((b: any) => b.id === id)) {
+      const thisBlock = cs.blocks?.find((b: any) => b.id === id);
       if (thisBlock) selectedBlocks.push(thisBlock);
     }
-    const selectedTracks = state.tracks.filter((t) =>
-      state.selectedTrackIds.includes(t.id),
+    const selectedTracks = cs.tracks?.filter((t: any) => cs.selectedTrackIds?.includes(t.id)) ?? [];
+    const selectedGroupRects = cs.groupRects?.filter((g: any) => cs.selectedGroupRectIds?.includes(g.id)) ?? [];
+
+    const initialPositions = new Map<string, { x: number; y: number }>(
+      selectedBlocks.map((b: any) => [b.id as string, { x: b.x as number, y: b.y as number }]),
     );
-    const selectedGroupRects = state.groupRects.filter((g) =>
-      state.selectedGroupRectIds.includes(g.id),
+    const initialTrackNodes = new Map<string, { id: string; x: number; y: number }[]>(
+      selectedTracks.map((t: any) => [t.id as string, t.nodes.map((n: any) => ({ ...n })) as { id: string; x: number; y: number }[]]),
+    );
+    const initialGroupRects = new Map<string, { x: number; y: number }>(
+      selectedGroupRects.map((g: any) => [g.id as string, { x: g.x as number, y: g.y as number }]),
     );
 
-    const initialPositions = new Map(
-      selectedBlocks.map((b) => [b.id, { x: b.x, y: b.y }]),
-    );
-    const initialTrackNodes = new Map(
-      selectedTracks.map((t) => [t.id, t.nodes.map((n) => ({ ...n }))]),
-    );
-    const initialGroupRects = new Map(
-      selectedGroupRects.map((g) => [g.id, { x: g.x, y: g.y }]),
-    );
+    // Get the temporal store for undo — playground has temporal, level editor does not
+    const temporalStore = (canvasStoreCtx as any)?.temporal ?? useStore.temporal;
 
     const handleGlobalMove = (e: PointerEvent) => {
       if (
@@ -162,8 +169,8 @@ export const useBlockDrag = (
         (window as { __activeTouches?: number }).__activeTouches! > 1
       ) {
         setIsDragging(false);
-        if (hasPaused) useStore.temporal.getState().resume();
-        useStore.getState().clearSelection();
+        if (hasPaused) temporalStore?.getState().resume();
+        cs?.clearSelection?.();
         return;
       }
 
@@ -191,9 +198,7 @@ export const useBlockDrag = (
       const deltaX = newX - thisInit.x;
       const deltaY = newY - thisInit.y;
 
-      const currentBlock =
-        state.blocks.find((sb) => sb.id === id) ||
-        state.gameBlocks.find((sb) => sb.id === id);
+      const currentBlock = cs.blocks?.find((sb: any) => sb.id === id);
       if (
         currentBlock &&
         thisInit.x + deltaX === currentBlock.x &&
@@ -202,7 +207,7 @@ export const useBlockDrag = (
         return;
       }
 
-      const finalUpdates = selectedBlocks.map((b) => {
+      const finalUpdates = selectedBlocks.map((b: any) => {
         const init = initialPositions.get(b.id)!;
         return {
           id: b.id,
@@ -210,9 +215,9 @@ export const useBlockDrag = (
         };
       });
 
-      const trackUpdates = selectedTracks.map((t) => {
+      const trackUpdates = selectedTracks.map((t: any) => {
         const initNodes = initialTrackNodes.get(t.id)!;
-        const newNodes = initNodes.map((n) => ({
+        const newNodes = initNodes.map((n: any) => ({
           ...n,
           x: n.x + deltaX,
           y: n.y + deltaY,
@@ -221,37 +226,38 @@ export const useBlockDrag = (
       });
 
       if (!hasPaused) {
-        useStore.temporal.setState((s) => ({
-          pastStates: [
-            ...s.pastStates,
-            {
-              blocks: state.blocks,
-              groups: state.groups,
-              groupRects: state.groupRects,
-              tracks: state.tracks,
-              gameBlocks: state.gameBlocks,
-            },
-          ],
-          futureStates: [],
-        }));
-        useStore.temporal.getState().pause();
+        if (temporalStore) {
+          temporalStore.setState((s: any) => ({
+            pastStates: [
+              ...s.pastStates,
+              {
+                blocks: cs.blocks,
+                groups: cs.groups,
+                groupRects: cs.groupRects,
+                tracks: cs.tracks,
+              },
+            ],
+            futureStates: [],
+          }));
+          temporalStore.getState().pause();
+        }
         hasPaused = true;
       }
 
-      state.updateBlocks(finalUpdates);
-      trackUpdates.forEach((tu) => {
-        state.updateTrack(tu.id, { nodes: tu.nodes });
+      cs?.updateBlocks?.(finalUpdates);
+      trackUpdates.forEach((tu: any) => {
+        cs?.updateTrack?.(tu.id, { nodes: tu.nodes });
       });
-      selectedGroupRects.forEach((g) => {
+      selectedGroupRects.forEach((g: any) => {
         const init = initialGroupRects.get(g.id)!;
-        state.updateGroupRect(g.id, { x: init.x + deltaX, y: init.y + deltaY });
+        cs?.updateGroupRect?.(g.id, { x: init.x + deltaX, y: init.y + deltaY });
       });
     };
 
     const handleGlobalUp = () => {
       setIsDragging(false);
       if (hasPaused) {
-        useStore.temporal.getState().resume();
+        temporalStore?.getState().resume();
         if (isLevelEditor()) {
           import("../store/useLevelEditorStore").then(
             ({ useLevelEditorStore }) => {
@@ -261,7 +267,7 @@ export const useBlockDrag = (
         }
       }
       if (isMobile) {
-        useStore.getState().clearSelection();
+        cs?.clearSelection?.();
       }
     };
 

@@ -27,13 +27,13 @@ export const BaseCanvas: React.FC<BaseCanvasProps> = ({ children }) => {
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
-      <Application backgroundAlpha={0} resizeTo={window} antialias={true}>
-        {isPlay ? (
+      {isPlay ? (
+        <Application backgroundAlpha={0} resizeTo={window} antialias={true}>
           <PlayCanvas blocks={blocks}>{children}</PlayCanvas>
-        ) : (
-          <EditorCanvasWithStore></EditorCanvasWithStore>
-        )}
-      </Application>
+        </Application>
+      ) : (
+        <EditorCanvasWithStore />
+      )}
 
       <div
         style={{

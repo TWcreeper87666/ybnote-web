@@ -1,12 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import { useStore } from '../../store/useStore';
+import { CanvasStoreContext } from '../../store/CanvasStoreContext';
+import { useSettingsStore } from '../../store';
 import { getPitchColorNumber } from '../../utils/colors';
 
 export const PocketDragOverlay: React.FC = () => {
   const activePocketDrag = useStore(state => state.activePocketDrag);
-  const pianoKeysCount = useStore(state => state.pianoKeysCount);
   const mainCameraZoom = useStore(state => state.camera.zoom);
   const pocketCameraZoom = useStore(state => state.pocketCamera.zoom);
+  const { snapToGrid, pianoKeysCount } = useSettingsStore();
+  const canvasStoreCtx = useContext(CanvasStoreContext);
+
   const [mousePos, setMousePos] = useState<{x: number, y: number} | null>(null);
   const [isInsidePocket, setIsInsidePocket] = useState(true);
 
@@ -28,7 +32,7 @@ export const PocketDragOverlay: React.FC = () => {
     const handleUp = (e: PointerEvent) => {
       const state = useStore.getState();
       const dragState = state.activePocketDrag;
-      
+
       if (dragState) {
         // Check if inside pocket canvas
         const pocketContainer = document.querySelector('.pocket-canvas-container');
@@ -41,36 +45,32 @@ export const PocketDragOverlay: React.FC = () => {
           }
         }
 
-        // Calculate Main Canvas drop position
-        const camera = state.camera;
-        
-        // Find canvas rect
+        // Use canvas context store for camera and block creation if available
+        const cs = canvasStoreCtx?.getState() as any ?? state;
+        const camera = cs.camera;
+
         const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('.main-wrapper canvas');
         const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
-        
+
         const localX = (e.clientX - rect.left - camera.x) / camera.zoom;
         const localY = (e.clientY - rect.top - camera.y) / camera.zoom;
-        
-        // The mouse is at localX, localY in world space.
-        // We need to offset the block's drop position based on the drag offset.
-        // The primary dragged block was clicked at `dragState.offsetX, offsetY` inside its rect.
+
         const primaryBlockX = localX - dragState.offsetX;
         const primaryBlockY = localY - dragState.offsetY;
-        
-        // For snap to grid
+
         let finalX = primaryBlockX;
         let finalY = primaryBlockY;
-        if (state.snapToGrid) {
+        if (snapToGrid) {
             const snapSize = 30;
             finalX = Math.round(finalX / snapSize) * snapSize;
             finalY = Math.round(finalY / snapSize) * snapSize;
         }
 
         const primaryBlock = dragState.blocks.find(b => b.id === dragState.clickedBlockId) || dragState.blocks[0];
-        
+
         const newBlocks = dragState.blocks.map(b => {
-            const relX = (b as unknown as {xOffset: number}).xOffset - (primaryBlock as unknown as {xOffset: number}).xOffset;
-            const relY = (b as unknown as {yOffset: number}).yOffset - (primaryBlock as unknown as {yOffset: number}).yOffset;
+            const relX = ((b as unknown as {xOffset: number}).xOffset - (primaryBlock as unknown as {xOffset: number}).xOffset);
+            const relY = ((b as unknown as {yOffset: number}).yOffset - (primaryBlock as unknown as {yOffset: number}).yOffset);
             return {
                 ...b,
                 id: Math.random().toString(36).substring(2, 9),
@@ -81,17 +81,18 @@ export const PocketDragOverlay: React.FC = () => {
         });
 
         if (state.gameState === 'arrange') {
-            state.setGameState('arrange'); // redundant but safe
+            state.setGameState('arrange');
             state.setGameBlocks([...state.gameBlocks, ...newBlocks]);
             state.clearSelection();
             newBlocks.forEach(b => state.selectBlock(b.id, true));
         } else {
-            const addedIds = state.addBlocks(newBlocks);
-            state.clearSelection();
-            addedIds.forEach(id => state.selectBlock(id, true));
+            // Add to canvas context store (playground store)
+            const addedIds = cs.addBlocks?.(newBlocks) ?? [];
+            cs.clearSelection?.();
+            addedIds.forEach((id: string) => cs.selectBlock?.(id, true));
         }
       }
-      
+
       state.setActivePocketDrag(null);
     };
 
@@ -102,11 +103,14 @@ export const PocketDragOverlay: React.FC = () => {
       window.removeEventListener('pointerup', handleUp);
       setMousePos(null);
     };
-  }, [activePocketDrag]);
+  }, [activePocketDrag, canvasStoreCtx, snapToGrid]);
 
   if (!activePocketDrag) return null;
 
-  const zoom = isInsidePocket ? pocketCameraZoom : mainCameraZoom;
+  // Use canvas context store zoom for main canvas if available
+  const cs = canvasStoreCtx?.getState() as any;
+  const effectiveMainZoom = cs?.camera?.zoom ?? mainCameraZoom;
+  const zoom = isInsidePocket ? pocketCameraZoom : effectiveMainZoom;
   const size = 60 * zoom;
 
   const displayX = mousePos ? mousePos.x : (activePocketDrag.initialX || 0);
@@ -118,7 +122,7 @@ export const PocketDragOverlay: React.FC = () => {
         const primary = activePocketDrag.blocks.find(b => b.id === activePocketDrag.clickedBlockId) || activePocketDrag.blocks[0];
         const relX = ((block as unknown as {xOffset: number}).xOffset - (primary as unknown as {xOffset: number}).xOffset) * zoom;
         const relY = ((block as unknown as {yOffset: number}).yOffset - (primary as unknown as {yOffset: number}).yOffset) * zoom;
-        
+
         const left = displayX - (activePocketDrag.offsetX * zoom) + relX;
         const top = displayY - (activePocketDrag.offsetY * zoom) + relY;
 

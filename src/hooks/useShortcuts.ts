@@ -1,29 +1,34 @@
-import { useEffect } from 'react';
+import { useEffect, useContext } from 'react';
 import { useStore, undoAction, redoAction } from '../store/useStore';
 import { useLevelEditorStore } from '../store/useLevelEditorStore';
+import { CanvasStoreContext } from '../store/CanvasStoreContext';
 
 /** Shared shortcuts for all scenarios (Playground, Editor, Game) */
 export const useShortcuts = () => {
+  const canvasStoreCtx = useContext(CanvasStoreContext);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      let state = useStore.getState();
+      const globalState = useStore.getState();
 
       // Disable shortcuts during active gameplay
-      if (state.gameState === 'play') return;
+      if (globalState.gameState === 'play') return;
+
+      // Canvas state (blocks, groups, mode) — prefer context store if available
+      const cs = canvasStoreCtx ? (canvasStoreCtx.getState() as any) : globalState;
 
       // Update interaction context if hovering over pocket canvas
       const isHoveringPocket = document.querySelector('.pocket-canvas-container:hover') !== null;
-      if (isHoveringPocket && state.interactionContext !== 'pocket') {
-        useStore.getState().setInteractionContext('pocket');
-        state = useStore.getState();
+      if (isHoveringPocket && globalState.interactionContext !== 'pocket') {
+        globalState.setInteractionContext('pocket');
       }
 
       // Check if user is typing in an input field
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
         if (e.ctrlKey && e.key.toLowerCase() === 'f') {
           e.preventDefault();
-          state.toggleOutliner();
-          if (!state.isOutlinerOpen) {
+          globalState.toggleOutliner();
+          if (!globalState.isOutlinerOpen) {
             setTimeout(() => {
               const searchInput = document.getElementById('outliner-search-input') as HTMLInputElement;
               if (searchInput) searchInput.focus();
@@ -34,25 +39,27 @@ export const useShortcuts = () => {
         return;
       }
 
-      // Hotkey Note Triggering
-      const blocksWithKey = state.blocks.filter(b => b.keyBinding && b.keyBinding.toLowerCase() === e.key.toLowerCase());
+      // Hotkey Note Triggering — use canvas context store blocks
+      const blocks = cs.blocks ?? [];
+      const groupRects = cs.groupRects ?? [];
+      const blocksWithKey = blocks.filter((b: any) => b.keyBinding && b.keyBinding.toLowerCase() === e.key.toLowerCase());
       if (blocksWithKey.length > 0 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        state.updateBlocks(blocksWithKey.map(b => ({ id: b.id, updates: { playedAt: Date.now(), playedVolumeMultiplier: 1 } })));
+        cs.updateBlocks?.(blocksWithKey.map((b: any) => ({ id: b.id, updates: { playedAt: Date.now(), playedVolumeMultiplier: 1 } })));
       }
 
-      // Hotkey GroupRect Triggering
-      const groupsWithKey = state.groupRects.filter(g => g.enabled !== false && g.keyBinding && g.keyBinding.toLowerCase() === e.key.toLowerCase());
+      // Hotkey GroupRect Triggering — use canvas context store
+      const groupsWithKey = groupRects.filter((g: any) => g.enabled !== false && g.keyBinding && g.keyBinding.toLowerCase() === e.key.toLowerCase());
       if (groupsWithKey.length > 0 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        groupsWithKey.forEach(g => {
-          state.updateGroupRect(g.id, { playedAt: Date.now() });
-          
+        groupsWithKey.forEach((g: any) => {
+          cs.updateGroupRect?.(g.id, { playedAt: Date.now() });
+
           const isInside = (bx: number, by: number, bw: number, bh: number) => {
             return bx < g.x + g.w && bx + bw > g.x && by < g.y + g.h && by + bh > g.y;
           };
-          
-          const blocksInside = state.blocks.filter(b => isInside(b.x, b.y, 60, 60));
+
+          const blocksInside = blocks.filter((b: any) => isInside(b.x, b.y, 60, 60));
           if (blocksInside.length > 0) {
-            state.updateBlocks(blocksInside.map(b => ({
+            cs.updateBlocks?.(blocksInside.map((b: any) => ({
               id: b.id,
               updates: { playedAt: Date.now(), playedVolumeMultiplier: g.volume ?? 1 }
             })));
@@ -64,44 +71,44 @@ export const useShortcuts = () => {
       if (e.ctrlKey || e.metaKey) {
         switch (e.key.toLowerCase()) {
           case 'c':
-            if (state.gameState === 'arrange') return;
+            if (globalState.gameState === 'arrange') return;
             e.preventDefault();
-            state.copySelected();
+            cs.copySelected?.();
             break;
           case 'v':
-            if (state.gameState === 'arrange') return;
+            if (globalState.gameState === 'arrange') return;
             e.preventDefault();
-            state.pasteClipboard();
+            cs.pasteClipboard?.();
             break;
           case 'd':
-            if (state.gameState === 'arrange') return;
+            if (globalState.gameState === 'arrange') return;
             e.preventDefault();
-            state.duplicateSelected();
+            cs.duplicateSelected?.();
             break;
           case 'a':
             e.preventDefault();
-            if (state.interactionContext === 'pocket') {
-              state.selectAllPocketBlocks();
+            if (globalState.interactionContext === 'pocket') {
+              globalState.selectAllPocketBlocks();
             } else {
               if (e.shiftKey) {
-                state.selectAllBlocks();
+                cs.selectAllBlocks?.();
               } else {
-                state.selectAll();
+                cs.selectAll?.();
               }
             }
             break;
           case 'g':
             e.preventDefault();
             if (e.shiftKey) {
-              state.ungroupSelected();
+              cs.ungroupSelected?.();
             } else {
-              state.groupSelected();
+              cs.groupSelected?.();
             }
             break;
           case 'f':
             e.preventDefault();
-            state.toggleOutliner();
-            if (!state.isOutlinerOpen) {
+            globalState.toggleOutliner();
+            if (!globalState.isOutlinerOpen) {
               setTimeout(() => {
                 const searchInput = document.getElementById('outliner-search-input') as HTMLInputElement;
                 if (searchInput) searchInput.focus();
@@ -131,30 +138,32 @@ export const useShortcuts = () => {
             '5': 'play'
           };
           const targetMode = keyToMode[e.key];
-          if (state.mode === targetMode) {
-            state.setMode('select');
+          const currentMode = cs.mode ?? globalState.mode;
+          if (currentMode === targetMode) {
+            cs.setMode?.('select');
           } else {
-            state.setMode(targetMode);
+            cs.setMode?.(targetMode);
           }
           return;
         }
 
         if (e.key === 'Delete' || e.key === 'Backspace') {
-          if (state.gameState === 'arrange') return;
-          if (state.activeTrackId) {
-            state.deleteTrack(state.activeTrackId);
-            state.setActiveTrackId(null);
+          if (globalState.gameState === 'arrange') return;
+          const activeTrackId = cs.activeTrackId ?? globalState.activeTrackId;
+          if (activeTrackId) {
+            cs.deleteTrack?.(activeTrackId);
+            cs.setActiveTrackId?.(null);
           }
-          if (state.selectedBlockIds.length > 0 || state.selectedTrackIds.length > 0 || state.selectedGroupRectIds.length > 0) {
-            state.deleteSelected();
+          if ((cs.selectedBlockIds?.length > 0) || (cs.selectedTrackIds?.length > 0) || (cs.selectedGroupRectIds?.length > 0)) {
+            cs.deleteSelected?.();
           }
         } else if (e.key === 'Escape') {
-          if (state.interactionContext === 'pocket') {
-            state.clearPocketSelection();
-          } else if (state.mode !== 'select') {
-            state.setMode('select');
+          if (globalState.interactionContext === 'pocket') {
+            globalState.clearPocketSelection();
+          } else if ((cs.mode ?? globalState.mode) !== 'select') {
+            cs.setMode?.('select');
           } else {
-            state.clearSelection();
+            cs.clearSelection?.();
           }
         }
       }
@@ -162,7 +171,7 @@ export const useShortcuts = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [canvasStoreCtx]);
 };
 
 /**

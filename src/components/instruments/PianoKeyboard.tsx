@@ -1,5 +1,7 @@
-import React, { useRef, useState, useEffect } from "react";
-import { useStore } from "../../store/useStore";
+import React, { useRef, useState, useEffect, useContext } from "react";
+import { usePlaygroundStore } from "../../store/usePlaygroundStore";
+import { CanvasStoreContext } from "../../store/CanvasStoreContext";
+import { useSettingsStore } from "../../store";
 import { playNote } from "../../utils/audio";
 import { X } from "lucide-react";
 import { getPitchColorHex } from "../../utils/colors";
@@ -7,9 +9,12 @@ import { getPitchColorHex } from "../../utils/colors";
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 export const PianoKeyboard: React.FC = () => {
-  const { isPianoOpen, togglePiano } = useStore();
+  const isPianoOpen = usePlaygroundStore((s) => s.isPianoOpen);
+  const togglePiano = usePlaygroundStore((s) => s.togglePiano);
   const pianoKeysCount = 36;
   const keyboardRef = useRef<HTMLDivElement>(null);
+  const canvasStoreCtx = useContext(CanvasStoreContext);
+  const { snapToGrid } = useSettingsStore();
 
   // Draggable piano state
   const [hasDragged, setHasDragged] = useState(false);
@@ -98,29 +103,32 @@ export const PianoKeyboard: React.FC = () => {
           keyboardRef.current &&
           !keyboardRef.current.contains(upEv.target as Node)
         ) {
-          const state = useStore.getState();
-          const rect = document.body.getBoundingClientRect();
-          const x =
-            (upEv.clientX - rect.left - state.camera.x) / state.camera.zoom;
-          const y =
-            (upEv.clientY - rect.top - state.camera.y) / state.camera.zoom;
+          // Use canvas context store for block creation (playground store)
+          const cs = canvasStoreCtx?.getState() as any;
+          if (!cs) return;
 
-          let newX = x - 30; // center of 60x60 block
+          const camera = cs.camera;
+          const canvas = document.querySelector("canvas");
+          const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
+          const x = (upEv.clientX - rect.left - camera.x) / camera.zoom;
+          const y = (upEv.clientY - rect.top - camera.y) / camera.zoom;
+
+          let newX = x - 30;
           let newY = y - 30;
 
-          if (state.snapToGrid) {
+          if (snapToGrid) {
             const snapSize = 30;
             newX = Math.round(newX / snapSize) * snapSize;
             newY = Math.round(newY / snapSize) * snapSize;
           }
 
-          const newBlockId = state.addBlock({
+          const newBlockId = cs.addBlock({
             pitch,
             x: newX,
             y: newY,
-            instrument: instrument,
+            instrument,
           });
-          state.selectBlock(newBlockId, false);
+          cs.selectBlock(newBlockId, false);
         }
       };
 

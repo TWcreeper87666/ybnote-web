@@ -1,4 +1,4 @@
-import type { Block, Group, GroupRect, Track } from '../../types';
+import type { Block, Group, GroupRect, Mode, Track } from '../../types';
 import { generateId } from './generateId';
 import type { CanvasFeature } from './canvasTypes';
 
@@ -671,6 +671,10 @@ export function createCanvasFeature(
     setRunners: (runners) => set({ runners }),
 
     latestPerformHit: null,
+    setLatestPerformHit: (hit) => set({ latestPerformHit: hit }),
+
+    mode: 'select' as Mode,
+    setMode: (mode: Mode) => set({ mode }),
 
     openContextMenu: () => {
       // No-op by default, can be overridden by host store
