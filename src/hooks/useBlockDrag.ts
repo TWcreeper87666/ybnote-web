@@ -125,7 +125,8 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
       let newX = localX - dragOffset.x;
       let newY = localY - dragOffset.y;
       
-      if (state.snapToGrid) {
+      const shouldSnap = isLevelEditor() ? state.editorSnapToGrid : state.snapToGrid;
+      if (shouldSnap) {
         const snapSize = 30;
         newX = Math.round(newX / snapSize) * snapSize;
         newY = Math.round(newY / snapSize) * snapSize;

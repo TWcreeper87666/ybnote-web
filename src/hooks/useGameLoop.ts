@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import { computeTrackControlPoints } from '../utils/spline';
 
-function getBezierPoint(t: number, p0: { x: number; y: number }, p1: { x: number; y: number }, p2: { x: number; y: number }, p3: { x: number; y: number }) {
+function getBezierPoint(t: number, p0: Point, p1: Point, p2: Point, p3: Point) {
   const cX = 3 * (p1.x - p0.x);
   const bX = 3 * (p2.x - p1.x) - cX;
   const aX = p3.x - p0.x - cX - bX;

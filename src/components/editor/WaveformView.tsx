@@ -58,7 +58,7 @@ export const WaveformView: React.FC = () => {
   const panStartScrollX = useRef(0);
 
   // Context menu state
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<Point | null>(null);
   
   // Trimming state
   const [isTrimming, setIsTrimming] = useState(false);

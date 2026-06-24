@@ -62,9 +62,6 @@ export interface Runner {
   progress: number;
 }
 
-export type Theme = 'light' | 'dark';
-export type Mode = 'select' | 'draw_track' | 'piano' | 'drum' | 'draw_group' | 'play';
-
 export interface HitEvent {
   type: 'Perfect' | 'Good' | 'Bad' | 'Miss' | 'Wrong';
   offset: number; // in ms

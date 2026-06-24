@@ -34,8 +34,8 @@ function generateId() {
 }
 
 export function blockDistance(
-  a: { x: number; y: number },
-  b: { x: number; y: number },
+  a: Point,
+  b: Point,
 ): number {
   const ax = a.x + BLOCK_SIZE / 2;
   const ay = a.y + BLOCK_SIZE / 2;

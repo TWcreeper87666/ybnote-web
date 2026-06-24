@@ -3,6 +3,7 @@ import { useStore } from "../../store/useStore";
 import { BaseBlock } from "./BaseBlock";
 import { DrumBlock } from "./DrumBlock";
 import { getPitchColorNumber } from "../../utils/colors";
+import { isLevelEditor } from "../../utils/routeUtils";
 
 interface PocketNoteBlockProps {
   id: string;
@@ -39,8 +40,7 @@ export const PocketNoteBlock: React.FC<PocketNoteBlockProps> = ({
 
   // Check if it's missing on the main canvas
   const isMissingOnMain = useStore((state) => {
-    const allMainBlocks =
-      state.gameState === "arrange" ? state.gameBlocks : state.blocks;
+    const allMainBlocks = isLevelEditor() ? state.gameBlocks : state.blocks;
     return !allMainBlocks.some(
       (b) => b.pitch === pitch && (b.instrument || "piano") === instrument,
     );
@@ -50,7 +50,7 @@ export const PocketNoteBlock: React.FC<PocketNoteBlockProps> = ({
     e: import("pixi.js").FederatedPointerEvent | React.PointerEvent,
   ) => {
     const ev = e as unknown as {
-      data?: { button?: number; global: { x: number; y: number } };
+      data?: { button?: number; global: Point };
       nativeEvent?: PointerEvent;
       button?: number;
       stopPropagation: () => void;
@@ -59,12 +59,12 @@ export const PocketNoteBlock: React.FC<PocketNoteBlockProps> = ({
       metaKey?: boolean;
       currentTarget: {
         parent: {
-          toLocal: (pos: { x: number; y: number }) => { x: number; y: number };
+          toLocal: (pos: Point) => Point;
         };
       };
       clientX?: number;
       clientY?: number;
-      client?: { x: number; y: number };
+      client?: Point;
     };
     const button = ev.data?.button ?? ev.nativeEvent?.button ?? ev.button;
     if (button === 2 || button === 1) {

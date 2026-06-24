@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { isLevelEditor } from '../../utils/routeUtils';
 import { getPitchColorNumber } from '../../utils/colors';
 
 export const PocketDragOverlay: React.FC = () => {

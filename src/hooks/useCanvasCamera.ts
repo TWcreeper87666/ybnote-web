@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useStore } from '../store/useStore';
+import { isLevelEditor } from '../utils/routeUtils';
 
 interface UseCanvasCameraOptions {
   isPlayMode: boolean;
@@ -19,7 +20,12 @@ export const useCanvasCamera = ({ isPlayMode, isActive, isGameCanvas, onWheelInt
       
       e.preventDefault();
       const state = useStore.getState();
-      const activeCamera = isGameCanvas ? state.gameCamera : state.camera;
+      
+      if (state.interactionContext !== 'main') {
+        useStore.getState().setInteractionContext('main');
+      }
+
+      const activeCamera = isGameCanvas ? state.gameCamera : (isLevelEditor() ? state.editorCamera : state.camera);
       const zoomFactor = 1.1;
       const direction = e.deltaY > 0 ? 1 / zoomFactor : zoomFactor;
       

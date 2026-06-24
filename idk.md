@@ -6,6 +6,7 @@ audio delay when no interaction
 
 # pocket canavs
 - instrument filter
+- interactionContext: base on mouse position?
 
 # level-editor:
 - help panel update

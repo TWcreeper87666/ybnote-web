@@ -21,7 +21,7 @@ export const useCanvasInteractions = (options?: { onGlobalUp?: (e: PointerEvent)
     panStartRef.current = { x: x - cameraX, y: y - cameraY };
   }, []);
 
-  const updatePan = useCallback((x: number, y: number, updateCamera: (cam: { x: number; y: number }) => void) => {
+  const updatePan = useCallback((x: number, y: number, updateCamera: (cam: Point) => void) => {
     if (isPanningRef.current) {
       updateCamera({
         x: x - panStartRef.current.x,
@@ -71,7 +71,7 @@ export const useCanvasInteractions = (options?: { onGlobalUp?: (e: PointerEvent)
     });
   }, []);
 
-  const updateTrail = useCallback((localX: number, localY: number, onIntersect?: (p1: { x: number; y: number }, p2: { x: number; y: number }) => void) => {
+  const updateTrail = useCallback((localX: number, localY: number, onIntersect?: (p1: Point, p2: Point) => void) => {
     if (currentStrokeId.current !== null) {
       const stroke = activeStrokesRef.current.find(s => s.id === currentStrokeId.current);
       if (stroke && stroke.points.length > 0) {

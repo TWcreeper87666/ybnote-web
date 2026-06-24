@@ -4,8 +4,8 @@ import { useStore } from '../store/useStore';
 type PocketPointerEvent = {
   clientX: number;
   clientY: number;
-  currentTarget: { parent: { toLocal: (pos: { x: number; y: number }) => { x: number; y: number } } };
-  global: { x: number; y: number };
+  currentTarget: { parent: { toLocal: (pos: Point) => Point } };
+  global: Point;
 };
 
 export const usePocketCanvasInteractions = () => {

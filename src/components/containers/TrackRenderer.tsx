@@ -1,3 +1,4 @@
+import { isLevelEditor } from '../../utils/routeUtils';
 import React, { useState } from 'react';
 import * as PIXI from 'pixi.js';
 import { useStore } from '../../store/useStore';
@@ -6,7 +7,10 @@ import { BaseTrack } from './BaseTrack';
 import type { TrackNode } from '../../types';
 
 export const TrackRenderer: React.FC = () => {
-  const { tracks, runners, mode, activeTrackId, selectedTrackIds, activeNodeDrag, setActiveNodeDrag, removeTrackNode, updateBlocks, updateTrack, updateGroupRect } = useStore();
+  const store = useStore();
+  const { mode, activeTrackId, selectedTrackIds, activeNodeDrag, setActiveNodeDrag, removeTrackNode, updateBlocks, updateTrack, updateGroupRect } = store;
+  const tracks = isLevelEditor() ? store.editorTracks : store.tracks;
+  const runners = isLevelEditor() ? store.editorRunners : store.runners;
   
   const [isTrackDragging, setIsTrackDragging] = useState<{ trackId: string, dragOffset: { x: number, y: number } } | null>(null);
   const lastClickMapRef = React.useRef<Record<string, number>>({});
@@ -18,12 +22,14 @@ export const TrackRenderer: React.FC = () => {
     let hasPaused = false;
     const state = useStore.getState();
     const selectedBlocks = state.blocks.filter(b => state.selectedBlockIds.includes(b.id));
-    const selectedTracks = state.tracks.filter(t => state.selectedTrackIds.includes(t.id));
+    const targetTracks = isLevelEditor() ? state.editorTracks : state.tracks;
+    const selectedTracks = targetTracks.filter(t => state.selectedTrackIds.includes(t.id));
     if (!selectedTracks.find(t => t.id === isTrackDragging.trackId)) {
-      const thisTrack = state.tracks.find(t => t.id === isTrackDragging.trackId);
+      const thisTrack = targetTracks.find(t => t.id === isTrackDragging.trackId);
       if (thisTrack) selectedTracks.push(thisTrack);
     }
-    const selectedGroupRects = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
+    const targetGroupRects = isLevelEditor() ? state.editorGroupRects : state.groupRects;
+    const selectedGroupRects = targetGroupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
     
     const initialPositions = new Map(selectedBlocks.map(b => [b.id, { x: b.x, y: b.y }]));
     const initialTrackNodes = new Map(selectedTracks.map(t => [t.id, t.nodes.map(n => ({...n}))]));
@@ -39,7 +45,8 @@ export const TrackRenderer: React.FC = () => {
       let newX = localX - isTrackDragging.dragOffset.x;
       let newY = localY - isTrackDragging.dragOffset.y;
       
-      if (state.snapToGrid) {
+      const shouldSnap = isLevelEditor() ? state.editorSnapToGrid : state.snapToGrid;
+      if (shouldSnap) {
         const snapSize = 30;
         newX = Math.round(newX / snapSize) * snapSize;
         newY = Math.round(newY / snapSize) * snapSize;
@@ -51,7 +58,8 @@ export const TrackRenderer: React.FC = () => {
       const deltaX = newX - initNodes[0].x;
       const deltaY = newY - initNodes[0].y;
       
-      const currentTrack = state.tracks.find(st => st.id === isTrackDragging.trackId);
+      const targetTracks = isLevelEditor() ? state.editorTracks : state.tracks;
+      const currentTrack = targetTracks.find(st => st.id === isTrackDragging.trackId);
       if (currentTrack && currentTrack.nodes.length > 0 && 
           (initNodes[0].x + deltaX) === currentTrack.nodes[0].x && 
           (initNodes[0].y + deltaY) === currentTrack.nodes[0].y) {
@@ -139,7 +147,8 @@ export const TrackRenderer: React.FC = () => {
        let x = (e.clientX - camera.x) / camera.zoom;
        let y = (e.clientY - camera.y) / camera.zoom;
 
-       if (state.snapToGrid) {
+       const shouldSnap = isLevelEditor() ? state.editorSnapToGrid : state.snapToGrid;
+       if (shouldSnap) {
          const snapSize = 30;
          x = Math.round(x / snapSize) * snapSize;
          y = Math.round(y / snapSize) * snapSize;
@@ -252,7 +261,9 @@ export const TrackRenderer: React.FC = () => {
               const nodeIndex = track.nodes.findIndex((n: TrackNode) => n.id === nodeId);
               if (nodeIndex !== -1) {
                 const state = useStore.getState();
-                const updatedRunners = [...state.runners];
+                const isEditor = isLevelEditor();
+                const targetRunners = isEditor ? state.editorRunners : state.runners;
+                const updatedRunners = [...targetRunners];
                 const runnerIndex = updatedRunners.findIndex(r => r.trackId === track.id);
                 if (runnerIndex !== -1) {
                   updatedRunners[runnerIndex] = { ...updatedRunners[runnerIndex], progress: nodeIndex };

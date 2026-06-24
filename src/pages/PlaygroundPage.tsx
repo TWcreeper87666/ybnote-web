@@ -1,4 +1,4 @@
-import { Canvas } from '../components/canvas/Canvas';
+import { PlaygroundCanvas } from '../components/canvas/PlaygroundCanvas';
 import { Toolbar } from '../components/ui/Toolbar';
 import { PianoKeyboard } from '../components/instruments/PianoKeyboard';
 import { DrumKeyboard } from '../components/instruments/DrumKeyboard';
@@ -27,7 +27,7 @@ export function PlaygroundPage() {
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="main-wrapper">
-        <Canvas />
+        <PlaygroundCanvas />
         <h1 className="app-title">
           YBNote
         </h1>

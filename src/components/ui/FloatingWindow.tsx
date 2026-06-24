@@ -6,7 +6,7 @@ interface FloatingWindowProps {
   isOpen: boolean;
   onClose: () => void;
   children: React.ReactNode;
-  initialPosition?: { x: number; y: number };
+  initialPosition?: Point;
   initialSize?: { width: string | number; height: string | number };
   minSize?: { width: string | number; height: string | number };
   className?: string;
