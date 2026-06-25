@@ -1,26 +1,31 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore } from '../../store/useStore';
+import { useGameStore } from '../../store/useGameStore';
+import { useLevelEditorStore } from '../../store/useLevelEditorStore';
+import { useCanvasContext } from '../canvas/CanvasContext';
+import type { CanvasContextType } from '../canvas/CanvasContext';
+import { getBlocksForContext } from '../../hooks/useActiveCanvas';
 import { Search, Music, LayoutList, GitBranch, Square, ChevronRight, ChevronDown, Keyboard, Check, CheckSquare, Play, Pause } from 'lucide-react';
 import { FloatingWindow } from './FloatingWindow';
 
-// Smooth camera animation helper
-const animateCameraTo = (targetX: number, targetY: number, duration = 300) => {
-  const state = useStore.getState();
-  const startX = state.camera.x;
-  const startY = state.camera.y;
+// Smooth camera animation helper — animates either playground or game camera
+const animateCameraTo = (targetX: number, targetY: number, canvasCtx: CanvasContextType = 'playground', duration = 300) => {
+  const isGame = canvasCtx === 'game';
+  const startCam = isGame ? useGameStore.getState().gameCamera : useStore.getState().camera;
+  const startX = startCam.x;
+  const startY = startCam.y;
   const startTime = performance.now();
 
   const tick = (now: number) => {
     const elapsed = now - startTime;
     const t = Math.min(elapsed / duration, 1);
-    // ease-out cubic
     const ease = 1 - Math.pow(1 - t, 3);
-
-    useStore.getState().updateCamera({
-      x: startX + (targetX - startX) * ease,
-      y: startY + (targetY - startY) * ease,
-    });
-
+    const next = { x: startX + (targetX - startX) * ease, y: startY + (targetY - startY) * ease };
+    if (isGame) {
+      useGameStore.getState().updateGameCamera(next);
+    } else {
+      useStore.getState().updateCamera(next);
+    }
     if (t < 1) requestAnimationFrame(tick);
   };
 
@@ -30,17 +35,34 @@ const animateCameraTo = (targetX: number, targetY: number, duration = 300) => {
 type FilterState = { notes: boolean; groups: boolean; tracks: boolean; enable: boolean };
 
 export const OutlinerPanel: React.FC = () => {
+  const canvasContext = useCanvasContext();
   const {
     blocks: defaultBlocks, groupRects, tracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds,
-    isOutlinerOpen, 
+    isOutlinerOpen,
     selectBlock, updateBlock, updateGroupRect, selectGroupRect, selectTrack,
     searchQuery, setSearchQuery,
-    camera: defaultCamera, gameState, gameBlocks, updateGameBlock, gameCamera
+    camera: defaultCamera,
   } = useStore();
 
-  const blocks = gameState === 'arrange' ? gameBlocks : defaultBlocks;
-  const activeUpdateBlock = gameState === 'arrange' ? updateGameBlock : updateBlock;
-  const camera = gameState === 'arrange' || gameState === 'play' ? gameCamera : defaultCamera;
+  // Always subscribe to both external stores so the panel re-renders reactively
+  const gameBlocks = useGameStore(s => s.gameBlocks);
+  const editorBlocks = useLevelEditorStore(s => s.gameBlocks);
+  const gameCamera = useGameStore(s => s.gameCamera);
+
+  const blocks = canvasContext === 'editor'
+    ? editorBlocks
+    : canvasContext === 'game'
+      ? gameBlocks
+      : defaultBlocks;
+
+  const activeUpdateBlock = canvasContext === 'editor'
+    ? useLevelEditorStore.getState().updateGameBlock
+    : canvasContext === 'game'
+      ? useGameStore.getState().updateGameBlock
+      : updateBlock;
+
+  const camera = canvasContext === 'game' ? gameCamera : defaultCamera;
+  const isGameContext = canvasContext === 'game';
 
   const [filters, setFilters] = useState<FilterState>({ notes: true, groups: true, tracks: true, enable: false });
 
@@ -73,7 +95,8 @@ export const OutlinerPanel: React.FC = () => {
          if (tr && tr.enabled === false) isDisabled = true;
       } else {
          needsNotes = true;
-         const block = state.blocks.find(b => b.id === id);
+         const contextBlocks = getBlocksForContext(canvasContext);
+         const block = contextBlocks.find(b => b.id === id);
          if (block) {
            if ((block as any /* eslint-disable-line @typescript-eslint/no-explicit-any */).enabled === false) isDisabled = true;
            for (const gr of state.groupRects) {
@@ -345,20 +368,22 @@ export const OutlinerPanel: React.FC = () => {
               camera={camera}
               tracks={tracks}
               handleShiftClick={handleShiftClick}
+              isGameContext={isGameContext}
             />
           );
         })}
 
         {/* Ungrouped blocks */}
         {filters.notes && ungroupedBlocks.map(block => (
-          <BlockItem 
-            key={block.id} 
-            block={block} 
-            selected={selectedBlockIds.includes(block.id)} 
-            selectBlock={selectBlock} 
-            updateBlock={activeUpdateBlock} 
+          <BlockItem
+            key={block.id}
+            block={block}
+            selected={selectedBlockIds.includes(block.id)}
+            selectBlock={selectBlock}
+            updateBlock={activeUpdateBlock}
             camera={camera}
             handleShiftClick={handleShiftClick}
+            isGameContext={isGameContext}
           />
         ))}
 
@@ -372,6 +397,7 @@ export const OutlinerPanel: React.FC = () => {
             selectTrack={selectTrack}
             camera={camera}
             handleShiftClick={handleShiftClick}
+            isGameContext={isGameContext}
           />
         ))}
       </div>
@@ -381,7 +407,7 @@ export const OutlinerPanel: React.FC = () => {
 
 // ─── GroupRect Item ───────────────────────────────────────────────────────────
 
-const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds, selectBlock, selectGroupRect, selectTrack, updateBlock, updateGroupRect, camera, tracks, handleShiftClick }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
+const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds, selectBlock, selectGroupRect, selectTrack, updateBlock, updateGroupRect, camera, tracks, handleShiftClick, isGameContext }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -425,7 +451,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
   const handleGoTo = () => {
     const targetX = -(groupRect.x + groupRect.w / 2) * camera.zoom + window.innerWidth / 2;
     const targetY = -(groupRect.y + groupRect.h / 2) * camera.zoom + window.innerHeight / 2;
-    animateCameraTo(targetX, targetY);
+    animateCameraTo(targetX, targetY, isGameContext ? 'game' : 'playground');
   };
 
   return (
@@ -532,14 +558,15 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
       {!isCollapsed && hasChildren && (
         <div className="outliner-group-children">
           {childBlocks.map((block: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => (
-            <BlockItem 
-              key={block.id} 
-              block={block} 
-              selected={selectedBlockIds.includes(block.id)} 
-              selectBlock={selectBlock} 
-              updateBlock={updateBlock} 
+            <BlockItem
+              key={block.id}
+              block={block}
+              selected={selectedBlockIds.includes(block.id)}
+              selectBlock={selectBlock}
+              updateBlock={updateBlock}
               camera={camera}
               handleShiftClick={handleShiftClick}
+              isGameContext={isGameContext}
             />
           ))}
           {childTracks.map((track: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => (
@@ -551,6 +578,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
               selectTrack={selectTrack}
               camera={camera}
               handleShiftClick={handleShiftClick}
+              isGameContext={isGameContext}
             />
           ))}
         </div>
@@ -561,13 +589,13 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
 
 // ─── Block Item ──────────────────────────────────────────────────────────────
 
-const BlockItem = ({ block, selected, selectBlock, camera, handleShiftClick }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
+const BlockItem = ({ block, selected, selectBlock, camera, handleShiftClick, isGameContext }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
   const wasSelectedRef = useRef(false);
 
   const handleGoTo = () => {
     const targetX = -(block.x + 30) * camera.zoom + window.innerWidth / 2;
     const targetY = -(block.y + 30) * camera.zoom + window.innerHeight / 2;
-    animateCameraTo(targetX, targetY);
+    animateCameraTo(targetX, targetY, isGameContext ? 'game' : 'playground');
   };
 
   return (
@@ -614,7 +642,7 @@ const BlockItem = ({ block, selected, selectBlock, camera, handleShiftClick }: a
 
 // ─── Track Item ──────────────────────────────────────────────────────────────
 
-const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftClick }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
+const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftClick, isGameContext }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const wasSelectedRef = useRef(false);
@@ -642,10 +670,9 @@ const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftCli
 
   const handleGoTo = () => {
     if (track.nodes.length === 0) return;
-    // Center on the first node
     const targetX = -track.nodes[0].x * camera.zoom + window.innerWidth / 2;
     const targetY = -track.nodes[0].y * camera.zoom + window.innerHeight / 2;
-    animateCameraTo(targetX, targetY);
+    animateCameraTo(targetX, targetY, isGameContext ? 'game' : 'playground');
   };
 
   return (

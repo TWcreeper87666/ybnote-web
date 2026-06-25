@@ -1,10 +1,12 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
 import { BaseBlock } from './BaseBlock';
 import { DrumBlock } from './DrumBlock';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import { getPitchColorNumber } from '../../utils/colors';
-import { isLevelEditor } from '../../utils/routeUtils';
+import { useCanvasContext } from '../canvas/CanvasContext';
+import type { CanvasContextType } from '../canvas/CanvasContext';
 import { useBlockDrag } from '../../hooks/useBlockDrag';
 
 interface NoteBlockProps {
@@ -12,34 +14,38 @@ interface NoteBlockProps {
   x: number;
   y: number;
   pitch: string;
+  volume?: number;
+  instrument?: string;
+  playedAt?: number;
+  playedVolumeMultiplier?: number;
+  canvasContext?: CanvasContextType;
 }
 
-export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
+export const NoteBlock: React.FC<NoteBlockProps> = ({
+  id, x, y, pitch,
+  volume = 1,
+  instrument = 'piano',
+  playedAt,
+  playedVolumeMultiplier = 1,
+  canvasContext: canvasContextProp,
+}) => {
   const { selectedBlockIds } = useStore();
-  const blockOpacity = useStore(state => state.blockOpacity);
   const isSelected = selectedBlockIds.includes(id);
-  const block = useStore(state => state.blocks.find(b => b.id === id) || state.gameBlocks.find(b => b.id === id));
-  const volume = block?.volume ?? 1;
-  const instrument = block?.instrument ?? 'piano';
-  const playedAt = block?.playedAt;
+  const { blockOpacity, showBlockPitch, showBlockVolume, showBlockInstrument, pianoKeysCount } = useSettingsStore();
 
-  const showBlockPitch = useStore(state => state.showBlockPitch);
-  const showBlockVolume = useStore(state => state.showBlockVolume);
-  const showBlockInstrument = useStore(state => state.showBlockInstrument);
+  const { handlePointerDown, handlePointerUp } = useBlockDrag(id, x, y, isSelected, canvasContextProp);
 
-  const { handlePointerDown, handlePointerUp } = useBlockDrag(id, x, y, isSelected);
-
-  const pianoKeysCount = useStore(state => state.pianoKeysCount);
   const blockColor = getPitchColorNumber(pitch, pianoKeysCount);
-
-  const playedVolumeMultiplier = block?.playedVolumeMultiplier ?? 1;
   const lastPlayedRef = React.useRef(playedAt || 0);
 
-  const isEditor = isLevelEditor();
+  const canvasContextFromHook = useCanvasContext();
+  const canvasContext = canvasContextProp ?? canvasContextFromHook;
+  const isEditor = canvasContext === 'editor';
   const isRecordingChart = useLevelEditorStore((s) => isEditor ? s.isRecordingChart : false);
   const chartingHighlightIds = useLevelEditorStore((s) => s.chartingHighlightIds);
   const isChartingHighlight = chartingHighlightIds.includes(id);
   const midiData = useLevelEditorStore((s) => isEditor ? s.midiData : null);
+
 
   React.useEffect(() => {
     if (playedAt && playedAt !== lastPlayedRef.current) {
@@ -52,17 +58,9 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({ id, x, y, pitch }) => {
         useLevelEditorStore.getState().recordChartHit(id, 'block');
       }
       
-      const isLevelEditorPlaying = isLevelEditor() && 
-        (() => {
-           try {
-             const state = (window as { levelEditorStore?: { getState: () => { isPlaying: boolean } } }).levelEditorStore?.getState();
-             return state?.isPlaying ?? false;
-           } catch {
-             return false;
-           }
-        })();
+      const isEditorPlaying = isEditor && useLevelEditorStore.getState().isPlaying;
 
-      if (!isLevelEditorPlaying) {
+      if (!isEditorPlaying) {
           import('../../utils/audio').then(({ playNote }) => {
               playNote(pitch, volume * playedVolumeMultiplier, instrument);
               if (useStore.getState().mode === 'play') {

@@ -1,5 +1,6 @@
 import { Application, useApplication } from '@pixi/react';
 import { useStore } from '../../store/useStore';
+import { useGameStore } from '../../store/useGameStore';
 import { PocketNoteBlock } from '../blocks/PocketNoteBlock';
 import { usePocketCanvasCamera } from '../../hooks/usePocketCanvasCamera';
 import { useCanvasInteractions } from '../../hooks/useCanvasInteractions';
@@ -29,8 +30,7 @@ interface PocketCanvasProps {
 export const PocketCanvas: React.FC<PocketCanvasProps> = ({ containerWidth, containerHeight, showOnlyMissing }) => {
   const pocketBlocks = useStore(state => state.pocketBlocks);
   const blocks = useStore(state => state.blocks);
-  const gameBlocks = useStore(state => state.gameBlocks);
-  const gameState = useStore(state => state.gameState);
+  const gamePhase = useGameStore(state => state.gamePhase);
   const pocketSortMode = useStore(state => state.pocketSortMode);
   const pocketCamera = useStore(state => state.pocketCamera);
   const clearPocketSelection = useStore(state => state.clearPocketSelection);
@@ -54,11 +54,11 @@ export const PocketCanvas: React.FC<PocketCanvasProps> = ({ containerWidth, cont
 
   const filteredBlocks = useMemo(() => {
     if (!showOnlyMissing) return pocketBlocks;
-    const allMainBlocks = gameState === 'arrange' ? gameBlocks : blocks;
+    const allMainBlocks = gamePhase === 'arrange' ? useGameStore.getState().gameBlocks : blocks;
     return pocketBlocks.filter(pocketBlock => {
       return !allMainBlocks.some(b => b.pitch === pocketBlock.pitch && (b.instrument || 'piano') === pocketBlock.instrument);
     });
-  }, [pocketBlocks, blocks, gameBlocks, gameState, showOnlyMissing]);
+  }, [pocketBlocks, blocks, gamePhase, showOnlyMissing]);
 
   const gridBounds = useMemo(() => {
     const availableWidthForBlocks = layoutWidth - PADDING * 2 + SPACING;

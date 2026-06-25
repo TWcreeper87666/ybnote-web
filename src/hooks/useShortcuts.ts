@@ -1,16 +1,16 @@
 import { useEffect } from 'react';
-import { isLevelEditor } from '../utils/routeUtils';
 import { useStore, undoAction, redoAction } from '../store/useStore';
-
+import { useGameStore } from '../store/useGameStore';
 import { useLevelEditorStore } from '../store/useLevelEditorStore';
+import type { CanvasContextType } from '../components/canvas/CanvasContext';
 
-export const useShortcuts = () => {
+export const useShortcuts = (context: CanvasContextType = 'playground') => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       let state = useStore.getState();
 
       // Disable shortcuts during active gameplay
-      if (state.gameState === 'play') return;
+      if (useGameStore.getState().gamePhase === 'play') return;
 
       // Update interaction context if hovering over pocket canvas
       const isHoveringPocket = document.querySelector('.pocket-canvas-container:hover') !== null;
@@ -20,7 +20,7 @@ export const useShortcuts = () => {
       }
 
       // Disable canvas shortcuts if we are in the level editor's pianoroll tab
-      if (isLevelEditor() && useLevelEditorStore.getState().activeTab === 'pianoroll') {
+      if (context === 'editor' && useLevelEditorStore.getState().activeTab === 'pianoroll') {
         return;
       }
 
@@ -70,17 +70,17 @@ export const useShortcuts = () => {
       if (e.ctrlKey || e.metaKey) {
         switch (e.key.toLowerCase()) {
           case 'c':
-            if (state.gameState === 'arrange') return;
+            if (useGameStore.getState().gamePhase === 'arrange') return;
             e.preventDefault();
             state.copySelected();
             break;
           case 'v':
-            if (state.gameState === 'arrange') return;
+            if (useGameStore.getState().gamePhase === 'arrange') return;
             e.preventDefault();
             state.pasteClipboard();
             break;
           case 'd':
-            if (state.gameState === 'arrange') return;
+            if (useGameStore.getState().gamePhase === 'arrange') return;
             e.preventDefault();
             state.duplicateSelected();
             break;
@@ -116,7 +116,7 @@ export const useShortcuts = () => {
             break;
           case 'z':
             e.preventDefault();
-            if (isLevelEditor()) {
+            if (context === 'editor') {
               if (e.shiftKey) {
                 useLevelEditorStore.getState().redo();
               } else {
@@ -132,7 +132,7 @@ export const useShortcuts = () => {
             break;
           case 'y':
             e.preventDefault();
-            if (isLevelEditor()) {
+            if (context === 'editor') {
               useLevelEditorStore.getState().redo();
             } else {
               redoAction();
@@ -158,7 +158,7 @@ export const useShortcuts = () => {
         }
 
         if (e.key === 'Delete' || e.key === 'Backspace') {
-          if (state.gameState === 'arrange') return;
+          if (useGameStore.getState().gamePhase === 'arrange') return;
           if (state.activeTrackId) {
             state.deleteTrack(state.activeTrackId);
             state.setActiveTrackId(null);

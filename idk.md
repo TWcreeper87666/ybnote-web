@@ -1,8 +1,13 @@
 # bug
 audio delay when no interaction
+noteblock can't delete
+level-editor goto offset (window -> canvas, as a function?)
 
 # midi
 整理樂器script, 方便新增
+
+# canvas object
+- just like canvas use useCanvasStore, why canvas object like noteblock can't do that?
 
 # pocket canavs
 - instrument filter
@@ -11,7 +16,6 @@ audio delay when no interaction
 - help panel update
 - remove velocity modify completely
 - playground canvas, midi and blocks action rethink
-- 我在editor放note，undo會跑到blocks去
 - history fix
 
 
@@ -27,12 +31,9 @@ audio delay when no interaction
 record mode
 midi import/export
 export/ import icon??
-level-editor
-game
 
 # to do
 new object: trigger
-speed options
 yblevel: bg img(move a little with cursor)
 
 
@@ -49,6 +50,7 @@ dup code check
 types organize
 mobile interact blue rect remove?
 remove useless module
+remove useless script
 
 虛擬樂器面板的拖曳邏輯 (Piano / Drum Keyboard)
 相關檔案：instruments/PianoKeyboard.tsx 與 instruments/DrumKeyboard.tsx

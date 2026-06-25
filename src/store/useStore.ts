@@ -1,12 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { temporal } from 'zundo';
-import { isLevelEditor } from '../utils/routeUtils';
 
 let historyDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let isHistoryPausedForContinuous = false;
 
-import type { Block, Group, GroupRect, CameraState, TrackNode, Track, Runner, Theme, Mode, HitEvent } from '../types';
+import type { Block, Group, GroupRect, CameraState, TrackNode, Track, Runner, Mode } from '../types';
 
 interface AppState {
   blocks: Block[];
@@ -21,9 +20,6 @@ interface AppState {
   clipboardTracks: Track[];
   clipboardGroupRects: GroupRect[];
   camera: CameraState;
-  theme: Theme;
-  showGrid: boolean;
-  snapToGrid: boolean;
 
   // UI States
   isPianoOpen: boolean;
@@ -54,12 +50,6 @@ interface AppState {
   interactionContext: 'main' | 'pocket';
   activePocketDrag: { offsetX: number, offsetY: number, blocks: Block[], clickedBlockId: string, initialX?: number, initialY?: number } | null;
 
-  // Display Settings
-  showGroupName: boolean;
-  showBlockPitch: boolean;
-  showBlockVolume: boolean;
-  showBlockInstrument: boolean;
-
   hoveredBlockId: string | null;
   hoveredGroupRectId: string | null;
   activeNodeDrag: { trackId: string, nodeId: string, isNewNode?: boolean } | null;
@@ -71,10 +61,6 @@ interface AppState {
   editingTrackId: string | null;
   activeTrackId: string | null;
 
-  pianoKeysCount: number;
-  blockOpacity: number;
-  mouseSensitivity: number;
-  masterVolume: number;
   contextMenu: { x: number, y: number, blockId: string } | null;
 
   lastSelectedId: string | null;
@@ -116,12 +102,6 @@ interface AppState {
 
   // View & UI
   updateCamera: (camera: Partial<CameraState>) => void;
-  setTheme: (theme: Theme) => void;
-  setGridConfig: (config: { showGrid?: boolean; snapToGrid?: boolean }) => void;
-  setPianoKeysCount: (count: number) => void;
-  setBlockOpacity: (opacity: number) => void;
-  setMouseSensitivity: (sensitivity: number) => void;
-  setMasterVolume: (volume: number) => void;
   openContextMenu: (menu: { x: number, y: number, blockId: string }) => void;
   closeContextMenu: () => void;
   toggleContextMenu: (menu: { x: number, y: number, blockId: string }) => void;
@@ -146,7 +126,6 @@ interface AppState {
   updatePocketCamera: (camera: Partial<CameraState>) => void;
   setInteractionContext: (context: 'main' | 'pocket') => void;
   setActivePocketDrag: (drag: { offsetX: number, offsetY: number, blocks: Block[], clickedBlockId: string, initialX?: number, initialY?: number } | null) => void;
-  setDisplaySettings: (settings: Partial<{ showGroupName: boolean, showBlockPitch: boolean, showBlockVolume: boolean, showBlockInstrument: boolean }>) => void;
 
   // Track & Playback Actions
   addTrack: (track: Omit<Track, 'id'>) => string;
@@ -176,48 +155,6 @@ interface AppState {
   recordEvent: (type: 'block' | 'groupRect', targetId: string) => void;
   clearRecordedEvents: () => void;
 
-  // Game Mode State
-  gameState: 'upload' | 'arrange' | 'play' | 'paused' | 'result';
-  gameFileName: string | null;
-  gameBlocks: Block[];
-  gameSpeed: number;
-  gameEvents: { time: number; pitch: string; instrument: string; blockId: string; }[];
-  gameScore: number;
-  gameCombo: number;
-  perfectCount: number;
-  goodCount: number;
-  badCount: number;
-  missCount: number;
-  wrongCount: number;
-  maxCombo: number;
-  gameResetCount: number;
-  setGameState: (state: AppState['gameState']) => void;
-  setGameFileName: (name: string | null) => void;
-  setGameBlocks: (blocks: Block[]) => void;
-  updateGameBlock: (id: string, updates: Partial<Block>) => void;
-  setGameEvents: (events: AppState['gameEvents']) => void;
-  setGameStats: (stats: Partial<{ gameScore: number, gameCombo: number, perfectCount: number, goodCount: number, badCount: number, missCount: number, wrongCount: number, maxCombo: number, latestHit: HitEvent | null }>) => void;
-  setGameSpeed: (speed: number) => void;
-  mobileControlMode: 'crosshair' | 'touch';
-  setMobileControlMode: (mode: 'crosshair' | 'touch') => void;
-  resetGamePlay: () => void;
-  latestHit: HitEvent | null;
-  gameAudioUrl: string | null;
-  setGameAudioUrl: (url: string | null) => void;
-  gameAudioVolume: number;
-  setGameAudioVolume: (v: number) => void;
-  
-  gameCamera: { x: number; y: number; zoom: number };
-  updateGameCamera: (camera: Partial<{ x: number; y: number; zoom: number }>) => void;
-
-  levelMetadata: {
-    title?: string;
-    author?: string;
-    description?: string;
-    midiCredit?: string;
-  } | null;
-  setLevelMetadata: (metadata: AppState['levelMetadata']) => void;
-
   latestPerformHit: { time: number, color: number } | null;
   setLatestPerformHit: (hit: { time: number, color: number }) => void;
   
@@ -226,13 +163,6 @@ interface AppState {
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
-
-const getSystemTheme = (): Theme => {
-  if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    return 'dark';
-  }
-  return 'light';
-};
 
 export const useStore = create<AppState>()(
   temporal(
@@ -254,9 +184,6 @@ export const useStore = create<AppState>()(
         clipboardTracks: [],
         clipboardGroupRects: [],
         camera: { x: 0, y: 0, zoom: 1 },
-        theme: getSystemTheme(),
-        showGrid: true,
-        snapToGrid: true,
         isPianoOpen: false,
         isSettingsOpen: false,
         isHelpOpen: false,
@@ -273,11 +200,6 @@ export const useStore = create<AppState>()(
         interactionContext: 'main',
         activePocketDrag: null,
 
-        showGroupName: true,
-        showBlockPitch: true,
-        showBlockVolume: true,
-        showBlockInstrument: true,
-
         hoveredBlockId: null,
         hoveredGroupRectId: null,
         activeNodeDrag: null,
@@ -288,10 +210,6 @@ export const useStore = create<AppState>()(
         editingTrackId: null,
         activeTrackId: null,
 
-        pianoKeysCount: 36,
-        blockOpacity: 1,
-        mouseSensitivity: 1,
-        masterVolume: 1,
         contextMenu: null,
 
         lastSelectedId: null,
@@ -300,27 +218,6 @@ export const useStore = create<AppState>()(
         isRecording: false,
         recordedEvents: [],
         recordingStartTime: null,
-
-        gameState: 'upload',
-        gameFileName: null,
-        gameBlocks: [],
-        gameSpeed: 1,
-        gameEvents: [],
-        gameScore: 0,
-        gameCombo: 0,
-        perfectCount: 0,
-        goodCount: 0,
-        badCount: 0,
-        missCount: 0,
-        wrongCount: 0,
-        maxCombo: 0,
-        gameResetCount: 0,
-        mobileControlMode: 'touch',
-        levelMetadata: null,
-        gameAudioUrl: null,
-        gameAudioVolume: 1,
-        
-        gameCamera: { x: 0, y: 0, zoom: 1 },
 
         toastMessage: null,
 
@@ -349,18 +246,12 @@ export const useStore = create<AppState>()(
           if (updates.playedAt !== undefined) {
              get().recordEvent('block', id);
           }
-          if (state.blocks.some(b => b.id === id)) {
-            return { blocks: state.blocks.map(b => b.id === id ? { ...b, ...updates } : b) };
-          }
-          if (state.gameBlocks.some(b => b.id === id)) {
-            return { gameBlocks: state.gameBlocks.map(b => b.id === id ? { ...b, ...updates } : b) };
-          }
-          return state;
+          return { blocks: state.blocks.map(b => b.id === id ? { ...b, ...updates } : b) };
         }),
 
         updateBlocks: (updates) => set((state) => {
           const updateMap = new Map(updates.map(u => [u.id, u.updates]));
-          
+
           updates.forEach(u => {
             if (u.updates.playedAt !== undefined) {
               get().recordEvent('block', u.id);
@@ -369,7 +260,6 @@ export const useStore = create<AppState>()(
 
           const newState: Partial<AppState> = {
             blocks: state.blocks.map(b => updateMap.has(b.id) ? { ...b, ...updateMap.get(b.id)! } : b),
-            gameBlocks: state.gameBlocks.map(b => updateMap.has(b.id) ? { ...b, ...updateMap.get(b.id)! } : b)
           };
           if (updates.length === 1) {
             const u = updates[0].updates;
@@ -382,61 +272,10 @@ export const useStore = create<AppState>()(
         }),
 
         deleteSelected: () => set((state) => {
-          const blocksToRemove = state.blocks.filter((b) => state.selectedBlockIds.includes(b.id));
-          let gameBlocksToRemove = state.gameBlocks.filter((b) => state.selectedBlockIds.includes(b.id));
-
-          // Condition: "只能刪有一個以上同樣音調的" (Only delete if > 1 block of same pitch), UNLESS it's invalid (not in MIDI)
-          if (gameBlocksToRemove.length > 0) {
-            const pitchCounts = new Map<string, number>();
-            state.gameBlocks.forEach(b => {
-              const key = `${b.pitch}-${b.instrument || 'piano'}`;
-              pitchCounts.set(key, (pitchCounts.get(key) || 0) + 1);
-            });
-            
-            // Try to get editor state to check validity
-            let editorState: { midiData: { tracks: { instrument: string, notes: { name: string }[] }[] } } | null = null;
-            const isEditor = isLevelEditor();
-            if (isEditor) {
-              try {
-                editorState = (window as { levelEditorStore?: { getState: () => { midiData: { tracks: { instrument: string, notes: { name: string }[] }[] } } } }).levelEditorStore?.getState() || null;
-              } catch {
-                // Ignore error
-              }
-            }
-
-            gameBlocksToRemove = gameBlocksToRemove.filter(b => {
-              let isInvalid = false;
-              if (editorState && editorState.midiData) {
-                isInvalid = true;
-                const bInst = b.instrument || 'piano';
-                for (const track of editorState.midiData.tracks) {
-                  if (track.instrument === bInst) {
-                    if (track.notes.some((n) => n.name === b.pitch)) {
-                      isInvalid = false;
-                      break;
-                    }
-                  }
-                }
-              }
-
-              if (isInvalid) return true;
-
-              const key = `${b.pitch}-${b.instrument || 'piano'}`;
-              const count = pitchCounts.get(key) || 0;
-              if (count > 1) {
-                pitchCounts.set(key, count - 1);
-                return true;
-              }
-              return false;
-            });
-          }
-
-          const idsToRemove = [...blocksToRemove.map(b=>b.id), ...gameBlocksToRemove.map(b=>b.id)];
-
+          const idsToRemove = state.selectedBlockIds;
           return {
             blocks: state.blocks.filter((b) => !idsToRemove.includes(b.id)),
-            gameBlocks: state.gameBlocks.filter((b) => !idsToRemove.includes(b.id)),
-            selectedBlockIds: state.selectedBlockIds.filter(id => !idsToRemove.includes(id)),
+            selectedBlockIds: [],
             tracks: state.tracks.filter(t => !state.selectedTrackIds.includes(t.id)),
             runners: state.runners.filter(r => !state.selectedTrackIds.includes(r.trackId)),
             selectedTrackIds: [],
@@ -446,10 +285,10 @@ export const useStore = create<AppState>()(
         }),
 
         selectBlock: (id, multi) => set((state) => {
-          const item = state.blocks.find(b => b.id === id) || state.gameBlocks.find(b => b.id === id);
+          const item = state.blocks.find(b => b.id === id);
           const groupId = item?.groupId;
-          const targetBlockIds = groupId 
-            ? [...state.blocks.filter(b => b.groupId === groupId).map(b => b.id), ...state.gameBlocks.filter(b => b.groupId === groupId).map(b => b.id)] 
+          const targetBlockIds = groupId
+            ? state.blocks.filter(b => b.groupId === groupId).map(b => b.id)
             : [id];
           const targetTrackIds = groupId ? state.tracks.filter(t => t.groupId === groupId).map(t => t.id) : [];
           const targetGroupRectIds = groupId ? state.groupRects.filter(g => g.groupId === groupId).map(g => g.id) : [];
@@ -534,13 +373,12 @@ export const useStore = create<AppState>()(
         selectAll: () => set((state) => {
           if (state.selectedGroupRectIds.length > 0) {
             const selectedRects = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
-            
+
             const isInside = (x: number, y: number, w: number = 60, h: number = 60) => {
               return selectedRects.some(g => x < g.x + g.w && x + w > g.x && y < g.y + g.h && y + h > g.y);
             };
 
-            const targetBlocks = state.gameState === 'arrange' ? state.gameBlocks : state.blocks;
-            const blockIds = targetBlocks.filter(b => isInside(b.x, b.y)).map(b => b.id);
+            const blockIds = state.blocks.filter(b => isInside(b.x, b.y)).map(b => b.id);
             const trackIds = state.tracks.filter(t => t.nodes.some(n => isInside(n.x, n.y, 10, 10))).map(t => t.id);
             const groupRectIds = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id) || isInside(g.x, g.y, g.w, g.h)).map(g => g.id);
 
@@ -554,7 +392,7 @@ export const useStore = create<AppState>()(
           }
 
           return {
-            selectedBlockIds: state.gameState === 'arrange' ? state.gameBlocks.map(b => b.id) : state.blocks.map(b => b.id),
+            selectedBlockIds: state.blocks.map(b => b.id),
             selectedTrackIds: state.tracks.map(t => t.id),
             selectedGroupRectIds: state.groupRects.map(g => g.id),
             activeTrackId: null,
@@ -565,16 +403,13 @@ export const useStore = create<AppState>()(
         selectAllBlocks: () => set((state) => {
           if (state.selectedGroupRectIds.length > 0) {
             const selectedRects = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
-            
+
             const isInside = (x: number, y: number, w: number = 60, h: number = 60) => {
               return selectedRects.some(g => x < g.x + g.w && x + w > g.x && y < g.y + g.h && y + h > g.y);
             };
 
-            const targetBlocks = state.gameState === 'arrange' ? state.gameBlocks : state.blocks;
-            const blockIds = targetBlocks.filter(b => isInside(b.x, b.y)).map(b => b.id);
-
             return {
-              selectedBlockIds: blockIds,
+              selectedBlockIds: state.blocks.filter(b => isInside(b.x, b.y)).map(b => b.id),
               selectedTrackIds: [],
               selectedGroupRectIds: state.selectedGroupRectIds,
               activeTrackId: null,
@@ -583,7 +418,7 @@ export const useStore = create<AppState>()(
           }
 
           return {
-            selectedBlockIds: state.gameState === 'arrange' ? state.gameBlocks.map(b => b.id) : state.blocks.map(b => b.id),
+            selectedBlockIds: state.blocks.map(b => b.id),
             selectedTrackIds: [],
             selectedGroupRectIds: [],
             activeTrackId: null,
@@ -603,7 +438,7 @@ export const useStore = create<AppState>()(
           }
 
           const updates = finalTargetIds.map(id => {
-            const block = state.blocks.find(b => b.id === id) || state.gameBlocks.find(b => b.id === id);
+            const block = state.blocks.find(b => b.id === id);
             if (!block) return null;
             return { id, updates: mutator(block) };
           }).filter(Boolean) as { id: string, updates: Partial<Block> }[];
@@ -613,7 +448,7 @@ export const useStore = create<AppState>()(
           if (options?.continuous) {
             if (!isHistoryPausedForContinuous) {
               useStore.temporal.setState(s => ({
-                pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks, gameBlocks: state.gameBlocks }],
+                pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks }],
                 futureStates: []
               }));
               useStore.temporal.getState().pause();
@@ -642,9 +477,6 @@ export const useStore = create<AppState>()(
             blocks: state.blocks.map(b =>
               state.selectedBlockIds.includes(b.id) ? { ...b, groupId } : b
             ),
-            gameBlocks: state.gameBlocks.map(b =>
-              state.selectedBlockIds.includes(b.id) ? { ...b, groupId } : b
-            ),
             tracks: state.tracks.map(t =>
               state.selectedTrackIds.includes(t.id) ? { ...t, groupId } : t
             ),
@@ -655,21 +487,16 @@ export const useStore = create<AppState>()(
         }),
 
         ungroupSelected: () => set((state) => {
-          // Find groups of selected objects
           const groupIdsToRemove = new Set([
             ...state.blocks.filter(b => state.selectedBlockIds.includes(b.id) && b.groupId).map(b => b.groupId),
-            ...state.gameBlocks.filter(b => state.selectedBlockIds.includes(b.id) && b.groupId).map(b => b.groupId),
             ...state.tracks.filter(t => state.selectedTrackIds.includes(t.id) && t.groupId).map(t => t.groupId),
             ...state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id) && g.groupId).map(g => g.groupId)
           ]);
           if (groupIdsToRemove.size === 0) return state;
-          
+
           get().showToast('已解散群組 (Group Dissolved)');
           return {
             blocks: state.blocks.map(b =>
-              b.groupId && groupIdsToRemove.has(b.groupId) ? { ...b, groupId: undefined } : b
-            ),
-            gameBlocks: state.gameBlocks.map(b =>
               b.groupId && groupIdsToRemove.has(b.groupId) ? { ...b, groupId: undefined } : b
             ),
             tracks: state.tracks.map(t =>
@@ -723,10 +550,9 @@ export const useStore = create<AppState>()(
             return;
           }
           const blocksToCopy = state.blocks.filter(b => state.selectedBlockIds.includes(b.id));
-          const gameBlocksToCopy = state.gameBlocks.filter(b => state.selectedBlockIds.includes(b.id));
           const tracksToCopy = state.tracks.filter(t => state.selectedTrackIds.includes(t.id));
           const groupRectsToCopy = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
-          set({ clipboardBlocks: blocksToCopy.length > 0 ? blocksToCopy : gameBlocksToCopy, clipboardTracks: tracksToCopy, clipboardGroupRects: groupRectsToCopy });
+          set({ clipboardBlocks: blocksToCopy, clipboardTracks: tracksToCopy, clipboardGroupRects: groupRectsToCopy });
         },
 
         pasteClipboard: () => set((state) => {
@@ -754,13 +580,6 @@ export const useStore = create<AppState>()(
             x: g.x + 20,
             y: g.y + 20
           }));
-          
-          if (state.gameState === 'arrange') {
-             return {
-               gameBlocks: [...state.gameBlocks, ...newBlocks],
-               selectedBlockIds: newBlocks.map(b => b.id),
-             };
-          }
 
           return {
             blocks: [...state.blocks, ...newBlocks],
@@ -778,15 +597,6 @@ export const useStore = create<AppState>()(
         },
 
         updateCamera: (cameraUpdates) => set((state) => ({ camera: { ...state.camera, ...cameraUpdates } })),
-        setTheme: (theme) => set({ theme }),
-        setGridConfig: (config) => set((state) => ({ ...state, ...config })),
-        setPianoKeysCount: (count) => set({ pianoKeysCount: count }),
-        setBlockOpacity: (opacity) => set({ blockOpacity: opacity }),
-        setMouseSensitivity: (mouseSensitivity) => set({ mouseSensitivity }),
-        setMasterVolume: (volume) => {
-            import('../utils/audio').then(({ setMasterVolume }) => setMasterVolume(volume));
-            set({ masterVolume: volume });
-        },
         openContextMenu: (menu) => set({ contextMenu: menu }),
         closeContextMenu: () => set({ contextMenu: null }),
         toggleContextMenu: (menu) => set((state) => ({ contextMenu: state.contextMenu?.blockId === menu.blockId ? null : menu })),
@@ -838,13 +648,6 @@ export const useStore = create<AppState>()(
             groupId: undefined
           }));
 
-          if (state.gameState === 'arrange') {
-            return {
-              gameBlocks: [...state.gameBlocks, ...newBlocks],
-              selectedBlockIds: newBlocks.map(b => b.id),
-              selectedPocketBlockIds: []
-            };
-          }
           return {
             blocks: [...state.blocks, ...newBlocks],
             selectedBlockIds: newBlocks.map(b => b.id),
@@ -853,7 +656,6 @@ export const useStore = create<AppState>()(
         }),
         setHoveredBlockId: (hoveredBlockId) => set({ hoveredBlockId }),
         setHoveredGroupRectId: (hoveredGroupRectId) => set({ hoveredGroupRectId }),
-        setDisplaySettings: (settings) => set((state) => ({ ...state, ...settings })),
 
         addTrack: (track) => {
           const id = generateId();
@@ -1028,26 +830,6 @@ export const useStore = create<AppState>()(
         }),
         clearRecordedEvents: () => set({ recordedEvents: [] }),
 
-        setGameState: (gameState) => set({ gameState }),
-        setGameFileName: (gameFileName) => set({ gameFileName }),
-        setGameBlocks: (gameBlocks) => set({ gameBlocks }),
-        updateGameBlock: (id, updates) => set((state) => ({
-           gameBlocks: state.gameBlocks.map(b => b.id === id ? { ...b, ...updates } : b)
-        })),
-        setGameEvents: (gameEvents) => set({ gameEvents }),
-        setGameStats: (stats) => set(state => ({ ...state, ...stats })),
-        setGameSpeed: (gameSpeed) => set({ gameSpeed }),
-        setMobileControlMode: (mobileControlMode) => set({ mobileControlMode }),
-        
-        setGameAudioUrl: (url) => set({ gameAudioUrl: url }),
-        setGameAudioVolume: (v) => set({ gameAudioVolume: v }),
-        
-        updateGameCamera: (camera) => set((state) => ({ gameCamera: { ...state.gameCamera, ...camera } })),
-
-        setLevelMetadata: (levelMetadata) => set({ levelMetadata }),
-        resetGamePlay: () => set((s) => ({ gameResetCount: s.gameResetCount + 1, gameScore: 0, gameCombo: 0, perfectCount: 0, goodCount: 0, badCount: 0, missCount: 0, wrongCount: 0, maxCombo: 0, latestHit: null })),
-        latestHit: null,
-
         latestPerformHit: null,
         setLatestPerformHit: (hit) => set({ latestPerformHit: hit }),
         
@@ -1060,32 +842,13 @@ export const useStore = create<AppState>()(
           groups: state.groups,
           groupRects: state.groupRects,
           tracks: state.tracks,
-          theme: state.theme,
-          showGrid: state.showGrid,
-          snapToGrid: state.snapToGrid,
-          pianoKeysCount: state.pianoKeysCount,
-          blockOpacity: state.blockOpacity,
-          mouseSensitivity: state.mouseSensitivity,
-          masterVolume: state.masterVolume,
-          showGroupName: state.showGroupName,
-          showBlockPitch: state.showBlockPitch,
-          showBlockVolume: state.showBlockVolume,
-          showBlockInstrument: state.showBlockInstrument,
-          mobileControlMode: state.mobileControlMode,
           camera: state.camera,
           recordedEvents: state.recordedEvents
-        }), // only persist these fields
+        }),
       }
     ),
     {
-      partialize: (state) => ({ blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks, gameBlocks: state.gameBlocks }), // track history
-      onSave: () => {
-        if (typeof window !== 'undefined' && isLevelEditor()) {
-          import('./useLevelEditorStore').then(({ useLevelEditorStore }) => {
-            useLevelEditorStore.getState().commitHistory();
-          });
-        }
-      },
+      partialize: (state) => ({ blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks }),
       equality: (pastState, currentState) => {
         if (pastState.groups !== currentState.groups) {
           return false;
@@ -1133,20 +896,6 @@ export const useStore = create<AppState>()(
             pb.instrument !== cb.instrument || pb.keyBinding !== cb.keyBinding ||
             pb.groupId !== cb.groupId) {
             return false;
-          }
-        }
-        if (pastState.gameBlocks !== currentState.gameBlocks) {
-          if (pastState.gameBlocks.length !== currentState.gameBlocks.length) return false;
-          for (let i = 0; i < pastState.gameBlocks.length; i++) {
-            const pb = pastState.gameBlocks[i];
-            const cb = currentState.gameBlocks[i];
-            if (pb === cb) continue;
-            if (pb.id !== cb.id || pb.x !== cb.x || pb.y !== cb.y || pb.pitch !== cb.pitch ||
-              pb.volume !== cb.volume ||
-              pb.instrument !== cb.instrument || pb.keyBinding !== cb.keyBinding ||
-              pb.groupId !== cb.groupId) {
-              return false;
-            }
           }
         }
 

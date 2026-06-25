@@ -1,5 +1,8 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
+import { useLevelEditorStore } from '../../store/useLevelEditorStore';
+import { useGameStore } from '../../store/useGameStore';
+import { useCanvasContext } from '../canvas/CanvasContext';
 import { shiftPitch } from '../../utils/pitchUtils';
 import { 
   Trash2, Search, Activity, Square, Music, Play, Pause,
@@ -8,7 +11,13 @@ import {
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter
 } from 'lucide-react';
 export const ContextMenu: React.FC = () => {
+  const canvasContext = useCanvasContext();
   const { contextMenu, closeContextMenu, blocks, removeBlock, groupRects, removeGroupRect, selectedBlockIds, deleteSelected, trackPlaybackStatus, playTrack, pauseTrack, stopTrack, isPlaying } = useStore();
+  const contextBlocks = canvasContext === 'editor'
+    ? useLevelEditorStore.getState().gameBlocks
+    : canvasContext === 'game'
+      ? useGameStore.getState().gameBlocks
+      : blocks;
 
   const menuRef = React.useRef<HTMLDivElement>(null);
   const [measuredPos, setMeasuredPos] = React.useState<{x: number, y: number} | null>(null);
@@ -385,11 +394,11 @@ export const ContextMenu: React.FC = () => {
     );
   }
 
-  const block = blocks.find(b => b.id === actualId) || useStore.getState().gameBlocks.find(b => b.id === actualId);
+  const block = contextBlocks.find(b => b.id === actualId) || blocks.find(b => b.id === actualId);
   if (!block) return null;
 
-  const targetBlocks = selectedBlockIds.length > 0 && selectedBlockIds.includes(block.id) 
-    ? [...blocks, ...useStore.getState().gameBlocks].filter(b => selectedBlockIds.includes(b.id))
+  const targetBlocks = selectedBlockIds.length > 0 && selectedBlockIds.includes(block.id)
+    ? contextBlocks.filter(b => selectedBlockIds.includes(b.id))
     : [block];
 
   const tunePitch = (semitones: number) => {
@@ -598,7 +607,7 @@ export const ContextMenu: React.FC = () => {
         </div>
       )}
 
-      {useStore.getState().gameState !== 'arrange' && (
+      {useGameStore.getState().gamePhase !== 'arrange' && (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px' }}>
         <label style={{ fontSize: '12px', opacity: 0.8 }}>{block.instrument === 'percussion' ? 'Drum Type' : 'Pitch'}</label>
         {block.instrument === 'percussion' ? (

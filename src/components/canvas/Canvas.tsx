@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Application } from '@pixi/react';
 import * as PIXI from 'pixi.js';
 import { useStore } from '../../store/useStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
 import { NoteBlock } from '../blocks/NoteBlock';
 import { shiftPitch } from '../../utils/pitchUtils';
 import { TrackRenderer } from '../containers/TrackRenderer';
@@ -13,12 +14,13 @@ import { SelectionBoxRenderer, GroupDrawBoxRenderer } from './shared/SelectionBo
 import { useCanvasCamera } from '../../hooks/useCanvasCamera';
 import { useCanvasInteractions } from '../../hooks/useCanvasInteractions';
 import { lineIntersectsRect } from '../../utils/geometry';
-import { isLevelEditor } from '../../utils/routeUtils';
+import { CanvasContext } from './CanvasContext';
 
 export const Canvas: React.FC = () => {
   const store = useStore();
-  const { camera, showGrid, theme, mode, latestPerformHit } = store;
-  const blocks = isLevelEditor() ? store.gameBlocks : store.blocks;
+  const { camera, mode, latestPerformHit } = store;
+  const blocks = store.blocks;
+  const { showGrid, theme } = useSettingsStore();
   const {
     startPan, updatePan, endPan,
     selectionBox, startSelection, updateSelection, endSelection,
@@ -76,9 +78,8 @@ export const Canvas: React.FC = () => {
         const localX = (globalX - state.camera.x) / state.camera.zoom;
         const localY = (globalY - state.camera.y) / state.camera.zoom;
         
-        const targetBlocks = isLevelEditor() ? state.gameBlocks : state.blocks;
-        for (let i = targetBlocks.length - 1; i >= 0; i--) {
-          const b = targetBlocks[i];
+        for (let i = state.blocks.length - 1; i >= 0; i--) {
+          const b = state.blocks[i];
           if (localX >= b.x && localX <= b.x + 60 && localY >= b.y && localY <= b.y + 60) {
             targetBlockId = b.id;
             break;
@@ -133,7 +134,7 @@ export const Canvas: React.FC = () => {
 
   const checkTrailIntersection = useCallback((x1: number, y1: number, x2: number, y2: number, isFirstPoint = false, startedOnBlock = false) => {
     const state = useStore.getState();
-    const blocksList = isLevelEditor() ? state.gameBlocks : state.blocks;
+    const blocksList = state.blocks;
     const groupRects = state.groupRects;
     
     const currentFrameIntersected = new Set<string>();
@@ -214,8 +215,9 @@ export const Canvas: React.FC = () => {
       if (!rafId) {
         rafId = requestAnimationFrame(() => {
           const state = useStore.getState();
-          const newCamX = state.camera.x - pendingMovementX * state.mouseSensitivity;
-          const newCamY = state.camera.y - pendingMovementY * state.mouseSensitivity;
+          const { mouseSensitivity } = useSettingsStore.getState();
+          const newCamX = state.camera.x - pendingMovementX * mouseSensitivity;
+          const newCamY = state.camera.y - pendingMovementY * mouseSensitivity;
           
           if (buttonsPressed > 0) {
             const centerX = window.innerWidth / 2;
@@ -248,8 +250,7 @@ export const Canvas: React.FC = () => {
       const localY = (centerY - state.camera.y) / state.camera.zoom;
       
       let startedOnBlock = false;
-      const targetBlocks = isLevelEditor() ? state.gameBlocks : state.blocks;
-      for (const b of targetBlocks) {
+      for (const b of state.blocks) {
         if (localX >= b.x && localX <= b.x + 60 && localY >= b.y && localY <= b.y + 60) {
           startedOnBlock = true;
           break;
@@ -499,7 +500,7 @@ export const Canvas: React.FC = () => {
       if (!box) return;
       const { x, y, w, h } = box;
       
-      const blocksList = isLevelEditor() ? useStore.getState().gameBlocks : useStore.getState().blocks;
+      const blocksList = useStore.getState().blocks;
       const tracks = useStore.getState().tracks;
       const groupRects = useStore.getState().groupRects;
 
@@ -550,8 +551,9 @@ export const Canvas: React.FC = () => {
 
 
   return (
-    <div 
-      style={{ width: '100%', height: '100%', position: 'relative' }} 
+    <CanvasContext.Provider value="playground">
+    <div
+      style={{ width: '100%', height: '100%', position: 'relative' }}
     >
       <Application 
         backgroundAlpha={0}
@@ -577,14 +579,17 @@ export const Canvas: React.FC = () => {
 
           <GroupRectRenderer />
 
-          {/* Render all blocks */}
           {blocks.map(block => (
-            <NoteBlock 
-              key={block.id} 
-              id={block.id} 
-              x={block.x} 
-              y={block.y} 
+            <NoteBlock
+              key={block.id}
+              id={block.id}
+              x={block.x}
+              y={block.y}
               pitch={block.pitch}
+              volume={block.volume}
+              instrument={block.instrument}
+              playedAt={block.playedAt}
+              playedVolumeMultiplier={block.playedVolumeMultiplier}
             />
           ))}
 
@@ -635,5 +640,6 @@ export const Canvas: React.FC = () => {
         <Plus size={32} strokeWidth={1.5} />
       </div>
     </div>
+    </CanvasContext.Provider>
   );
 };

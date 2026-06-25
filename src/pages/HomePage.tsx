@@ -1,12 +1,12 @@
 import { useNavigate } from 'react-router-dom';
 import { Gamepad2, Edit3, Map } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useStore } from '../store/useStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import './HomePage.css';
 
 export function HomePage() {
   const navigate = useNavigate();
-  const theme = useStore((state) => state.theme);
+  const { theme } = useSettingsStore();
 
   const cards = [
     {

@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import { useStore } from '../../store/useStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
+import { useCanvasContext } from '../canvas/CanvasContext';
+import { getBlocksForContext, getCameraForContext, updateBlocksInContext, commitContextHistory } from '../../hooks/useActiveCanvas';
 import { BaseGroupRect } from './BaseGroupRect';
 import type { GroupRect } from '../../types';
 import * as PIXI from 'pixi.js';
@@ -16,6 +19,7 @@ export const GroupRectRenderer: React.FC = () => {
 };
 
 const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
+  const canvasContext = useCanvasContext();
   const { selectGroupRect, selectedGroupRectIds } = useStore();
   const isSelected = selectedGroupRectIds.includes(rect.id);
   const [isDragging, setIsDragging] = useState(false);
@@ -29,8 +33,8 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
   const wasSelectedRef = React.useRef(false);
   const lastClickTimeRef = React.useRef(0);
 
-  const showBlockVolume = useStore(state => state.showBlockVolume);
-  const showGroupName = useStore(state => state.showGroupName);
+  const showBlockVolume = useSettingsStore(state => state.showBlockVolume);
+  const showGroupName = useSettingsStore(state => state.showGroupName);
 
 
 
@@ -39,7 +43,7 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
     e.stopPropagation();
     setIsResizing(true);
     setResizeType(type);
-    const camera = useStore.getState().camera;
+    const camera = getCameraForContext(canvasContext);
     const localX = (e.clientX - camera.x) / camera.zoom;
     const localY = (e.clientY - camera.y) / camera.zoom;
     resizeStartPosRef.current = { x: localX, y: localY };
@@ -52,11 +56,11 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
     let hasPaused = false;
     const handleGlobalMove = (e: PointerEvent) => {
       const state = useStore.getState();
-      const camera = state.camera;
-      
+      const camera = getCameraForContext(canvasContext);
+
       const localX = (e.clientX - camera.x) / camera.zoom;
       const localY = (e.clientY - camera.y) / camera.zoom;
-      
+
       const initRect = initialRectRef.current!;
       const startPos = resizeStartPosRef.current!;
       
@@ -83,7 +87,7 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
         newH = initRect.h + deltaY;
       }
 
-      if (state.snapToGrid) {
+      if (useSettingsStore.getState().snapToGrid) {
         const snapSize = 30;
         if (resizeType.includes('w')) {
           const snappedX = Math.round(newX / snapSize) * snapSize;
@@ -117,7 +121,7 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
 
       if (!hasPaused) {
         useStore.temporal.setState(s => ({
-          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks, gameBlocks: state.gameBlocks }],
+          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks }],
           futureStates: []
         }));
         useStore.temporal.getState().pause();
@@ -184,40 +188,40 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
 
     let hasPaused = false;
     const state = useStore.getState();
-    const selectedBlocks = state.blocks.filter(b => state.selectedBlockIds.includes(b.id));
+    const selectedBlocks = getBlocksForContext(canvasContext).filter(b => state.selectedBlockIds.includes(b.id));
     const selectedTracks = state.tracks.filter(t => state.selectedTrackIds.includes(t.id));
     const selectedGroupRects = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
     if (!selectedGroupRects.find(g => g.id === rect.id)) {
       const thisRect = state.groupRects.find(g => g.id === rect.id);
       if (thisRect) selectedGroupRects.push(thisRect);
     }
-    
+
     const initialPositions = new Map(selectedBlocks.map(b => [b.id, { x: b.x, y: b.y }]));
     const initialTrackNodes = new Map(selectedTracks.map(t => [t.id, t.nodes.map(n => ({...n}))]));
     const initialGroupRects = new Map(selectedGroupRects.map(g => [g.id, { x: g.x, y: g.y }]));
 
     const handleGlobalMove = (e: PointerEvent) => {
       const state = useStore.getState();
-      const camera = state.camera;
-      
+      const camera = getCameraForContext(canvasContext);
+
       const localX = (e.clientX - camera.x) / camera.zoom;
       const localY = (e.clientY - camera.y) / camera.zoom;
-      
+
       let newX = localX - dragOffset.x;
       let newY = localY - dragOffset.y;
-      
-      if (state.snapToGrid) {
+
+      if (useSettingsStore.getState().snapToGrid) {
         const snapSize = 30;
         newX = Math.round(newX / snapSize) * snapSize;
         newY = Math.round(newY / snapSize) * snapSize;
       }
-      
+
       const thisInit = initialGroupRects.get(rect.id);
       if (!thisInit) return;
-      
+
       const deltaX = newX - thisInit.x;
       const deltaY = newY - thisInit.y;
-      
+
       const currentGroupRect = state.groupRects.find(sg => sg.id === rect.id);
       if (currentGroupRect && (thisInit.x + deltaX) === currentGroupRect.x && (thisInit.y + deltaY) === currentGroupRect.y) {
         return;
@@ -227,23 +231,23 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
         const init = initialPositions.get(b.id)!;
         return { id: b.id, updates: { x: init.x + deltaX, y: init.y + deltaY } };
       });
-      
+
       const trackUpdates = selectedTracks.map(t => {
         const initNodes = initialTrackNodes.get(t.id)!;
         const newNodes = initNodes.map(n => ({ ...n, x: n.x + deltaX, y: n.y + deltaY }));
         return { id: t.id, nodes: newNodes };
       });
 
-      if (!hasPaused) {
+      if (canvasContext === 'playground' && !hasPaused) {
         useStore.temporal.setState(s => ({
-          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks, gameBlocks: state.gameBlocks }],
+          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks }],
           futureStates: []
         }));
         useStore.temporal.getState().pause();
         hasPaused = true;
       }
 
-      state.updateBlocks(finalUpdates);
+      updateBlocksInContext(canvasContext, finalUpdates);
       trackUpdates.forEach(tu => {
         state.updateTrack(tu.id, { nodes: tu.nodes });
       });
@@ -255,8 +259,10 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
 
     const handleGlobalUp = () => {
       setIsDragging(false);
-      if (hasPaused) {
+      if (canvasContext === 'playground' && hasPaused) {
         useStore.temporal.getState().resume();
+      } else {
+        commitContextHistory(canvasContext);
       }
     };
 

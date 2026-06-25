@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { GameCanvas } from '../components/canvas/GameCanvas';
+import { CanvasContext } from '../components/canvas/CanvasContext';
 import { parseMidiForGame } from '../utils/midiUtils';
 import { importLevel } from '../utils/levelUtils';
 import { Upload, SkipForward, Plus, Undo2, Redo2, Settings, Play, Pause, Volume2, Maximize, HelpCircle, Home, LayoutList } from 'lucide-react';
@@ -8,12 +9,15 @@ import { ModalPanel } from '../components/ui/ModalPanel';
 import { OutlinerPanel } from '../components/ui/OutlinerPanel';
 import { playNote } from '../utils/audio';
 import { useStore, undoAction, redoAction } from '../store/useStore';
+import { useGameStore } from '../store/useGameStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { useLevelEditorStore } from '../store/useLevelEditorStore';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useShortcuts } from '../hooks/useShortcuts';
+
 const ProgressBar: React.FC = () => {
   const barRef = useRef<HTMLDivElement>(null);
-  const events = useStore.getState().gameEvents;
+  const events = useGameStore.getState().gameEvents;
   const totalTime = events.length > 0 ? events[events.length - 1].time : 1;
 
   useEffect(() => {
@@ -39,9 +43,11 @@ const ProgressBar: React.FC = () => {
 };
 
 export const GamePage: React.FC = () => {
-  const { theme, gameState, setGameState, setGameBlocks, setGameEvents, gameScore, gameCombo, perfectCount, goodCount, badCount, missCount, wrongCount, maxCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, toggleSettings, isTutorialOpen, toggleTutorial, latestHit, mobileControlMode, setMobileControlMode, levelMetadata, setLevelMetadata, gameAudioUrl, setGameAudioUrl, gameAudioVolume, setGameAudioVolume, isOutlinerOpen } = useStore();
+  const { gamePhase, setGamePhase, setGameBlocks, setGameEvents, gameScore, gameCombo, perfectCount, goodCount, badCount, missCount, wrongCount, maxCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, latestHit, levelMetadata, setLevelMetadata, gameAudioUrl, setGameAudioUrl, gameAudioVolume, setGameAudioVolume } = useGameStore();
+  const { theme, mobileControlMode, setMobileControlMode } = useSettingsStore();
+  const { toggleSettings, isTutorialOpen, toggleTutorial, isOutlinerOpen } = useStore();
   const isMobile = useIsMobile();
-  useShortcuts();
+  useShortcuts('game');
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
   const [arrangeBy, setArrangeBy] = useState<'sequence' | 'pitch'>('sequence');
@@ -51,7 +57,7 @@ export const GamePage: React.FC = () => {
   const previewStartTimeRef = useRef(Date.now());
   const previewTimeOffsetRef = useRef(0);
   const lastPlayedEventIndexRef = useRef(0);
-  
+
   const [isResuming, setIsResuming] = useState(false);
   const [resumeCount, setResumeCount] = useState(3);
   const isResumingRef = useRef(false);
@@ -68,10 +74,10 @@ export const GamePage: React.FC = () => {
       } else {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setIsResuming(false);
-        setGameState('play');
+        setGamePhase('play');
       }
     }
-  }, [isResuming, resumeCount, setGameState]);
+  }, [isResuming, resumeCount, setGamePhase]);
 
   const requestFullscreen = () => {
     try {
@@ -91,21 +97,21 @@ export const GamePage: React.FC = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
-    
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        const state = useStore.getState().gameState;
-        if (state === 'play' || isResumingRef.current) {
-           useStore.getState().setGameState('paused');
+        const phase = useGameStore.getState().gamePhase;
+        if (phase === 'play' || isResumingRef.current) {
+           useGameStore.getState().setGamePhase('paused');
            if (isResumingRef.current) setIsResuming(false);
            if (document.pointerLockElement) {
              document.exitPointerLock();
            }
         }
       } else if (e.code === 'Space') {
-        const state = useStore.getState().gameState;
-        if (state === 'arrange') {
-           e.preventDefault(); // Prevent scrolling
+        const phase = useGameStore.getState().gamePhase;
+        if (phase === 'arrange') {
+           e.preventDefault();
            setPreviewPlaying(prev => {
               if (!prev) {
                  previewStartTimeRef.current = Date.now();
@@ -119,9 +125,9 @@ export const GamePage: React.FC = () => {
 
     const handlePointerLockChange = () => {
       if (!isMobile && !document.pointerLockElement) {
-        const state = useStore.getState().gameState;
-        if (state === 'play') {
-          useStore.getState().setGameState('paused');
+        const phase = useGameStore.getState().gamePhase;
+        if (phase === 'play') {
+          useGameStore.getState().setGamePhase('paused');
         }
       }
     };
@@ -140,12 +146,12 @@ export const GamePage: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleResize);
     };
-  }, [gameState, isMobile]);
+  }, [gamePhase, isMobile]);
 
 
   // Audio playback for Play mode
   useEffect(() => {
-    if (gameState !== 'play') return;
+    if (gamePhase !== 'play') return;
     let rafId: number;
     let started = false;
     const tick = () => {
@@ -156,7 +162,7 @@ export const GamePage: React.FC = () => {
       if (audioRef.current && (currentSyncTime + offset) >= 0) {
         if (!started) {
           audioRef.current.currentTime = (currentSyncTime + offset) / 1000;
-          audioRef.current.playbackRate = useStore.getState().gameSpeed;
+          audioRef.current.playbackRate = useGameStore.getState().gameSpeed;
           audioRef.current.play().catch(e => console.warn(e));
           started = true;
         }
@@ -169,27 +175,27 @@ export const GamePage: React.FC = () => {
       cancelAnimationFrame(rafId);
       if (audio) audio.pause();
     };
-  }, [gameState]);
+  }, [gamePhase]);
 
   // Preview Player Logic for Arrange mode
   useEffect(() => {
       if (audioRef.current) {
-         if (gameState === 'arrange' && previewPlaying) {
+         if (gamePhase === 'arrange' && previewPlaying) {
             const offset = useLevelEditorStore.getState().offset;
             const syncTime = previewTime + offset;
            if (syncTime >= 0) {
               audioRef.current.currentTime = syncTime / 1000;
-              audioRef.current.playbackRate = useStore.getState().gameSpeed;
+              audioRef.current.playbackRate = useGameStore.getState().gameSpeed;
               audioRef.current.play().catch(e => console.warn(e));
            } else {
               audioRef.current.pause();
            }
-        } else if (gameState === 'arrange') {
+        } else if (gamePhase === 'arrange') {
            audioRef.current.pause();
         }
      }
 
-     if (gameState !== 'arrange' || !previewPlaying) return;
+     if (gamePhase !== 'arrange' || !previewPlaying) return;
 
      let rafId: number;
      const maxTime = gameEvents.length > 0 ? gameEvents[gameEvents.length - 1].time + 1000 : 0;
@@ -199,10 +205,10 @@ export const GamePage: React.FC = () => {
          const now = Date.now();
          const delta = now - lastTickTime;
          lastTickTime = now;
-         
-         previewTimeOffsetRef.current += delta * useStore.getState().gameSpeed;
+
+         previewTimeOffsetRef.current += delta * useGameStore.getState().gameSpeed;
          const elapsed = previewTimeOffsetRef.current;
-         
+
          if (elapsed >= maxTime) {
              setPreviewPlaying(false);
              setPreviewTime(0);
@@ -213,16 +219,16 @@ export const GamePage: React.FC = () => {
 
          setPreviewTime(elapsed);
 
-         const events = useStore.getState().gameEvents;
+         const events = useGameStore.getState().gameEvents;
           while (lastPlayedEventIndexRef.current < events.length && events[lastPlayedEventIndexRef.current].time <= elapsed) {
              const ev = events[lastPlayedEventIndexRef.current];
              if (ev.blockId === 'background') {
                 playNote(ev.pitch, gameAudioVolume, ev.instrument);
              } else {
-                const b = useStore.getState().gameBlocks.find(blk => blk.id === ev.blockId);
+                const b = useGameStore.getState().gameBlocks.find(blk => blk.id === ev.blockId);
                 if (b) {
                    playNote(b.pitch, (b.volume ?? 1) * gameAudioVolume, b.instrument);
-                   useStore.getState().updateGameBlock(b.id, { playedAt: Date.now() });
+                   useGameStore.getState().updateGameBlock(b.id, { playedAt: Date.now() });
                 }
              }
              lastPlayedEventIndexRef.current++;
@@ -233,34 +239,32 @@ export const GamePage: React.FC = () => {
 
      lastTickTime = Date.now();
      rafId = requestAnimationFrame(tick);
-     
+
      return () => cancelAnimationFrame(rafId);
      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState, previewPlaying, gameEvents]);
+  }, [gamePhase, previewPlaying, gameEvents]);
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
       const time = parseFloat(e.target.value);
       setPreviewTime(time);
       previewTimeOffsetRef.current = time;
       previewStartTimeRef.current = Date.now();
-      
+
       const idx = gameEvents.findIndex(ev => ev.time > time);
       lastPlayedEventIndexRef.current = idx !== -1 ? idx : gameEvents.length;
   };
 
   useEffect(() => {
-     // Reset game state on mount/unmount
-     setGameState('upload');
+     setGamePhase('upload');
      setGameStats({ gameScore: 0, gameCombo: 0 });
-     return () => setGameState('upload');
-  }, [setGameState, setGameStats]);
+     return () => setGamePhase('upload');
+  }, [setGamePhase, setGameStats]);
 
   useEffect(() => {
-    if (gameState === 'play') {
-       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-       useStore.setState({ isTutorialOpen: false, isSettingsOpen: false, isHelpOpen: false } as any);
+    if (gamePhase === 'play') {
+       useStore.setState({ isTutorialOpen: false, isSettingsOpen: false, isHelpOpen: false } as never);
     }
-  }, [gameState]);
+  }, [gamePhase]);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -268,7 +272,6 @@ export const GamePage: React.FC = () => {
 
     try {
       if (file.name.endsWith('.yblevel')) {
-        // Import .yblevel package
         const { levelData, audioBlob } = await importLevel(file);
         if (audioBlob) {
             const url = URL.createObjectURL(audioBlob);
@@ -292,7 +295,7 @@ export const GamePage: React.FC = () => {
           description: levelData.description,
           midiCredit: levelData.midiCredit
         });
-        setGameState('arrange');
+        setGamePhase('arrange');
         let avgX = 0, avgY = 0;
         if (levelData.blocks.length > 0) {
            avgX = levelData.blocks.reduce((sum, b) => sum + b.x, 0) / levelData.blocks.length;
@@ -300,15 +303,14 @@ export const GamePage: React.FC = () => {
         }
         const cam = { x: window.innerWidth / 2 - avgX, y: window.innerHeight / 2 - avgY, zoom: 1 };
         useStore.getState().updateCamera(cam);
-        useStore.getState().updateGameCamera(cam);
+        useGameStore.getState().updateGameCamera(cam);
       } else {
-        // Import .mid/.midi
         const { gameBlocks, gameEvents } = await parseMidiForGame(file, arrangeBy);
         setGameFileName(file.name);
         setGameBlocks(gameBlocks);
         setGameEvents(gameEvents);
         setLevelMetadata(null);
-        setGameState('arrange');
+        setGamePhase('arrange');
         let avgX = 0, avgY = 0;
         if (gameBlocks.length > 0) {
            avgX = gameBlocks.reduce((sum, b) => sum + b.x, 0) / gameBlocks.length;
@@ -316,7 +318,7 @@ export const GamePage: React.FC = () => {
         }
         const cam = { x: window.innerWidth / 2 - avgX, y: window.innerHeight / 2 - avgY, zoom: 1 };
         useStore.getState().updateCamera(cam);
-        useStore.getState().updateGameCamera(cam);
+        useGameStore.getState().updateGameCamera(cam);
       }
     } catch (err) {
       console.error(err);
@@ -331,13 +333,13 @@ export const GamePage: React.FC = () => {
       if (!response.ok) throw new Error('Default MIDI not found in public folder');
       const blob = await response.blob();
       const file = new File([blob], 'default.mid', { type: 'audio/midi' });
-      
+
       const { gameBlocks, gameEvents } = await parseMidiForGame(file, arrangeBy);
       setGameFileName('default.mid');
       setGameBlocks(gameBlocks);
       setGameEvents(gameEvents);
       setLevelMetadata(null);
-      setGameState('arrange');
+      setGamePhase('arrange');
       let avgX = 0, avgY = 0;
       if (gameBlocks.length > 0) {
          avgX = gameBlocks.reduce((sum, b) => sum + b.x, 0) / gameBlocks.length;
@@ -345,7 +347,7 @@ export const GamePage: React.FC = () => {
       }
       const cam = { x: window.innerWidth / 2 - avgX, y: window.innerHeight / 2 - avgY, zoom: 1 };
       useStore.getState().updateCamera(cam);
-      useStore.getState().updateGameCamera(cam);
+      useGameStore.getState().updateGameCamera(cam);
     } catch (err) {
       console.error(err);
       alert("Failed to load default MIDI. Make sure default.mid is in the public/ folder.");
@@ -354,21 +356,21 @@ export const GamePage: React.FC = () => {
 
 
   return (
-    <div 
+    <div
       className={`app-container ${theme}`}
       onContextMenu={(e) => e.preventDefault()}
       style={{ overflow: 'hidden', touchAction: 'none', userSelect: 'none' }}
     >
       <audio ref={audioRef} src={gameAudioUrl || undefined} style={{ display: 'none' }} />
       <div className="main-wrapper">
-        
+
         {/* Render Canvas */}
-        {['arrange', 'play', 'paused'].includes(gameState) && (
+        {['arrange', 'play', 'paused'].includes(gamePhase) && (
            <GameCanvas />
         )}
 
         {/* Upload Overlay */}
-        {gameState === 'upload' && (
+        {gamePhase === 'upload' && (
            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)', zIndex: 20 }}>
               <h1 style={{ color: 'var(--text-primary)', marginBottom: 20 }}>Rhythm Game Mode</h1>
               <p style={{ color: 'var(--text-secondary)', marginBottom: 40, textAlign: 'center', maxWidth: 400 }}>
@@ -381,7 +383,7 @@ export const GamePage: React.FC = () => {
                      Select MIDI or .yblevel
                      <input type="file" accept=".mid,.midi,.yblevel" style={{ display: 'none' }} onChange={handleImport} />
                   </label>
-                  <button 
+                  <button
                     onClick={handleDefaultImport}
                     style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', background: 'rgba(99, 102, 241, 0.2)', color: 'var(--text-primary)', border: '2px solid #6366f1', borderRadius: 8, cursor: 'pointer', fontSize: 18, fontWeight: 'bold' }}
                   >
@@ -392,8 +394,8 @@ export const GamePage: React.FC = () => {
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ color: 'white', fontWeight: 'bold' }}>Sort By:</span>
-                  <select 
-                    value={arrangeBy} 
+                  <select
+                    value={arrangeBy}
                     onChange={(e) => setArrangeBy(e.target.value as 'sequence' | 'pitch')}
                     style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8, fontSize: 16, cursor: 'pointer', outline: 'none', backdropFilter: 'blur(4px)' }}
                   >
@@ -404,14 +406,14 @@ export const GamePage: React.FC = () => {
               </div>
            </div>
         )}
-        
+
         {/* Arrangement Overlay */}
-        {gameState === 'arrange' && (
+        {gamePhase === 'arrange' && (
             <>
               {/* Back to Home Button */}
               <button
                  onClick={() => {
-                   setGameState('upload');
+                   setGamePhase('upload');
                    setGameFileName(null);
                  }}
                  style={{
@@ -437,8 +439,8 @@ export const GamePage: React.FC = () => {
 
               {/* Top Controls */}
               <div style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 12, zIndex: 10, pointerEvents: 'auto' }}>
-                <select 
-                  value={gameSpeed} 
+                <select
+                  value={gameSpeed}
                   onChange={(e) => setGameSpeed(parseFloat(e.target.value))}
                   style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8, fontSize: 16, cursor: 'pointer', outline: 'none', backdropFilter: 'blur(4px)' }}
                 >
@@ -451,8 +453,8 @@ export const GamePage: React.FC = () => {
                   <option value="2">2.0x</option>
                 </select>
 
-                   <select 
-                     value={mobileControlMode} 
+                   <select
+                     value={mobileControlMode}
                      onChange={(e) => setMobileControlMode(e.target.value as 'crosshair' | 'touch')}
                      style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8, fontSize: 16, cursor: 'pointer', outline: 'none', backdropFilter: 'blur(4px)' }}
                    >
@@ -460,12 +462,12 @@ export const GamePage: React.FC = () => {
                      <option value="crosshair">Crosshair Mode</option>
                    </select>
 
-                <button 
+                <button
                   onClick={() => {
                      resetGamePlay();
                      useStore.getState().clearSelection();
                      setPreviewPlaying(false);
-                     setGameState('play');
+                     setGamePhase('play');
                      if (isMobile) requestFullscreen();
                   }}
                   className="primary-btn"
@@ -477,8 +479,8 @@ export const GamePage: React.FC = () => {
               </div>
 
               {/* Toolbar Actions */}
-              <div 
-                 className="toolbar glass-panel" 
+              <div
+                 className="toolbar glass-panel"
                  style={{ zIndex: 10 }}
                  onWheel={(e) => e.stopPropagation()}
                  onTouchMove={(e) => e.stopPropagation()}
@@ -492,23 +494,25 @@ export const GamePage: React.FC = () => {
               </div>
 
               {/* Outliner Panel Render */}
-              <OutlinerPanel />
-              
+              <CanvasContext.Provider value="game">
+                <OutlinerPanel />
+              </CanvasContext.Provider>
+
               {/* Bottom Mini Player */}
-              <div 
+              <div
                  style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 24px', background: 'linear-gradient(to top, rgba(0,0,0,0.9), transparent)', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 12, pointerEvents: 'none' }}
               >
                  <div style={{ color: 'white', pointerEvents: 'auto', width: 'fit-content' }}>
                     <div style={{ fontSize: 18, fontWeight: 'bold' }}>{levelMetadata?.title || gameFileName || 'Unknown MIDI'}</div>
                     {levelMetadata?.author && <div style={{ fontSize: 14, opacity: 0.8 }}>by {levelMetadata.author}</div>}
                  </div>
-                 <div 
+                 <div
                     style={{ display: 'flex', alignItems: 'center', gap: 16, pointerEvents: 'auto' }}
                     onWheel={(e) => e.stopPropagation()}
                     onTouchMove={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
                  >
-                    <button 
+                    <button
                       onClick={() => {
                         if (previewPlaying) {
                            setPreviewPlaying(false);
@@ -521,8 +525,8 @@ export const GamePage: React.FC = () => {
                     >
                       {previewPlaying ? <Pause size={28} /> : <Play size={28} />}
                     </button>
-                    
-                    <input 
+
+                    <input
                       type="range"
                       min="0"
                       max={gameEvents.length > 0 ? gameEvents[gameEvents.length - 1].time + 1000 : 0}
@@ -533,7 +537,7 @@ export const GamePage: React.FC = () => {
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                        <Volume2 size={20} color="white" />
-                       <input 
+                       <input
                          type="range"
                          min="0"
                          max="1"
@@ -553,11 +557,11 @@ export const GamePage: React.FC = () => {
         )}
 
         {/* Play Overlay */}
-        {gameState === 'play' && (
+        {gamePhase === 'play' && (
            <>
              <ProgressBar />
              {latestHit && latestHit.type !== 'Miss' && (
-                 <div 
+                 <div
                    key={`bg-${latestHit.time}`}
                    style={{
                      position: 'absolute',
@@ -570,7 +574,7 @@ export const GamePage: React.FC = () => {
                  />
              )}
              {/* Vignette */}
-             <div 
+             <div
                style={{
                  position: 'absolute',
                  inset: 0,
@@ -579,7 +583,7 @@ export const GamePage: React.FC = () => {
                  zIndex: 5
                }}
              />
-             
+
              {/* Crosshair */}
              {mobileControlMode === 'crosshair' && (
                <div
@@ -613,14 +617,14 @@ export const GamePage: React.FC = () => {
              {/* Hit Result Popup */}
              <div style={{ position: 'absolute', top: isMobile ? 20 : 160, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', pointerEvents: 'none', zIndex: 10 }}>
                 {latestHit && (
-                   <div 
-                      key={latestHit.time} 
-                      style={{ 
-                         fontSize: 48, 
-                         fontWeight: 'bold', 
-                         color: latestHit.type === 'Miss' ? '#ef4444' : 
-                                latestHit.type === 'Perfect' ? '#60a5fa' : 
-                                latestHit.type === 'Good' ? '#4ade80' : 
+                   <div
+                      key={latestHit.time}
+                      style={{
+                         fontSize: 48,
+                         fontWeight: 'bold',
+                         color: latestHit.type === 'Miss' ? '#ef4444' :
+                                latestHit.type === 'Perfect' ? '#60a5fa' :
+                                latestHit.type === 'Good' ? '#4ade80' :
                                 latestHit.type === 'Wrong' ? '#c084fc' : '#facc15',
                          textShadow: '0 0 10px rgba(0,0,0,0.8)',
                          animation: 'popAndFade 1s forwards'
@@ -635,7 +639,7 @@ export const GamePage: React.FC = () => {
              <div style={{ position: 'absolute', bottom: isMobile ? 10 : 60, left: '50%', transform: 'translateX(-50%)', width: isMobile ? 300 : 400, height: 8, background: 'rgba(0,0,0,0.6)', borderRadius: 4, pointerEvents: 'none', zIndex: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)' }}>
                 <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 2, background: 'rgba(255,255,255,0.8)', transform: 'translateX(-50%)' }} />
                 {latestHit && (
-                   <div 
+                   <div
                       key={`hit-${latestHit.time}`}
                       style={{
                          position: 'absolute',
@@ -652,11 +656,11 @@ export const GamePage: React.FC = () => {
                    />
                 )}
              </div>
-             
+
              {/* Mobile Pause Button */}
              {isMobile && (
                <button
-                 onClick={() => setGameState('paused')}
+                 onClick={() => setGamePhase('paused')}
                  style={{
                    position: 'absolute',
                    top: 20,
@@ -682,7 +686,7 @@ export const GamePage: React.FC = () => {
 
 
         {/* Pause Overlay */}
-        {gameState === 'paused' && (
+        {gamePhase === 'paused' && (
            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.8)', zIndex: 40 }}>
               {isResuming ? (
                  <div key={resumeCount} style={{ color: 'white', fontSize: 120, fontWeight: 'bold', animation: 'zoomIn 0.5s ease-out forwards', textShadow: '0 0 20px rgba(99, 102, 241, 0.8)' }}>
@@ -692,7 +696,7 @@ export const GamePage: React.FC = () => {
                  <>
                     <h2 style={{ color: 'white', fontSize: 48, marginBottom: 40 }}>Paused</h2>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                       <button 
+                       <button
                           onClick={() => {
                              setIsResuming(true);
                              setResumeCount(3);
@@ -701,7 +705,7 @@ export const GamePage: React.FC = () => {
                        >
                           Resume
                        </button>
-                       <button 
+                       <button
                           onClick={() => {
                              resetGamePlay();
                              setIsResuming(true);
@@ -711,11 +715,11 @@ export const GamePage: React.FC = () => {
                        >
                           Restart
                        </button>
-                       <button 
+                       <button
                           onClick={() => {
                              resetGamePlay();
                              setPreviewPlaying(false);
-                             setGameState('arrange');
+                             setGamePhase('arrange');
                           }}
                           style={{ padding: '12px 32px', fontSize: 20, cursor: 'pointer', borderRadius: 8, background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.3)' }}
                        >
@@ -728,7 +732,7 @@ export const GamePage: React.FC = () => {
         )}
 
         {/* Result Overlay */}
-        {gameState === 'result' && (
+        {gamePhase === 'result' && (
            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.9)', zIndex: 40, animation: 'fadeIn 0.5s forwards' }}>
               <h2 style={{ color: 'white', fontSize: isMobile ? 28 : 56, marginBottom: isMobile ? 4 : 10, textShadow: '0 4px 20px rgba(99,102,241,0.5)', animation: 'slideInUp 0.5s forwards' }}>Level Cleared</h2>
               <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: isMobile ? 12 : 18, marginBottom: isMobile ? 8 : 24, animation: 'slideInUp 0.5s forwards', animationDelay: '0.05s', opacity: 0, animationFillMode: 'forwards', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -740,7 +744,7 @@ export const GamePage: React.FC = () => {
               <div style={{ color: '#a5b4fc', fontSize: isMobile ? 16 : 24, marginBottom: isMobile ? 8 : 40, animation: 'slideInUp 0.5s forwards', animationDelay: '0.1s', opacity: 0, animationFillMode: 'forwards' }}>
                  Score: <span style={{ color: 'white', fontWeight: 'bold' }}>{gameScore}</span>
               </div>
-              
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 4 : 12, width: isMobile ? '220px' : '300px', marginBottom: isMobile ? 16 : 40 }}>
                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 14 : 20, animation: 'slideInUp 0.5s forwards', animationDelay: '0.2s', opacity: 0, animationFillMode: 'forwards' }}>
                     <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>Perfect</span>
@@ -770,10 +774,10 @@ export const GamePage: React.FC = () => {
               </div>
 
               <div style={{ display: 'flex', gap: isMobile ? 8 : 16, animation: 'slideInUp 0.5s forwards', animationDelay: '0.9s', opacity: 0, animationFillMode: 'forwards' }}>
-                 <button 
+                 <button
                     onClick={() => {
                        resetGamePlay();
-                       setGameState('paused');
+                       setGamePhase('paused');
                        setTimeout(() => {
                          setIsResuming(true);
                          setResumeCount(3);
@@ -783,11 +787,11 @@ export const GamePage: React.FC = () => {
                  >
                     Play Again
                  </button>
-                 <button 
+                 <button
                     onClick={() => {
                        resetGamePlay();
                        setPreviewPlaying(false);
-                       setGameState('arrange');
+                       setGamePhase('arrange');
                     }}
                     style={{ padding: isMobile ? '10px 24px' : '12px 32px', fontSize: isMobile ? 16 : 20, cursor: 'pointer', borderRadius: 8, background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.3)', fontWeight: 'bold' }}
                  >
@@ -796,10 +800,10 @@ export const GamePage: React.FC = () => {
               </div>
            </div>
         )}
-        
+
         {/* Settings Panel Render */}
         <div style={{ zIndex: 50 }}>
-          <SettingsPanel />
+          <SettingsPanel hideProjectActions />
         </div>
 
         {/* Tutorial Overlay */}
@@ -814,8 +818,8 @@ export const GamePage: React.FC = () => {
         </ModalPanel>
 
         {/* Mobile Fullscreen Button */}
-        {isMobile && !isFullscreen && gameState !== 'play' && (
-          <button 
+        {isMobile && !isFullscreen && gamePhase !== 'play' && (
+          <button
             onClick={requestFullscreen}
             style={{ position: 'absolute', top: 20, left: 20, zIndex: 100, padding: '12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}
           >

@@ -6,7 +6,6 @@ import {
 import { Midi } from '@tonejs/midi';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import type { EditorNote, EditorTrack, ParsedMidiData } from '../../types';
-import { useStore } from '../../store/useStore';
 import { exportLevel, importLevel } from '../../utils/levelUtils';
 import { exportToMidiFile } from '../../utils/midiExport';
 import { HelpModal } from './HelpModal';
@@ -24,7 +23,6 @@ const formatTime = (seconds: number) => {
 
 export const LevelEditorToolbar: React.FC = () => {
   const store = useLevelEditorStore();
-  const mainStore = useStore();
   const audioInputRef = useRef<HTMLInputElement>(null);
   const midiInputRef = useRef<HTMLInputElement>(null);
   const yblevelInputRef = useRef<HTMLInputElement>(null);
@@ -171,8 +169,8 @@ export const LevelEditorToolbar: React.FC = () => {
 
       store.setMidiData(parsedData);
       
-      mainStore.setGameBlocks(imported.levelData.blocks);
-      mainStore.setGameEvents(imported.levelData.events);
+      store.setGameBlocks(imported.levelData.blocks);
+      store.setGameEvents(imported.levelData.events);
       syncGameEventsFromMidi(parsedData);
       store.commitHistory();
 
@@ -207,7 +205,7 @@ export const LevelEditorToolbar: React.FC = () => {
         description: store.levelDescription,
         midiCredit: store.levelMidiCredit,
         musicCredit: store.levelMusicCredit,
-        gameBlocks: mainStore.gameBlocks,
+        gameBlocks: store.gameBlocks,
         gameEvents: gameEvents,
       });
 

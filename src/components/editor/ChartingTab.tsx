@@ -55,7 +55,7 @@ export const ChartingTab: React.FC = () => {
         main.updateGroupRect(entry.note.targetId, { playedAt: Date.now() });
       } else {
         main.updateBlock(entry.note.targetId, { playedAt: Date.now() });
-        main.updateGameBlock(entry.note.targetId, { playedAt: Date.now() });
+        useLevelEditorStore.getState().updateGameBlock(entry.note.targetId, { playedAt: Date.now() });
       }
       store.setPlaybackAnchor(entry.note.timeStart);
       store.togglePlayback();
@@ -91,7 +91,7 @@ export const ChartingTab: React.FC = () => {
               main.updateGroupRect(note.targetId, { playedAt: Date.now() });
             } else {
               main.updateBlock(note.targetId, { playedAt: Date.now() });
-              main.updateGameBlock(note.targetId, { playedAt: Date.now() });
+              useLevelEditorStore.getState().updateGameBlock(note.targetId, { playedAt: Date.now() });
             }
           } else if (!note.targetId && !s.chartingAwaitingPick) {
             const idx = chartNotes.findIndex((e) => e.note.id === note.id);

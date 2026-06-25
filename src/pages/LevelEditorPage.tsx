@@ -1,11 +1,12 @@
 import React, { useEffect } from 'react';
 import { useLevelEditorStore } from '../store/useLevelEditorStore';
 import { useStore } from '../store/useStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { PianoRoll } from '../components/editor/PianoRoll';
 import { LevelEditorToolbar } from '../components/editor/LevelEditorToolbar';
-import { Canvas } from '../components/canvas/Canvas';
+import { EditorCanvas } from '../components/canvas/EditorCanvas';
 import { ChartingTab } from '../components/editor/ChartingTab';
-import { syncGameBlocksToCanvas } from '../utils/chartUtils';
+import { CanvasContext } from '../components/canvas/CanvasContext';
 import { WaveformView } from '../components/editor/WaveformView';
 import { TrackPanel } from '../components/editor/TrackPanel';
 import { parseMidiFile } from '../utils/midiImport';
@@ -21,7 +22,7 @@ import { PocketDragOverlay } from '../components/ui/PocketDragOverlay';
 import { useShortcuts } from '../hooks/useShortcuts';
 
 const ShortcutsEnabler = () => {
-  useShortcuts();
+  useShortcuts('editor');
   return null;
 };
 
@@ -29,35 +30,32 @@ const BlocksPlaybackSync = () => {
   React.useEffect(() => {
     let rafId: number;
     let lastPlayedIndex = 0;
-    
+
     const tick = () => {
-      const state = useLevelEditorStore.getState();
-      if (state.isPlaying) {
-        const events = useStore.getState().gameEvents;
-        const currentMs = state.playbackPosition * 1000;
-        
-        // Handle seek backwards or wrap around
+      const editorState = useLevelEditorStore.getState();
+      if (editorState.isPlaying) {
+        const events = editorState.gameEvents;
+        const currentMs = editorState.playbackPosition * 1000;
+
         if (lastPlayedIndex > 0 && events[lastPlayedIndex - 1]?.time > currentMs) {
           lastPlayedIndex = events.findIndex(e => e.time >= currentMs);
           if (lastPlayedIndex === -1) lastPlayedIndex = events.length;
         }
-        
+
         while (lastPlayedIndex < events.length && events[lastPlayedIndex].time <= currentMs) {
           const ev = events[lastPlayedIndex];
-          const main = useStore.getState();
-          const block = main.blocks.find(b => b.id === ev.blockId) ?? main.gameBlocks.find(b => b.id === ev.blockId);
+          const block = editorState.gameBlocks.find(b => b.id === ev.blockId);
           if (block) {
-            main.updateBlock(ev.blockId, { playedAt: Date.now() });
-            main.updateGameBlock(ev.blockId, { playedAt: Date.now() });
+            editorState.updateGameBlock(ev.blockId, { playedAt: Date.now() });
           } else {
-            const gr = main.groupRects.find(g => g.id === ev.blockId);
-            if (gr) main.updateGroupRect(ev.blockId, { playedAt: Date.now() });
+            const gr = useStore.getState().groupRects.find(g => g.id === ev.blockId);
+            if (gr) useStore.getState().updateGroupRect(ev.blockId, { playedAt: Date.now() });
           }
           lastPlayedIndex++;
         }
       } else {
-        const events = useStore.getState().gameEvents;
-        const currentMs = state.playbackPosition * 1000;
+        const events = editorState.gameEvents;
+        const currentMs = editorState.playbackPosition * 1000;
         const idx = events.findIndex(e => e.time >= currentMs);
         lastPlayedIndex = idx !== -1 ? idx : events.length;
       }
@@ -66,7 +64,7 @@ const BlocksPlaybackSync = () => {
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
   }, []);
-  
+
   return null;
 };
 
@@ -151,7 +149,7 @@ const GlobalPlayhead = () => {
 
 export const LevelEditorPage: React.FC = () => {
   const { activeTab } = useLevelEditorStore();
-  const theme = useStore((s) => s.theme);
+  const { theme } = useSettingsStore();
   const setMode = useStore((s) => s.setMode);
   const store = useLevelEditorStore();
 
@@ -310,9 +308,10 @@ export const LevelEditorPage: React.FC = () => {
           pointerEvents: activeTab === 'blocks' || activeTab === 'charting' ? 'auto' : 'none'
         }}>
           <div className="le-blocks-container" style={{ position: 'relative', width: '100%', height: '100%' }}>
+            <CanvasContext.Provider value="editor">
                 <ShortcutsEnabler />
                 <BlocksPlaybackSync />
-                <Canvas />
+                <EditorCanvas />
                 {activeTab === 'blocks' && (
                   <div className="le-blocks-hint">
                     Drag blocks to arrange your beatmap layout
@@ -375,6 +374,7 @@ export const LevelEditorPage: React.FC = () => {
                    </div>
                 </div>
                 )}
+            </CanvasContext.Provider>
               </div>
             </div>
           </div>

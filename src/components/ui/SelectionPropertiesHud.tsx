@@ -1,9 +1,13 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
+import { useLevelEditorStore } from '../../store/useLevelEditorStore';
+import { useGameStore } from '../../store/useGameStore';
+import { useCanvasContext } from '../canvas/CanvasContext';
 
 export const SelectionPropertiesHud: React.FC = () => {
+  const canvasContext = useCanvasContext();
   const {
-    blocks,
+    blocks: mainBlocks,
     tracks,
     groupRects,
     selectedBlockIds,
@@ -11,6 +15,11 @@ export const SelectionPropertiesHud: React.FC = () => {
     selectedGroupRectIds,
     mode
   } = useStore();
+  const blocks = canvasContext === 'editor'
+    ? useLevelEditorStore.getState().gameBlocks
+    : canvasContext === 'game'
+      ? useGameStore.getState().gameBlocks
+      : mainBlocks;
 
   const totalSelected = selectedBlockIds.length + selectedTrackIds.length + selectedGroupRectIds.length;
 
@@ -24,7 +33,7 @@ export const SelectionPropertiesHud: React.FC = () => {
       {totalSelected === 1 ? (
         <div className="hud-content">
           {selectedBlockIds.length === 1 && (() => {
-            const block = blocks.find(b => b.id === selectedBlockIds[0]) || useStore.getState().gameBlocks.find(b => b.id === selectedBlockIds[0]);
+            const block = blocks.find(b => b.id === selectedBlockIds[0]);
             if (!block) return null;
             return (
               <>

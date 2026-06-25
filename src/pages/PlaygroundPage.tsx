@@ -10,15 +10,15 @@ import { ContextMenu } from '../components/ui/ContextMenu';
 import { PlaybackControls } from '../components/ui/PlaybackControls';
 import { SelectionPropertiesHud } from '../components/ui/SelectionPropertiesHud';
 import { PocketDragOverlay } from '../components/ui/PocketDragOverlay';
-import { useStore } from '../store/useStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { useShortcuts } from '../hooks/useShortcuts';
 import { useGameLoop } from '../hooks/useGameLoop';
 
 export function PlaygroundPage() {
-  const theme = useStore((state) => state.theme);
-  
+  const { theme } = useSettingsStore();
+
   // Initialize global shortcuts and game loop
-  useShortcuts();
+  useShortcuts('playground');
   useGameLoop();
 
   return (

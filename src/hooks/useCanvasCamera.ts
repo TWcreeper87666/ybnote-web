@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { useStore } from '../store/useStore';
+import { useGameStore } from '../store/useGameStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 
 interface UseCanvasCameraOptions {
   isPlayMode: boolean;
@@ -19,7 +21,7 @@ export const useCanvasCamera = ({ isPlayMode, isActive, isGameCanvas, onWheelInt
       
       e.preventDefault();
       const state = useStore.getState();
-      const activeCamera = isGameCanvas ? state.gameCamera : state.camera;
+      const activeCamera = isGameCanvas ? useGameStore.getState().gameCamera : state.camera;
       const zoomFactor = 1.1;
       const direction = e.deltaY > 0 ? 1 / zoomFactor : zoomFactor;
       
@@ -30,7 +32,7 @@ export const useCanvasCamera = ({ isPlayMode, isActive, isGameCanvas, onWheelInt
       const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
       const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
       
-      const mode = state.mobileControlMode;
+      const mode = useSettingsStore.getState().mobileControlMode;
       const isCrosshair = isPlayMode && mode === 'crosshair';
       const globalX = isCrosshair ? window.innerWidth / 2 : e.clientX - rect.left;
       const globalY = isCrosshair ? window.innerHeight / 2 : e.clientY - rect.top;
@@ -42,7 +44,7 @@ export const useCanvasCamera = ({ isPlayMode, isActive, isGameCanvas, onWheelInt
       const newCameraY = globalY - localY * newZoom;
 
       if (isGameCanvas) {
-         state.updateGameCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+         useGameStore.getState().updateGameCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
       } else {
          state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
       }

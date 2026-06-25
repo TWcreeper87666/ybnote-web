@@ -1,11 +1,12 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
 import { Moon, Sun, Grid } from 'lucide-react';
 import { ModalPanel } from './ModalPanel';
-import { isGame } from '../../utils/routeUtils';
 
-export const SettingsPanel: React.FC = () => {
-  const { isSettingsOpen, toggleSettings, theme, setTheme, showGrid, snapToGrid, setGridConfig, blockOpacity, setBlockOpacity } = useStore();
+export const SettingsPanel: React.FC<{ hideProjectActions?: boolean }> = ({ hideProjectActions = false }) => {
+  const { isSettingsOpen, toggleSettings } = useStore();
+  const { theme, setTheme, showGrid, snapToGrid, setGridConfig, blockOpacity, setBlockOpacity } = useSettingsStore();
   return (
     <ModalPanel title="Settings" isOpen={isSettingsOpen} onClose={toggleSettings}>
         {/* Theme Toggle */}
@@ -55,22 +56,22 @@ export const SettingsPanel: React.FC = () => {
         <div className="settings-section">
           <h3>Controls & Audio</h3>
           <label className="switch-row">
-            <span>Master Volume ({Math.round(useStore.getState().masterVolume * 100)}%)</span>
-            <input 
-              type="range" 
+            <span>Master Volume ({Math.round(useSettingsStore.getState().masterVolume * 100)}%)</span>
+            <input
+              type="range"
               min="0" max="1" step="0.05"
-              value={useStore.getState().masterVolume} 
-              onChange={(e) => useStore.getState().setMasterVolume(parseFloat(e.target.value))} 
+              value={useSettingsStore.getState().masterVolume}
+              onChange={(e) => useSettingsStore.getState().setMasterVolume(parseFloat(e.target.value))}
               style={{ width: '100px' }}
             />
           </label>
           <label className="switch-row">
-            <span>Mouse Sensitivity ({useStore.getState().mouseSensitivity.toFixed(1)})</span>
-            <input 
-              type="range" 
+            <span>Mouse Sensitivity ({useSettingsStore.getState().mouseSensitivity.toFixed(1)})</span>
+            <input
+              type="range"
               min="0.1" max="3" step="0.1"
-              value={useStore.getState().mouseSensitivity} 
-              onChange={(e) => useStore.getState().setMouseSensitivity(parseFloat(e.target.value))} 
+              value={useSettingsStore.getState().mouseSensitivity}
+              onChange={(e) => useSettingsStore.getState().setMouseSensitivity(parseFloat(e.target.value))}
               style={{ width: '100px' }}
             />
           </label>
@@ -90,40 +91,40 @@ export const SettingsPanel: React.FC = () => {
           </label>
           <label className="switch-row">
             <span>Show Group Name</span>
-            <input 
-              type="checkbox" 
-              checked={useStore.getState().showGroupName} 
-              onChange={(e) => useStore.getState().setDisplaySettings({ showGroupName: e.target.checked })} 
+            <input
+              type="checkbox"
+              checked={useSettingsStore.getState().showGroupName}
+              onChange={(e) => useSettingsStore.getState().setDisplaySettings({ showGroupName: e.target.checked })}
             />
           </label>
           <label className="switch-row">
             <span>Show Pitch</span>
-            <input 
-              type="checkbox" 
-              checked={useStore.getState().showBlockPitch} 
-              onChange={(e) => useStore.getState().setDisplaySettings({ showBlockPitch: e.target.checked })} 
+            <input
+              type="checkbox"
+              checked={useSettingsStore.getState().showBlockPitch}
+              onChange={(e) => useSettingsStore.getState().setDisplaySettings({ showBlockPitch: e.target.checked })}
             />
           </label>
           <label className="switch-row">
             <span>Show Volume</span>
-            <input 
-              type="checkbox" 
-              checked={useStore.getState().showBlockVolume} 
-              onChange={(e) => useStore.getState().setDisplaySettings({ showBlockVolume: e.target.checked })} 
+            <input
+              type="checkbox"
+              checked={useSettingsStore.getState().showBlockVolume}
+              onChange={(e) => useSettingsStore.getState().setDisplaySettings({ showBlockVolume: e.target.checked })}
             />
           </label>
           <label className="switch-row">
             <span>Show Instrument</span>
-            <input 
-              type="checkbox" 
-              checked={useStore.getState().showBlockInstrument} 
-              onChange={(e) => useStore.getState().setDisplaySettings({ showBlockInstrument: e.target.checked })} 
+            <input
+              type="checkbox"
+              checked={useSettingsStore.getState().showBlockInstrument}
+              onChange={(e) => useSettingsStore.getState().setDisplaySettings({ showBlockInstrument: e.target.checked })}
             />
           </label>
         </div>
 
         {/* Actions - Hidden in Game Mode */}
-        {!isGame() && (
+        {!hideProjectActions && (
           <div className="settings-actions">
           <button 
             className="action-btn"

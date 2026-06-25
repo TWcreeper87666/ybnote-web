@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
 import { playNote } from '../../utils/audio';
 import { X } from 'lucide-react';
 import { getPitchColorHex } from '../../utils/colors';
@@ -80,7 +81,7 @@ export const DrumKeyboard: React.FC = () => {
           let newX = x - 30; // center of 60x60 block
           let newY = y - 30;
           
-          if (state.snapToGrid) {
+          if (useSettingsStore.getState().snapToGrid) {
             const snapSize = 30;
             newX = Math.round(newX / snapSize) * snapSize;
             newY = Math.round(newY / snapSize) * snapSize;

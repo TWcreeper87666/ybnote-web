@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Application, useTick } from '@pixi/react';
 import * as PIXI from 'pixi.js';
 import { useStore } from '../../store/useStore';
+import { useGameStore } from '../../store/useGameStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
 import { getPitchColorNumber } from '../../utils/colors';
 import { playNote } from '../../utils/audio';
 import { NoteBlock } from '../blocks/NoteBlock';
@@ -13,6 +15,7 @@ import { GroupRectRenderer } from '../containers/GroupRectRenderer';
 import { useCanvasCamera } from '../../hooks/useCanvasCamera';
 import { useCanvasInteractions } from '../../hooks/useCanvasInteractions';
 import { lineIntersectsRect } from '../../utils/geometry';
+import { CanvasContext } from './CanvasContext';
 
 declare global {
   interface Window {
@@ -58,7 +61,8 @@ const TickerSync: React.FC<{ handleTick: () => void }> = ({ handleTick }) => {
 };
 
 export const GameCanvas: React.FC = () => {
-  const { gameBlocks, gameEvents, gameCamera: camera, theme, gameState, setGameStats, gameResetCount, showGrid } = useStore();
+  const { gameBlocks, gameEvents, gameCamera: camera, gamePhase, setGameStats, gameResetCount } = useGameStore();
+  const { showGrid, theme } = useSettingsStore();
   const isMobile = useIsMobile();
   
   const gameTimeRef = useRef(-APPROACH_TIME);
@@ -113,8 +117,8 @@ export const GameCanvas: React.FC = () => {
   }, []);
 
   useCanvasCamera({
-    isPlayMode: gameState === 'play',
-    isActive: gameState === 'arrange' || gameState === 'play',
+    isPlayMode: gamePhase === 'play',
+    isActive: gamePhase === 'arrange' || gamePhase === 'play',
     isGameCanvas: true,
     onWheelIntercept: (e) => {
       if ((e.target as HTMLElement)?.closest('.settings-panel, .tutorial-overlay')) return true;
@@ -126,14 +130,14 @@ export const GameCanvas: React.FC = () => {
 
 
   const attemptHit = useCallback((blockId: string) => {
-      const state = useStore.getState();
-      const b = state.gameBlocks.find(blk => blk.id === blockId);
+      const gs = useGameStore.getState();
+      const b = gs.gameBlocks.find(blk => blk.id === blockId);
       if (b) {
           playNote(b.pitch, b.volume, b.instrument);
-          state.updateGameBlock(b.id, { playedAt: Date.now() });
+          gs.updateGameBlock(b.id, { playedAt: Date.now() });
       }
 
-      if (useStore.getState().gameState !== 'play') return;
+      if (gs.gamePhase !== 'play') return;
 
       const elapsedTime = gameTimeRef.current;
       
@@ -156,33 +160,32 @@ export const GameCanvas: React.FC = () => {
       if (hitCircle) {
           const offset = elapsedTime - hitCircle.eventTime;
           activeCirclesRef.current.splice(bestHitIndex, 1);
-          
+
           let points = 50;
           let type: 'Perfect' | 'Good' | 'Bad' = 'Bad';
           if (minTimeDiff < 50) { points = 300; type = 'Perfect'; }
           else if (minTimeDiff < 100) { points = 100; type = 'Good'; }
-          
-          const state = useStore.getState();
-          const newCombo = state.gameCombo + 1;
-          const newStats: Partial<ReturnType<typeof useStore.getState>> = { 
-              gameScore: state.gameScore + points, 
+
+          const curGs = useGameStore.getState();
+          const newCombo = curGs.gameCombo + 1;
+          const newStats: Parameters<typeof curGs.setGameStats>[0] = {
+              gameScore: curGs.gameScore + points,
               gameCombo: newCombo,
-              maxCombo: Math.max(state.maxCombo, newCombo),
+              maxCombo: Math.max(curGs.maxCombo, newCombo),
               latestHit: { type, offset, time: Date.now(), color: hitCircle.color }
           };
-          if (type === 'Perfect') newStats.perfectCount = state.perfectCount + 1;
-          else if (type === 'Good') newStats.goodCount = state.goodCount + 1;
-          else if (type === 'Bad') newStats.badCount = state.badCount + 1;
-          
+          if (type === 'Perfect') newStats.perfectCount = curGs.perfectCount + 1;
+          else if (type === 'Good') newStats.goodCount = curGs.goodCount + 1;
+          else if (type === 'Bad') newStats.badCount = curGs.badCount + 1;
+
           setGameStats(newStats);
           setActiveCirclesState([...activeCirclesRef.current]);
       } else {
-          const state = useStore.getState();
-          const newScore = Math.max(0, state.gameScore - 50);
+          const curGs = useGameStore.getState();
           setGameStats({
-              gameScore: newScore,
+              gameScore: Math.max(0, curGs.gameScore - 50),
               gameCombo: 0,
-              wrongCount: state.wrongCount + 1,
+              wrongCount: curGs.wrongCount + 1,
               latestHit: { type: 'Wrong', offset: 0, time: Date.now(), color: b?.pitch ? getPitchColorNumber(b.pitch, 36) : 0xffffff }
           });
       }
@@ -190,8 +193,7 @@ export const GameCanvas: React.FC = () => {
 
   const checkTrailIntersection = useCallback((x1: number, y1: number, x2: number, y2: number) => {
     const currentFrameIntersected = new Set<string>();
-    const state = useStore.getState();
-    state.gameBlocks.forEach(b => {
+    useGameStore.getState().gameBlocks.forEach(b => {
       if (lineIntersectsRect(x1, y1, x2, y2, b.x, b.y, 60, 60)) {
         currentFrameIntersected.add(b.id);
         if (!intersectedBlocksRef.current.has(b.id)) {
@@ -204,10 +206,9 @@ export const GameCanvas: React.FC = () => {
 
   // Handle Play mode camera and hit logic
   useEffect(() => {
-    if (gameState !== 'play') return;
-    
-    const state = useStore.getState();
-    const currentMode = state.mobileControlMode;
+    if (gamePhase !== 'play') return;
+
+    const currentMode = useSettingsStore.getState().mobileControlMode;
 
     if (!isMobile && currentMode === 'crosshair') {
       document.body.requestPointerLock().catch(err => {
@@ -229,23 +230,24 @@ export const GameCanvas: React.FC = () => {
     let playInitLocalY = 0;
 
     const applyMovement = () => {
-      const state = useStore.getState();
-      const newCamX = state.gameCamera.x - pendingMovementX * (isMobile ? state.mouseSensitivity * 2 : state.mouseSensitivity);
-      const newCamY = state.gameCamera.y - pendingMovementY * (isMobile ? state.mouseSensitivity * 2 : state.mouseSensitivity);
-      
-      if (buttonsPressed > 0 && state.mobileControlMode === 'crosshair') {
+      const gs = useGameStore.getState();
+      const { mouseSensitivity, mobileControlMode } = useSettingsStore.getState();
+      const newCamX = gs.gameCamera.x - pendingMovementX * (isMobile ? mouseSensitivity * 2 : mouseSensitivity);
+      const newCamY = gs.gameCamera.y - pendingMovementY * (isMobile ? mouseSensitivity * 2 : mouseSensitivity);
+
+      if (buttonsPressed > 0 && mobileControlMode === 'crosshair') {
         const centerX = window.innerWidth / 2;
         const centerY = window.innerHeight / 2;
         
-        const newLocalX = (centerX - newCamX) / state.gameCamera.zoom;
-        const newLocalY = (centerY - newCamY) / state.gameCamera.zoom;
-        
+        const newLocalX = (centerX - newCamX) / gs.gameCamera.zoom;
+        const newLocalY = (centerY - newCamY) / gs.gameCamera.zoom;
+
         updateTrail(newLocalX, newLocalY, (p1, p2) => {
           checkTrailIntersection(p1.x, p1.y, p2.x, p2.y);
         });
       }
-      
-      useStore.getState().updateGameCamera({ x: newCamX, y: newCamY });
+
+      useGameStore.getState().updateGameCamera({ x: newCamX, y: newCamY });
       
       pendingMovementX = 0;
       pendingMovementY = 0;
@@ -254,8 +256,8 @@ export const GameCanvas: React.FC = () => {
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      const state = useStore.getState();
-      const mode = state.mobileControlMode;
+      const mode = useSettingsStore.getState().mobileControlMode;
+      const gc = useGameStore.getState().gameCamera;
 
       if (mode === 'crosshair') {
         pendingMovementX += e.movementX;
@@ -269,8 +271,8 @@ export const GameCanvas: React.FC = () => {
         if (e.buttons > 0) {
           const workspace = document.querySelector('.le-workspace');
           const rect = workspace ? workspace.getBoundingClientRect() : { left: 0, top: 0 };
-          const localX = (e.clientX - rect.left - state.gameCamera.x) / state.gameCamera.zoom;
-          const localY = (e.clientY - rect.top - state.gameCamera.y) / state.gameCamera.zoom;
+          const localX = (e.clientX - rect.left - gc.x) / gc.zoom;
+          const localY = (e.clientY - rect.top - gc.y) / gc.zoom;
           updateTrail(localX, localY, (p1, p2) => {
              checkTrailIntersection(p1.x, p1.y, p2.x, p2.y);
           });
@@ -279,21 +281,21 @@ export const GameCanvas: React.FC = () => {
     };
 
     const handleMouseDown = (e?: MouseEvent) => {
-      const state = useStore.getState();
-      const mode = state.mobileControlMode;
+      const mode = useSettingsStore.getState().mobileControlMode;
+      const gc = useGameStore.getState().gameCamera;
       const workspace = document.querySelector('.le-workspace');
       const rect = workspace ? workspace.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
-      
+
       let localX: number, localY: number;
 
       if (mode === 'crosshair') {
         const centerX = rect.width / 2;
         const centerY = rect.height / 2;
-        localX = (centerX - state.gameCamera.x) / state.gameCamera.zoom;
-        localY = (centerY - state.gameCamera.y) / state.gameCamera.zoom;
+        localX = (centerX - gc.x) / gc.zoom;
+        localY = (centerY - gc.y) / gc.zoom;
       } else if (e) {
-        localX = (e.clientX - rect.left - state.gameCamera.x) / state.gameCamera.zoom;
-        localY = (e.clientY - rect.top - state.gameCamera.y) / state.gameCamera.zoom;
+        localX = (e.clientX - rect.left - gc.x) / gc.zoom;
+        localY = (e.clientY - rect.top - gc.y) / gc.zoom;
       } else {
         return;
       }
@@ -314,8 +316,8 @@ export const GameCanvas: React.FC = () => {
       const isCanvas = (e.target as HTMLElement)?.tagName?.toLowerCase() === 'canvas';
       if (!isCanvas) return;
       e.preventDefault();
-      const state = useStore.getState();
-      const mode = state.mobileControlMode;
+      const mode = useSettingsStore.getState().mobileControlMode;
+      const gc = useGameStore.getState().gameCamera;
       const workspace = document.querySelector('.le-workspace');
       const rect = workspace ? workspace.getBoundingClientRect() : { left: 0, top: 0 };
 
@@ -338,8 +340,8 @@ export const GameCanvas: React.FC = () => {
            if ((e as unknown as TouchEvent).touches.length === 1) {
               if (leftTouchId === null) {
                 leftTouchId = touch.identifier;
-                const localX = (touch.clientX - rect.left - state.gameCamera.x) / state.gameCamera.zoom;
-                const localY = (touch.clientY - rect.top - state.gameCamera.y) / state.gameCamera.zoom;
+                const localX = (touch.clientX - rect.left - gc.x) / gc.zoom;
+                const localY = (touch.clientY - rect.top - gc.y) / gc.zoom;
                 startTrail(localX, localY);
                 intersectedBlocksRef.current.clear();
                 checkTrailIntersection(localX, localY, localX, localY);
@@ -352,11 +354,11 @@ export const GameCanvas: React.FC = () => {
               const dx = (e as unknown as TouchEvent).touches[0].clientX - (e as unknown as TouchEvent).touches[1].clientX;
               const dy = (e as unknown as TouchEvent).touches[0].clientY - (e as unknown as TouchEvent).touches[1].clientY;
               playPinchDist = Math.sqrt(dx*dx + dy*dy);
-              playInitZoom = state.gameCamera.zoom;
+              playInitZoom = gc.zoom;
               const centerX = ((e as unknown as TouchEvent).touches[0].clientX + (e as unknown as TouchEvent).touches[1].clientX) / 2;
               const centerY = ((e as unknown as TouchEvent).touches[0].clientY + (e as unknown as TouchEvent).touches[1].clientY) / 2;
-              playInitLocalX = (centerX - rect.left - state.gameCamera.x) / state.gameCamera.zoom;
-              playInitLocalY = (centerY - rect.top - state.gameCamera.y) / state.gameCamera.zoom;
+              playInitLocalX = (centerX - rect.left - gc.x) / gc.zoom;
+              playInitLocalY = (centerY - rect.top - gc.y) / gc.zoom;
            }
         }
       }
@@ -366,8 +368,8 @@ export const GameCanvas: React.FC = () => {
       const isCanvas = (e.target as HTMLElement)?.tagName?.toLowerCase() === 'canvas';
       if (!isCanvas) return;
       e.preventDefault();
-      const state = useStore.getState();
-      const mode = state.mobileControlMode;
+      const mode = useSettingsStore.getState().mobileControlMode;
+      const gc2 = useGameStore.getState().gameCamera;
       const workspace = document.querySelector('.le-workspace');
       const rect = workspace ? workspace.getBoundingClientRect() : { left: 0, top: 0 };
 
@@ -383,11 +385,11 @@ export const GameCanvas: React.FC = () => {
            const dist = Math.sqrt(Math.pow(rightTouches[0].clientX - rightTouches[1].clientX, 2) + Math.pow(rightTouches[0].clientY - rightTouches[1].clientY, 2));
            if (playPinchDist === 0) {
              playPinchDist = dist;
-             playInitZoom = state.gameCamera.zoom;
+             playInitZoom = gc2.zoom;
              const centerX = (rightTouches[0].clientX + rightTouches[1].clientX) / 2;
              const centerY = (rightTouches[0].clientY + rightTouches[1].clientY) / 2;
-             playInitLocalX = (centerX - rect.left - state.gameCamera.x) / state.gameCamera.zoom;
-             playInitLocalY = (centerY - rect.top - state.gameCamera.y) / state.gameCamera.zoom;
+             playInitLocalX = (centerX - rect.left - gc2.x) / gc2.zoom;
+             playInitLocalY = (centerY - rect.top - gc2.y) / gc2.zoom;
            } else {
              const zoomFactor = dist / playPinchDist;
              let newZoom = playInitZoom * zoomFactor;
@@ -396,7 +398,7 @@ export const GameCanvas: React.FC = () => {
              const centerY = (rightTouches[0].clientY + rightTouches[1].clientY) / 2;
              const newCameraX = (centerX - rect.left) - playInitLocalX * newZoom;
              const newCameraY = (centerY - rect.top) - playInitLocalY * newZoom;
-             state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+             useGameStore.getState().updateGameCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
            }
            lastRightTouchPos = null;
          } else {
@@ -426,13 +428,13 @@ export const GameCanvas: React.FC = () => {
             
             const newCameraX = (currentCenterX - rect.left) - playInitLocalX * newZoom;
             const newCameraY = (currentCenterY - rect.top) - playInitLocalY * newZoom;
-            state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+            useGameStore.getState().updateGameCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
          } else if ((e as unknown as TouchEvent).touches.length === 1 && leftTouchId !== null) {
             for (let i = 0; i < e.changedTouches.length; i++) {
                const touch = e.changedTouches[i];
                if (touch.identifier === leftTouchId) {
-                 const localX = (touch.clientX - rect.left - state.gameCamera.x) / state.gameCamera.zoom;
-                 const localY = (touch.clientY - rect.top - state.gameCamera.y) / state.gameCamera.zoom;
+                 const localX = (touch.clientX - rect.left - gc2.x) / gc2.zoom;
+                 const localY = (touch.clientY - rect.top - gc2.y) / gc2.zoom;
                  updateTrail(localX, localY, (p1, p2) => {
                    checkTrailIntersection(p1.x, p1.y, p2.x, p2.y);
                  });
@@ -446,8 +448,8 @@ export const GameCanvas: React.FC = () => {
       const isCanvas = (e.target as HTMLElement)?.tagName?.toLowerCase() === 'canvas';
       if (!isCanvas) return;
       e.preventDefault();
-      const state = useStore.getState();
-      const mode = state.mobileControlMode;
+      const mode = useSettingsStore.getState().mobileControlMode;
+      const gc3 = useGameStore.getState().gameCamera;
 
       if (mode === 'crosshair') {
          let rightTouchesCount = 0;
@@ -492,8 +494,8 @@ export const GameCanvas: React.FC = () => {
             leftTouchId = (e as unknown as TouchEvent).touches[0].identifier;
             const workspace = document.querySelector('.le-workspace');
             const rect = workspace ? workspace.getBoundingClientRect() : { left: 0, top: 0 };
-            const localX = ((e as unknown as TouchEvent).touches[0].clientX - rect.left - state.gameCamera.x) / state.gameCamera.zoom;
-            const localY = ((e as unknown as TouchEvent).touches[0].clientY - rect.top - state.gameCamera.y) / state.gameCamera.zoom;
+            const localX = ((e as unknown as TouchEvent).touches[0].clientX - rect.left - gc3.x) / gc3.zoom;
+            const localY = ((e as unknown as TouchEvent).touches[0].clientY - rect.top - gc3.y) / gc3.zoom;
             startTrail(localX, localY);
             intersectedBlocksRef.current.clear();
             checkTrailIntersection(localX, localY, localX, localY);
@@ -529,7 +531,7 @@ export const GameCanvas: React.FC = () => {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState, isMobile]);
+  }, [gamePhase, isMobile]);
 
 
   const handleTick = useCallback(() => {
@@ -537,9 +539,9 @@ export const GameCanvas: React.FC = () => {
     const delta = now - lastTickTimeRef.current;
     lastTickTimeRef.current = now;
 
-    if (gameState !== 'play') return;
-    
-    const speed = useStore.getState().gameSpeed;
+    if (gamePhase !== 'play') return;
+
+    const speed = useGameStore.getState().gameSpeed;
     gameTimeRef.current += delta * speed;
     const elapsedTime = gameTimeRef.current;
     window.__currentGameTime = elapsedTime;
@@ -585,10 +587,9 @@ export const GameCanvas: React.FC = () => {
 
        if (elapsedTime > circle.eventTime + HIT_WINDOW) {
            activeCirclesRef.current.splice(i, 1);
-           const state = useStore.getState();
-           setGameStats({ 
+           setGameStats({
              gameCombo: 0,
-             missCount: state.missCount + 1,
+             missCount: useGameStore.getState().missCount + 1,
              latestHit: { type: 'Miss', offset: HIT_WINDOW, time: Date.now(), color: circle.color }
            }); // Break combo
            stateChanged = true;
@@ -598,7 +599,7 @@ export const GameCanvas: React.FC = () => {
     if (pendingCirclesRef.current.length === 0 && activeCirclesRef.current.length === 0) {
         const lastEventTime = gameEvents.length > 0 ? gameEvents[gameEvents.length - 1].time : 0;
         if (elapsedTime > lastEventTime + HIT_WINDOW + 1500) {
-            useStore.getState().setGameState('result');
+            useGameStore.getState().setGamePhase('result');
             return;
         }
     }
@@ -609,7 +610,7 @@ export const GameCanvas: React.FC = () => {
     }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState, gameBlocks]);
+  }, [gamePhase, gameBlocks]);
 
   // Removed inline TickerSync
 
@@ -640,15 +641,15 @@ export const GameCanvas: React.FC = () => {
                   }
               }, 500);
 
-              if (useStore.getState().gameState === 'arrange') {
-                 const state = useStore.getState();
+              if (useGameStore.getState().gamePhase === 'arrange') {
+                 const gc = useGameStore.getState().gameCamera;
                  const workspace = document.querySelector('.le-workspace');
                  const rect = workspace ? workspace.getBoundingClientRect() : { left: 0, top: 0 };
-                 const localX = (startX - rect.left - state.gameCamera.x) / state.gameCamera.zoom;
-                 const localY = (startY - rect.top - state.gameCamera.y) / state.gameCamera.zoom;
-                 const hitBlock = state.gameBlocks.find(b => localX >= b.x && localX <= b.x + 60 && localY >= b.y && localY <= b.y + 60);
+                 const localX = (startX - rect.left - gc.x) / gc.zoom;
+                 const localY = (startY - rect.top - gc.y) / gc.zoom;
+                 const hitBlock = useGameStore.getState().gameBlocks.find(b => localX >= b.x && localX <= b.x + 60 && localY >= b.y && localY <= b.y + 60);
                  if (!hitBlock) {
-                     window.__panStart = { x: startX - state.gameCamera.x, y: startY - state.gameCamera.y };
+                     window.__panStart = { x: startX - gc.x, y: startY - gc.y };
                  } else {
                      window.__panStart = null;
                  }
@@ -657,17 +658,17 @@ export const GameCanvas: React.FC = () => {
               clearTimeout(longPressTimer);
           }
           
-          if ((e as unknown as TouchEvent).touches.length >= 2 && useStore.getState().gameState === 'arrange') {
+          if ((e as unknown as TouchEvent).touches.length >= 2 && useGameStore.getState().gamePhase === 'arrange') {
               const dx = (e as unknown as TouchEvent).touches[0].clientX - (e as unknown as TouchEvent).touches[1].clientX;
               const dy = (e as unknown as TouchEvent).touches[0].clientY - (e as unknown as TouchEvent).touches[1].clientY;
               initialPinchDist = Math.sqrt(dx*dx + dy*dy);
-              const state = useStore.getState();
-              initialZoom = state.gameCamera.zoom;
+              const gc = useGameStore.getState().gameCamera;
+              initialZoom = gc.zoom;
               const centerX = ((e as unknown as TouchEvent).touches[0].clientX + (e as unknown as TouchEvent).touches[1].clientX) / 2;
               const centerY = ((e as unknown as TouchEvent).touches[0].clientY + (e as unknown as TouchEvent).touches[1].clientY) / 2;
               const rect = (e.target as HTMLElement).getBoundingClientRect?.() || { left: 0, top: 0 };
-              initialLocalX = (centerX - rect.left - state.gameCamera.x) / state.gameCamera.zoom;
-              initialLocalY = (centerY - rect.top - state.gameCamera.y) / state.gameCamera.zoom;
+              initialLocalX = (centerX - rect.left - gc.x) / gc.zoom;
+              initialLocalY = (centerY - rect.top - gc.y) / gc.zoom;
           }
       } else if (e.type === 'touchmove') {
           if (isCanvas && e.cancelable) e.preventDefault(); // Prevents browser scrolling, guarantees continuous events!
@@ -676,27 +677,26 @@ export const GameCanvas: React.FC = () => {
               clearTimeout(longPressTimer);
           }
 
-          const state = useStore.getState();
-          if ((e as unknown as TouchEvent).touches.length === 1 && state.gameState === 'arrange') {
+          const tgc = useGameStore.getState().gameCamera;
+          if ((e as unknown as TouchEvent).touches.length === 1 && useGameStore.getState().gamePhase === 'arrange') {
               if (isMobileRightClickRef.current) {
                   const workspace = document.querySelector('.le-workspace');
                   const rect = workspace ? workspace.getBoundingClientRect() : { left: 0, top: 0 };
-                  const localX = ((e as unknown as TouchEvent).touches[0].clientX - rect.left - state.gameCamera.x) / state.gameCamera.zoom;
-                  const localY = ((e as unknown as TouchEvent).touches[0].clientY - rect.top - state.gameCamera.y) / state.gameCamera.zoom;
-                  
+                  const localX = ((e as unknown as TouchEvent).touches[0].clientX - rect.left - tgc.x) / tgc.zoom;
+                  const localY = ((e as unknown as TouchEvent).touches[0].clientY - rect.top - tgc.y) / tgc.zoom;
+
                   updateTrail(localX, localY, (p1, p2) => {
                       checkTrailIntersection(p1.x, p1.y, p2.x, p2.y);
                   });
               } else if (window.__panStart && Math.hypot((e as unknown as TouchEvent).touches[0].clientX - startX, (e as unknown as TouchEvent).touches[0].clientY - startY) > 5) {
-
-                useStore.getState().updateGameCamera({
-                     x: (e as unknown as TouchEvent).touches[0].clientX - window.__panStart.x,
-                     y: (e as unknown as TouchEvent).touches[0].clientY - window.__panStart.y
-                  });
+                useGameStore.getState().updateGameCamera({
+                  x: (e as unknown as TouchEvent).touches[0].clientX - window.__panStart.x,
+                  y: (e as unknown as TouchEvent).touches[0].clientY - window.__panStart.y
+                });
               }
           }
-          
-          if ((e as unknown as TouchEvent).touches.length >= 2 && initialPinchDist > 0 && useStore.getState().gameState === 'arrange') {
+
+          if ((e as unknown as TouchEvent).touches.length >= 2 && initialPinchDist > 0 && useGameStore.getState().gamePhase === 'arrange') {
               const dx = (e as unknown as TouchEvent).touches[0].clientX - (e as unknown as TouchEvent).touches[1].clientX;
               const dy = (e as unknown as TouchEvent).touches[0].clientY - (e as unknown as TouchEvent).touches[1].clientY;
               const dist = Math.sqrt(dx*dx + dy*dy);
@@ -708,7 +708,7 @@ export const GameCanvas: React.FC = () => {
               const rect = (e.target as HTMLElement).getBoundingClientRect?.() || { left: 0, top: 0 };
               const newCameraX = (currentCenterX - rect.left) - initialLocalX * newZoom;
               const newCameraY = (currentCenterY - rect.top) - initialLocalY * newZoom;
-              useStore.getState().updateGameCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+              useGameStore.getState().updateGameCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
           }
       } else {
           clearTimeout(longPressTimer);
@@ -716,9 +716,9 @@ export const GameCanvas: React.FC = () => {
               // User lifted a finger from a pinch, re-initialize panning for the remaining finger
               startX = (e as unknown as TouchEvent).touches[0].clientX;
               startY = (e as unknown as TouchEvent).touches[0].clientY;
-              if (useStore.getState().gameState === 'arrange') {
-                 const state = useStore.getState();
-                 window.__panStart = { x: startX - state.gameCamera.x, y: startY - state.gameCamera.y };
+              if (useGameStore.getState().gamePhase === 'arrange') {
+                 const gc = useGameStore.getState().gameCamera;
+                 window.__panStart = { x: startX - gc.x, y: startY - gc.y };
               }
           }
           if ((e as unknown as TouchEvent).touches.length < 2) initialPinchDist = 0;
@@ -739,29 +739,28 @@ export const GameCanvas: React.FC = () => {
     window.addEventListener('touchcancel', trackTouches);
 
     const handleTouchStart = (e: TouchEvent) => {
-      if (useStore.getState().gameState !== 'arrange') return;
+      if (useGameStore.getState().gamePhase !== 'arrange') return;
       if ((e as unknown as TouchEvent).touches.length >= 2) {
         const dx = (e as unknown as TouchEvent).touches[0].clientX - (e as unknown as TouchEvent).touches[1].clientX;
         const dy = (e as unknown as TouchEvent).touches[0].clientY - (e as unknown as TouchEvent).touches[1].clientY;
         initialPinchDist = Math.sqrt(dx*dx + dy*dy);
-        const state = useStore.getState();
-        initialZoom = state.gameCamera.zoom;
-        
+        const gc = useGameStore.getState().gameCamera;
+        initialZoom = gc.zoom;
+
         const centerX = ((e as unknown as TouchEvent).touches[0].clientX + (e as unknown as TouchEvent).touches[1].clientX) / 2;
         const centerY = ((e as unknown as TouchEvent).touches[0].clientY + (e as unknown as TouchEvent).touches[1].clientY) / 2;
-        
+
         const workspace = document.querySelector('.le-workspace');
         const rect = workspace ? workspace.getBoundingClientRect() : { left: 0, top: 0 };
-        
-        initialLocalX = (centerX - rect.left - state.gameCamera.x) / state.gameCamera.zoom;
-        initialLocalY = (centerY - rect.top - state.gameCamera.y) / state.gameCamera.zoom;
+
+        initialLocalX = (centerX - rect.left - gc.x) / gc.zoom;
+        initialLocalY = (centerY - rect.top - gc.y) / gc.zoom;
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      const state = useStore.getState();
-      if (state.gameState !== 'arrange') return;
-      
+      if (useGameStore.getState().gamePhase !== 'arrange') return;
+
       if ((e as unknown as TouchEvent).touches.length >= 2 && initialPinchDist > 0) {
         e.preventDefault();
         const dx = (e as unknown as TouchEvent).touches[0].clientX - (e as unknown as TouchEvent).touches[1].clientX;
@@ -770,17 +769,17 @@ export const GameCanvas: React.FC = () => {
         const zoomFactor = dist / initialPinchDist;
         let newZoom = initialZoom * zoomFactor;
         newZoom = Math.min(Math.max(newZoom, 0.1), 5);
-        
+
         const currentCenterX = ((e as unknown as TouchEvent).touches[0].clientX + (e as unknown as TouchEvent).touches[1].clientX) / 2;
         const currentCenterY = ((e as unknown as TouchEvent).touches[0].clientY + (e as unknown as TouchEvent).touches[1].clientY) / 2;
-        
+
         const workspace = document.querySelector('.le-workspace');
         const rect = workspace ? workspace.getBoundingClientRect() : { left: 0, top: 0 };
-        
+
         const newCameraX = (currentCenterX - rect.left) - initialLocalX * newZoom;
         const newCameraY = (currentCenterY - rect.top) - initialLocalY * newZoom;
-        
-        state.updateCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
+
+        useGameStore.getState().updateGameCamera({ zoom: newZoom, x: newCameraX, y: newCameraY });
       }
     };
 
@@ -810,17 +809,17 @@ export const GameCanvas: React.FC = () => {
   useEffect(() => {
     if (!isMobile) return;
     const onLongPress = (e: CustomEvent<{x: number, y: number}>) => {
-         if (useStore.getState().gameState !== 'arrange') return;
+         if (useGameStore.getState().gamePhase !== 'arrange') return;
          isMobileRightClickRef.current = true;
          isPanningRef.current = false;
          useStore.getState().clearSelection();
-         
+
          const workspace = document.querySelector('.le-workspace');
          const rect = workspace ? workspace.getBoundingClientRect() : { left: 0, top: 0 };
-         const state = useStore.getState();
-         
-         const localX = (e.detail.x - rect.left - state.gameCamera.x) / state.gameCamera.zoom;
-         const localY = (e.detail.y - rect.top - state.gameCamera.y) / state.gameCamera.zoom;
+         const gc = useGameStore.getState().gameCamera;
+
+         const localX = (e.detail.x - rect.left - gc.x) / gc.zoom;
+         const localY = (e.detail.y - rect.top - gc.y) / gc.zoom;
          
          startTrail(localX, localY);
          intersectedBlocksRef.current.clear();
@@ -834,13 +833,13 @@ export const GameCanvas: React.FC = () => {
   // Arrangement Phase Handlers
   const handlePointerDown = (e: PIXI.FederatedPointerEvent) => {
       useStore.getState().setInteractionContext('main');
-      if (gameState !== 'arrange') return;
+      if (gamePhase !== 'arrange') return;
       if (e.button === 1) { // Middle click
-        startPan(e.global.x, e.global.y, useStore.getState().gameCamera.x, useStore.getState().gameCamera.y);
+        startPan(e.global.x, e.global.y, useGameStore.getState().gameCamera.x, useGameStore.getState().gameCamera.y);
       } else if (e.button === 0 && e.target && e.target.label === 'background') { // Left click
         useStore.getState().closeContextMenu();
         if (isMobile) {
-          startPan(e.global.x, e.global.y, useStore.getState().gameCamera.x, useStore.getState().gameCamera.y);
+          startPan(e.global.x, e.global.y, useGameStore.getState().gameCamera.x, useGameStore.getState().gameCamera.y);
         } else {
           useStore.getState().clearSelection();
           const pos = e.currentTarget.toLocal(e.global);
@@ -853,9 +852,9 @@ export const GameCanvas: React.FC = () => {
       } else if (e.button === 2) { // Right click
         useStore.getState().closeContextMenu();
         useStore.getState().clearSelection();
-        const state = useStore.getState();
-        const localX = (e.global.x - state.gameCamera.x) / state.gameCamera.zoom;
-        const localY = (e.global.y - state.gameCamera.y) / state.gameCamera.zoom;
+        const gc = useGameStore.getState().gameCamera;
+        const localX = (e.global.x - gc.x) / gc.zoom;
+        const localY = (e.global.y - gc.y) / gc.zoom;
         
         startTrail(localX, localY);
 
@@ -864,44 +863,44 @@ export const GameCanvas: React.FC = () => {
   };
 
   const handlePointerMove = (e: PIXI.FederatedPointerEvent) => {
-      if (gameState === 'arrange' && isSelectingRef.current) {
+      if (gamePhase === 'arrange' && isSelectingRef.current) {
           const pos = e.currentTarget.toLocal(e.global);
           const box = updateSelection(pos.x, pos.y);
           if (!box) return;
           const { x, y, w, h } = box;
-          
-          const state = useStore.getState();
-          const directlySelectedGameBlocks = state.gameBlocks.filter(b => {
-            return b.x < x + w && b.x + 60 > x && b.y < y + h && b.y + 60 > y;
-          });
-          
-          const directlySelectedGroupRects = state.groupRects.filter(g => {
-            return g.x < x + w && g.x + g.w > x && g.y < y + h && g.y + g.h > y;
-          });
+
+          const gameBlocks2 = useGameStore.getState().gameBlocks;
+          const groupRects = useStore.getState().groupRects;
+          const directlySelectedGameBlocks = gameBlocks2.filter(b =>
+            b.x < x + w && b.x + 60 > x && b.y < y + h && b.y + 60 > y
+          );
+          const directlySelectedGroupRects = groupRects.filter(g =>
+            g.x < x + w && g.x + g.w > x && g.y < y + h && g.y + g.h > y
+          );
 
           const activeGroupIds = new Set([
             ...directlySelectedGameBlocks.filter(b => b.groupId).map(b => b.groupId as string),
             ...directlySelectedGroupRects.filter(g => g.groupId).map(g => g.groupId as string)
           ]);
 
-          const selectedIds = state.gameBlocks.filter(b => directlySelectedGameBlocks.includes(b) || (b.groupId && activeGroupIds.has(b.groupId))).map(b => b.id);
-          const selectedGIds = state.groupRects.filter(g => directlySelectedGroupRects.includes(g) || (g.groupId && activeGroupIds.has(g.groupId))).map(g => g.id);
-          
-          useStore.setState({ selectedBlockIds: selectedIds, selectedGroupRectIds: selectedGIds });
-      } else if (gameState === 'arrange' && e.buttons === 2) {
-          const state = useStore.getState();
-          const localX = (e.global.x - state.gameCamera.x) / state.gameCamera.zoom;
-          const localY = (e.global.y - state.gameCamera.y) / state.gameCamera.zoom;
-          
+          useStore.setState({
+            selectedBlockIds: gameBlocks2.filter(b => directlySelectedGameBlocks.includes(b) || (b.groupId && activeGroupIds.has(b.groupId))).map(b => b.id),
+            selectedGroupRectIds: groupRects.filter(g => directlySelectedGroupRects.includes(g) || (g.groupId && activeGroupIds.has(g.groupId))).map(g => g.id),
+          });
+      } else if (gamePhase === 'arrange' && e.buttons === 2) {
+          const gc = useGameStore.getState().gameCamera;
+          const localX = (e.global.x - gc.x) / gc.zoom;
+          const localY = (e.global.y - gc.y) / gc.zoom;
+
           updateTrail(localX, localY, (p1, p2) => {
             checkTrailIntersection(p1.x, p1.y, p2.x, p2.y);
           });
-      } else if (gameState === 'arrange' && isPanningRef.current) {
-          if (isMobile) return; // Handled natively in trackTouches
-          updatePan(e.global.x, e.global.y, useStore.getState().updateGameCamera);
+      } else if (gamePhase === 'arrange' && isPanningRef.current) {
+          if (isMobile) return;
+          updatePan(e.global.x, e.global.y, useGameStore.getState().updateGameCamera);
       }
-      if (e.buttons === 4 || (isMobile && gameState === 'arrange' && (e as unknown as TouchEvent).touches && (e as unknown as TouchEvent).touches.length === 2)) {
-         updatePan(e.clientX, e.clientY, useStore.getState().updateGameCamera);
+      if (e.buttons === 4 || (isMobile && gamePhase === 'arrange' && (e as unknown as TouchEvent).touches && (e as unknown as TouchEvent).touches.length === 2)) {
+         updatePan(e.clientX, e.clientY, useGameStore.getState().updateGameCamera);
          return;
       }
   };
@@ -925,6 +924,7 @@ export const GameCanvas: React.FC = () => {
 
 
   return (
+    <CanvasContext.Provider value="game">
     <Application backgroundAlpha={0} resizeTo={window} antialias={true}>
       <TickerSync handleTick={handleTick} />
       <pixiContainer
@@ -940,34 +940,38 @@ export const GameCanvas: React.FC = () => {
         <GridBackground showGrid={showGrid} theme={theme} zoom={camera.zoom} />
         <SelectionBoxRenderer selectionBox={selectionBox} zoom={camera.zoom} />
         <GroupRectRenderer />
-        
-        {/* Draw Blocks */}
+
         {gameBlocks.map(b => (
-          <NoteBlock 
+          <NoteBlock
              key={b.id}
              id={b.id}
              x={b.x}
              y={b.y}
              pitch={b.pitch}
+             volume={b.volume}
+             instrument={b.instrument}
+             playedAt={b.playedAt}
+             playedVolumeMultiplier={b.playedVolumeMultiplier}
+             canvasContext="game"
           />
         ))}
 
-        {/* Draw Approach Circles */}
-        {gameState === 'play' && activeCirclesState.map(circle => (
-           <ApproachCircleComponent 
-              key={circle.id} 
-              x={circle.x} 
-              y={circle.y} 
+        {gamePhase === 'play' && activeCirclesState.map(circle => (
+           <ApproachCircleComponent
+              key={circle.id}
+              x={circle.x}
+              y={circle.y}
               progress={circle.progress}
               color={circle.color}
            />
         ))}
 
-        {(gameState === 'play' || gameState === 'arrange') && (
+        {(gamePhase === 'play' || gamePhase === 'arrange') && (
            <TrailRenderer activeStrokesRef={activeStrokesRef} currentStrokeId={currentStrokeId} />
         )}
       </pixiContainer>
     </Application>
+    </CanvasContext.Provider>
   );
 };
 

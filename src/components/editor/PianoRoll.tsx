@@ -263,7 +263,7 @@ export const PianoRoll: React.FC = () => {
       if (!isSelectedTrack && !isGhostVisible) continue;
 
       const trackColor = getTrackColor(track.id);
-      const mainBlocks = useStore.getState().gameBlocks;
+      const mainBlocks = useLevelEditorStore.getState().gameBlocks;
 
       for (const note of track.notes) {
         const noteX = note.timeStart * zoom - scrollLeft;

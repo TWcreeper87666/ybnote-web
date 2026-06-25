@@ -1,5 +1,6 @@
-import type { EditorNote, EditorTrack, ParsedMidiData } from '../types';
+import type { Block, EditorNote, EditorTrack, ParsedMidiData } from '../types';
 import { useStore } from '../store/useStore';
+import { useLevelEditorStore } from '../store/useLevelEditorStore';
 
 export const BLOCK_SIZE = 60;
 
@@ -44,20 +45,16 @@ export function blockDistance(
   return Math.hypot(ax - bx, ay - by);
 }
 
-export function setEditorBlocks(blocks: ReturnType<typeof useStore.getState>['gameBlocks']) {
-  const main = useStore.getState();
-  main.setGameBlocks(blocks);
-  useStore.setState({ blocks: JSON.parse(JSON.stringify(blocks)) });
+export function setEditorBlocks(blocks: Block[]) {
+  useLevelEditorStore.getState().setGameBlocks(blocks);
 }
 
 export function syncGameBlocksToCanvas() {
-  const state = useStore.getState();
-  useStore.setState({ blocks: JSON.parse(JSON.stringify(state.gameBlocks)) });
+  // no-op: EditorCanvas reads directly from useLevelEditorStore.gameBlocks
 }
 
 export function syncCanvasToGameBlocks() {
-  const state = useStore.getState();
-  state.setGameBlocks(JSON.parse(JSON.stringify(state.blocks)));
+  // no-op: EditorCanvas reads directly from useLevelEditorStore.gameBlocks
 }
 
 export function buildGameEventsFromMidi(midiData: ParsedMidiData) {
@@ -93,7 +90,7 @@ export function buildGameEventsFromMidi(midiData: ParsedMidiData) {
 
 export function syncGameEventsFromMidi(midiData: ParsedMidiData | null) {
   if (!midiData) return;
-  useStore.getState().setGameEvents(buildGameEventsFromMidi(midiData));
+  useLevelEditorStore.getState().setGameEvents(buildGameEventsFromMidi(midiData));
 }
 
 export function getAllChartNotes(midiData: ParsedMidiData) {
@@ -118,9 +115,10 @@ export type ChartCandidate = {
 };
 
 export function getCandidateBlocks(note: EditorNote, track: EditorTrack): ChartCandidate[] {
-  const state = useStore.getState();
+  const mainState = useStore.getState();
+  const editorState = useLevelEditorStore.getState();
   if (track.instrument === 'group_rect') {
-    return state.groupRects.map((g) => ({
+    return mainState.groupRects.map((g) => ({
       id: g.id,
       x: g.x + g.w / 2 - BLOCK_SIZE / 2,
       y: g.y + g.h / 2 - BLOCK_SIZE / 2,
@@ -129,14 +127,15 @@ export function getCandidateBlocks(note: EditorNote, track: EditorTrack): ChartC
       type: 'groupRect' as const,
     }));
   }
-  return state.gameBlocks
+  return editorState.gameBlocks
     .filter((b) => b.pitch === note.name && b.instrument === track.instrument)
     .map((b) => ({ ...b, type: 'block' as const }));
 }
 
 export function generateMissingBlocks(midiData: ParsedMidiData): GenerateBlocksResult {
   const main = useStore.getState();
-  const currentBlocks = [...main.gameBlocks];
+  const editorStore = useLevelEditorStore.getState();
+  const currentBlocks = [...editorStore.gameBlocks];
   const groupRects = [...main.groupRects];
   let addedBlocks = 0;
   let addedGroupRects = 0;
@@ -199,7 +198,7 @@ export function generateMissingBlocks(midiData: ParsedMidiData): GenerateBlocksR
   }
 
   if (addedBlocks > 0) {
-    setEditorBlocks(currentBlocks);
+    useLevelEditorStore.getState().setGameBlocks(currentBlocks);
   }
 
   return { addedBlocks, addedGroupRects };
@@ -304,14 +303,13 @@ export function matchRecordedHits(
       continue;
     }
 
-    const state = useStore.getState();
     let hitPitch: string | null;
     if (hit.blockType === 'block') {
-      const block = state.gameBlocks.find((b) => b.id === hit.blockId)
-        ?? state.blocks.find((b) => b.id === hit.blockId);
+      const block = useLevelEditorStore.getState().gameBlocks.find((b) => b.id === hit.blockId)
+        ?? useStore.getState().blocks.find((b) => b.id === hit.blockId);
       hitPitch = block?.pitch ?? null;
     } else {
-      const gr = state.groupRects.find((g) => g.id === hit.blockId);
+      const gr = useStore.getState().groupRects.find((g) => g.id === hit.blockId);
       hitPitch = gr?.name ?? null;
     }
 

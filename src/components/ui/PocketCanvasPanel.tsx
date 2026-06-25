@@ -4,9 +4,10 @@ import { Download, SortAsc, LayoutGrid, Filter } from 'lucide-react';
 import { parseMidiToPocketBlocks } from '../../utils/midiUtils';
 import { PocketCanvas } from '../canvas/PocketCanvas';
 import { FloatingWindow } from './FloatingWindow';
-import { isLevelEditor } from '../../utils/routeUtils';
+import { useCanvasContext } from '../canvas/CanvasContext';
 
 export const PocketCanvasPanel: React.FC = () => {
+  const canvasContext = useCanvasContext();
   const isPocketCanvasOpen = useStore(state => state.isPocketCanvasOpen);
   const togglePocketCanvas = useStore(state => state.togglePocketCanvas);
   const pocketSortMode = useStore(state => state.pocketSortMode);
@@ -49,7 +50,7 @@ export const PocketCanvasPanel: React.FC = () => {
       {isPocketCanvasOpen && (
         <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '0 4px 4px 4px', borderBottom: '1px solid var(--panel-border)', flexShrink: 0 }}>
-        {isLevelEditor() ? null : (
+        {canvasContext !== 'editor' && (
         <label className="toolbar-btn" style={{ width: '100%', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '0 4px', background: 'var(--panel-bg)', borderRadius: '4px', fontSize: '12px', boxSizing: 'border-box' }}>
             <Download size={14} style={{ marginRight: '4px' }} /> Load .mid
             <input type="file" accept=".mid,.midi" style={{ display: 'none' }} onChange={handleImport} />

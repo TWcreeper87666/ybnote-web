@@ -1,5 +1,6 @@
 import React from "react";
 import { useStore } from "../../store/useStore";
+import { useSettingsStore } from "../../store/useSettingsStore";
 import { BaseBlock } from "./BaseBlock";
 import { DrumBlock } from "./DrumBlock";
 import { getPitchColorNumber } from "../../utils/colors";
@@ -34,14 +35,12 @@ export const PocketNoteBlock: React.FC<PocketNoteBlockProps> = ({
   const showBlockVolume = false;
   const showBlockInstrument = true;
 
-  const pianoKeysCount = useStore((state) => state.pianoKeysCount);
+  const pianoKeysCount = useSettingsStore((state) => state.pianoKeysCount);
   const blockColor = getPitchColorNumber(pitch, pianoKeysCount);
 
-  // Check if it's missing on the main canvas
+  // Check if it's missing on the main canvas (playground context)
   const isMissingOnMain = useStore((state) => {
-    const allMainBlocks =
-      state.gameState === "arrange" ? state.gameBlocks : state.blocks;
-    return !allMainBlocks.some(
+    return !state.blocks.some(
       (b) => b.pitch === pitch && (b.instrument || "piano") === instrument,
     );
   });

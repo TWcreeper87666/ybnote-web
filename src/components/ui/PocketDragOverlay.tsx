@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { isLevelEditor } from '../../utils/routeUtils';
+import { useSettingsStore } from '../../store/useSettingsStore';
+import { useGameStore } from '../../store/useGameStore';
+import { useCanvasContext } from '../canvas/CanvasContext';
+import { addBlocksToContext } from '../../hooks/useActiveCanvas';
 import { getPitchColorNumber } from '../../utils/colors';
 
 export const PocketDragOverlay: React.FC = () => {
+  const canvasContext = useCanvasContext();
   const activePocketDrag = useStore(state => state.activePocketDrag);
-  const pianoKeysCount = useStore(state => state.pianoKeysCount);
+  const pianoKeysCount = useSettingsStore(state => state.pianoKeysCount);
   const mainCameraZoom = useStore(state => state.camera.zoom);
   const pocketCameraZoom = useStore(state => state.pocketCamera.zoom);
   const [mousePos, setMousePos] = useState<{x: number, y: number} | null>(null);
@@ -61,14 +65,14 @@ export const PocketDragOverlay: React.FC = () => {
         // For snap to grid
         let finalX = primaryBlockX;
         let finalY = primaryBlockY;
-        if (state.snapToGrid) {
+        if (useSettingsStore.getState().snapToGrid) {
             const snapSize = 30;
             finalX = Math.round(finalX / snapSize) * snapSize;
             finalY = Math.round(finalY / snapSize) * snapSize;
         }
 
         const primaryBlock = dragState.blocks.find(b => b.id === dragState.clickedBlockId) || dragState.blocks[0];
-        
+
         const newBlocks = dragState.blocks.map(b => {
             const relX = (b as unknown as {xOffset: number}).xOffset - (primaryBlock as unknown as {xOffset: number}).xOffset;
             const relY = (b as unknown as {yOffset: number}).yOffset - (primaryBlock as unknown as {yOffset: number}).yOffset;
@@ -81,16 +85,9 @@ export const PocketDragOverlay: React.FC = () => {
             };
         });
 
-        if (state.gameState === 'arrange') {
-            state.setGameState('arrange'); // redundant but safe
-            state.setGameBlocks([...state.gameBlocks, ...newBlocks]);
-            state.clearSelection();
-            newBlocks.forEach(b => state.selectBlock(b.id, true));
-        } else {
-            const addedIds = state.addBlocks(newBlocks);
-            state.clearSelection();
-            addedIds.forEach(id => state.selectBlock(id, true));
-        }
+        const addedIds = addBlocksToContext(canvasContext, newBlocks);
+        state.clearSelection();
+        addedIds.forEach(id => state.selectBlock(id, true));
       }
       
       state.setActivePocketDrag(null);

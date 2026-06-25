@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import * as PIXI from 'pixi.js';
 import { useStore } from '../../store/useStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
 import { computeTrackControlPoints } from '../../utils/spline';
 import { BaseTrack } from './BaseTrack';
 import type { TrackNode } from '../../types';
@@ -39,7 +40,7 @@ export const TrackRenderer: React.FC = () => {
       let newX = localX - isTrackDragging.dragOffset.x;
       let newY = localY - isTrackDragging.dragOffset.y;
       
-      if (state.snapToGrid) {
+      if (useSettingsStore.getState().snapToGrid) {
         const snapSize = 30;
         newX = Math.round(newX / snapSize) * snapSize;
         newY = Math.round(newY / snapSize) * snapSize;
@@ -71,7 +72,7 @@ export const TrackRenderer: React.FC = () => {
 
       if (!hasPaused) {
         useStore.temporal.setState(s => ({
-          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks, gameBlocks: state.gameBlocks }],
+          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks }],
           futureStates: []
         }));
         useStore.temporal.getState().pause();
@@ -139,7 +140,7 @@ export const TrackRenderer: React.FC = () => {
        let x = (e.clientX - camera.x) / camera.zoom;
        let y = (e.clientY - camera.y) / camera.zoom;
 
-       if (state.snapToGrid) {
+       if (useSettingsStore.getState().snapToGrid) {
          const snapSize = 30;
          x = Math.round(x / snapSize) * snapSize;
          y = Math.round(y / snapSize) * snapSize;
@@ -147,7 +148,7 @@ export const TrackRenderer: React.FC = () => {
 
        if (!hasPaused) {
          useStore.temporal.setState(s => ({
-           pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks, gameBlocks: state.gameBlocks }],
+           pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks }],
            futureStates: []
          }));
          useStore.temporal.getState().pause();
