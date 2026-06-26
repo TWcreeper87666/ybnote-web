@@ -54,7 +54,7 @@ export const VelocityTab: React.FC = () => {
   useEffect(() => {
     drawCanvas();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.zoomLevel, store.selectedTrackId, store.midiData, store.selectedNoteIds, store.getCurrentTrack()?.notes, store.scrollLeft]);
+  }, [store.zoomLevel, store.selectedMidiTrackId, store.midiData, store.selectedNoteIds, store.getCurrentTrack()?.notes, store.scrollLeft]);
 
   // --- Resizing ---
   const resizeCanvas = () => {

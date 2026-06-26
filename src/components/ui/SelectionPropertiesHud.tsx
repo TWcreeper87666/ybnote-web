@@ -2,33 +2,50 @@ import React from 'react';
 import { useStore } from '../../store/useStore';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import { useGameStore } from '../../store/useGameStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
 import { useCanvasContext } from '../canvas/CanvasContext';
+import { useShallow } from 'zustand/shallow';
 
-export const SelectionPropertiesHud: React.FC = () => {
+export const SelectionPropertiesHud: React.FC<{ bottomOffset?: number }> = ({ bottomOffset = 0 }) => {
   const canvasContext = useCanvasContext();
-  const {
-    blocks: mainBlocks,
-    tracks,
-    groupRects,
-    selectedBlockIds,
-    selectedTrackIds,
-    selectedGroupRectIds,
-    mode
-  } = useStore();
-  const blocks = canvasContext === 'editor'
-    ? useLevelEditorStore.getState().gameBlocks
-    : canvasContext === 'game'
-      ? useGameStore.getState().gameBlocks
-      : mainBlocks;
+  const showSelectionHud = useSettingsStore(s => s.showSelectionHud);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pick = (s: any) => ({
+    selectedBlockIds: s.selectedBlockIds as string[],
+    selectedTrackIds: s.selectedTrackIds as string[],
+    selectedGroupRectIds: s.selectedGroupRectIds as string[],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    blocks: s.blocks as any[],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tracks: s.tracks as any[],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    groupRects: s.groupRects as any[],
+  });
+
+  // Each useShallow call gets its own useRef — must be separate
+  const playgroundSel = useStore(useShallow(pick));
+  const editorSel = useLevelEditorStore(useShallow(pick));
+  const gameSel = useGameStore(useShallow(pick));
+
+  const { selectedBlockIds, selectedTrackIds, selectedGroupRectIds, blocks, tracks, groupRects } =
+    canvasContext === 'editor' ? editorSel :
+    canvasContext === 'game' ? gameSel :
+    playgroundSel;
+
+  const mode = useStore(s => s.mode);
 
   const totalSelected = selectedBlockIds.length + selectedTrackIds.length + selectedGroupRectIds.length;
 
-  if (totalSelected === 0 || mode === 'play') {
+  if (!showSelectionHud || totalSelected === 0 || mode === 'play') {
     return null;
   }
 
   return (
-    <div className="selection-properties-hud">
+    <div
+      className="selection-properties-hud"
+      style={bottomOffset ? { bottom: bottomOffset } : undefined}
+    >
       <div className="hud-header">Selected Properties</div>
       {totalSelected === 1 ? (
         <div className="hud-content">

@@ -8,6 +8,7 @@ import { getPitchColorNumber } from '../../utils/colors';
 import { useCanvasContext } from '../canvas/CanvasContext';
 import type { CanvasContextType } from '../canvas/CanvasContext';
 import { useBlockDrag } from '../../hooks/useBlockDrag';
+import { useActiveCanvasSelectedBlockIds, setHoveredBlockIdInContext } from '../../hooks/useActiveCanvas';
 
 interface NoteBlockProps {
   id: string;
@@ -29,7 +30,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({
   playedVolumeMultiplier = 1,
   canvasContext: canvasContextProp,
 }) => {
-  const { selectedBlockIds } = useStore();
+  const selectedBlockIds = useActiveCanvasSelectedBlockIds();
   const isSelected = selectedBlockIds.includes(id);
   const { blockOpacity, showBlockPitch, showBlockVolume, showBlockInstrument, pianoKeysCount } = useSettingsStore();
 
@@ -73,13 +74,8 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({
 
 
 
-  const handlePointerEnter = () => useStore.getState().setHoveredBlockId(id);
-  const handlePointerLeave = () => {
-    const state = useStore.getState();
-    if (state.hoveredBlockId === id) {
-      state.setHoveredBlockId(null);
-    }
-  };
+  const handlePointerEnter = () => setHoveredBlockIdInContext(canvasContext, id);
+  const handlePointerLeave = () => setHoveredBlockIdInContext(canvasContext, null);
 
   const BlockComponent = instrument === 'percussion' ? DrumBlock : BaseBlock;
 

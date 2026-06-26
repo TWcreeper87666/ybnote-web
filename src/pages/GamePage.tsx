@@ -1,14 +1,15 @@
 import { useEffect, useState, useRef } from 'react';
 import { GameCanvas } from '../components/canvas/GameCanvas';
-import { CanvasContext } from '../components/canvas/CanvasContext';
+import { CanvasProvider } from '../store/CanvasProvider';
 import { parseMidiForGame } from '../utils/midiUtils';
 import { importLevel } from '../utils/levelUtils';
 import { Upload, SkipForward, Plus, Undo2, Redo2, Settings, Play, Pause, Volume2, Maximize, HelpCircle, Home, LayoutList } from 'lucide-react';
 import { SettingsPanel } from '../components/ui/SettingsPanel';
 import { ModalPanel } from '../components/ui/ModalPanel';
 import { OutlinerPanel } from '../components/ui/OutlinerPanel';
+import { SelectionPropertiesHud } from '../components/ui/SelectionPropertiesHud';
 import { playNote } from '../utils/audio';
-import { useStore, undoAction, redoAction } from '../store/useStore';
+import { useStore } from '../store/useStore';
 import { useGameStore } from '../store/useGameStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useLevelEditorStore } from '../store/useLevelEditorStore';
@@ -43,7 +44,7 @@ const ProgressBar: React.FC = () => {
 };
 
 export const GamePage: React.FC = () => {
-  const { gamePhase, setGamePhase, setGameBlocks, setGameEvents, gameScore, gameCombo, perfectCount, goodCount, badCount, missCount, wrongCount, maxCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, latestHit, levelMetadata, setLevelMetadata, gameAudioUrl, setGameAudioUrl, gameAudioVolume, setGameAudioVolume } = useGameStore();
+  const { gamePhase, setGamePhase, setBlocks: setGameBlocks, setGameEvents, gameScore, gameCombo, perfectCount, goodCount, badCount, missCount, wrongCount, maxCombo, setGameStats, resetGamePlay, gameEvents, gameFileName, setGameFileName, gameSpeed, setGameSpeed, latestHit, levelMetadata, setLevelMetadata, gameAudioUrl, setGameAudioUrl, gameAudioVolume, setGameAudioVolume } = useGameStore();
   const { theme, mobileControlMode, setMobileControlMode } = useSettingsStore();
   const { toggleSettings, isTutorialOpen, toggleTutorial, isOutlinerOpen } = useStore();
   const isMobile = useIsMobile();
@@ -225,10 +226,10 @@ export const GamePage: React.FC = () => {
              if (ev.blockId === 'background') {
                 playNote(ev.pitch, gameAudioVolume, ev.instrument);
              } else {
-                const b = useGameStore.getState().gameBlocks.find(blk => blk.id === ev.blockId);
+                const b = useGameStore.getState().blocks.find(blk => blk.id === ev.blockId);
                 if (b) {
                    playNote(b.pitch, (b.volume ?? 1) * gameAudioVolume, b.instrument);
-                   useGameStore.getState().updateGameBlock(b.id, { playedAt: Date.now() });
+                   useGameStore.getState().updateBlock(b.id, { playedAt: Date.now() });
                 }
              }
              lastPlayedEventIndexRef.current++;
@@ -303,7 +304,7 @@ export const GamePage: React.FC = () => {
         }
         const cam = { x: window.innerWidth / 2 - avgX, y: window.innerHeight / 2 - avgY, zoom: 1 };
         useStore.getState().updateCamera(cam);
-        useGameStore.getState().updateGameCamera(cam);
+        useGameStore.getState().updateCamera(cam);
       } else {
         const { gameBlocks, gameEvents } = await parseMidiForGame(file, arrangeBy);
         setGameFileName(file.name);
@@ -318,7 +319,7 @@ export const GamePage: React.FC = () => {
         }
         const cam = { x: window.innerWidth / 2 - avgX, y: window.innerHeight / 2 - avgY, zoom: 1 };
         useStore.getState().updateCamera(cam);
-        useGameStore.getState().updateGameCamera(cam);
+        useGameStore.getState().updateCamera(cam);
       }
     } catch (err) {
       console.error(err);
@@ -347,7 +348,7 @@ export const GamePage: React.FC = () => {
       }
       const cam = { x: window.innerWidth / 2 - avgX, y: window.innerHeight / 2 - avgY, zoom: 1 };
       useStore.getState().updateCamera(cam);
-      useGameStore.getState().updateGameCamera(cam);
+      useGameStore.getState().updateCamera(cam);
     } catch (err) {
       console.error(err);
       alert("Failed to load default MIDI. Make sure default.mid is in the public/ folder.");
@@ -486,17 +487,26 @@ export const GamePage: React.FC = () => {
                  onTouchMove={(e) => e.stopPropagation()}
                  onPointerDown={(e) => e.stopPropagation()}
               >
-                <button className="toolbar-btn glass-panel" onClick={() => undoAction()} title="Undo"><Undo2 size={24} /></button>
-                <button className="toolbar-btn glass-panel" onClick={() => redoAction()} title="Redo"><Redo2 size={24} /></button>
+                <button className="toolbar-btn glass-panel" onClick={() => {
+                  const gs = useGameStore.getState();
+                  if (gs.historyIndex <= 0) { useStore.getState().showToast('Nothing to undo'); }
+                  else { gs.undo(); useStore.getState().showToast('Undo'); }
+                }} title="Undo"><Undo2 size={24} /></button>
+                <button className="toolbar-btn glass-panel" onClick={() => {
+                  const gs = useGameStore.getState();
+                  if (gs.historyIndex >= gs.history.length - 1) { useStore.getState().showToast('Nothing to redo'); }
+                  else { gs.redo(); useStore.getState().showToast('Redo'); }
+                }} title="Redo"><Redo2 size={24} /></button>
                 <button className={`toolbar-btn glass-panel ${isOutlinerOpen ? 'active-panel-btn' : ''}`.trim()} onClick={() => useStore.getState().toggleOutliner()} title="Outliner"><LayoutList size={24} /></button>
                 <button className="toolbar-btn glass-panel" onClick={toggleSettings} title="Settings"><Settings size={24} /></button>
                 <button className="toolbar-btn glass-panel" onClick={toggleTutorial} title="Tutorial"><HelpCircle size={24} /></button>
               </div>
 
               {/* Outliner Panel Render */}
-              <CanvasContext.Provider value="game">
+              <CanvasProvider type="game">
                 <OutlinerPanel />
-              </CanvasContext.Provider>
+                <SelectionPropertiesHud bottomOffset={100} />
+              </CanvasProvider>
 
               {/* Bottom Mini Player */}
               <div

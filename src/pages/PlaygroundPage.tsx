@@ -13,6 +13,7 @@ import { PocketDragOverlay } from '../components/ui/PocketDragOverlay';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useShortcuts } from '../hooks/useShortcuts';
 import { useGameLoop } from '../hooks/useGameLoop';
+import { CanvasProvider } from '../store/CanvasProvider';
 
 export function PlaygroundPage() {
   const { theme } = useSettingsStore();
@@ -22,7 +23,8 @@ export function PlaygroundPage() {
   useGameLoop();
 
   return (
-    <div 
+    <CanvasProvider type="playground">
+    <div
       className={`app-container ${theme}`}
       onContextMenu={(e) => e.preventDefault()}
     >
@@ -56,5 +58,6 @@ export function PlaygroundPage() {
         </div>
       </div>
     </div>
+    </CanvasProvider>
   );
 }

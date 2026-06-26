@@ -169,7 +169,7 @@ export const LevelEditorToolbar: React.FC = () => {
 
       store.setMidiData(parsedData);
       
-      store.setGameBlocks(imported.levelData.blocks);
+      store.setBlocks(imported.levelData.blocks);
       store.setGameEvents(imported.levelData.events);
       syncGameEventsFromMidi(parsedData);
       store.commitHistory();
@@ -205,7 +205,7 @@ export const LevelEditorToolbar: React.FC = () => {
         description: store.levelDescription,
         midiCredit: store.levelMidiCredit,
         musicCredit: store.levelMusicCredit,
-        gameBlocks: store.gameBlocks,
+        gameBlocks: store.blocks,
         gameEvents: gameEvents,
       });
 

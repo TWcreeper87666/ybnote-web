@@ -3,6 +3,7 @@ import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 
 const MAX_PITCH = 127;
 const ROW_HEIGHT = 16;
+const TIMELINE_HEIGHT = 30;
 const KEYBOARD_WIDTH = 60;
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -86,10 +87,10 @@ export const PianoRollKeyboard: React.FC<PianoRollKeyboardProps> = ({ scrollTop,
       className="pr-keyboard"
       style={{
         position: 'absolute',
-        top: 0,
+        top: TIMELINE_HEIGHT,
         left: 0,
         width: KEYBOARD_WIDTH,
-        height: '100%',
+        height: `calc(100% - ${TIMELINE_HEIGHT}px)`,
         overflow: 'hidden',
         zIndex: 5,
         background: '#1a1a22',

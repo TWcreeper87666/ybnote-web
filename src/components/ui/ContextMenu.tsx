@@ -3,8 +3,9 @@ import { useStore } from '../../store/useStore';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import { useGameStore } from '../../store/useGameStore';
 import { useCanvasContext } from '../canvas/CanvasContext';
+import { useActiveCanvasSelectedBlockIds } from '../../hooks/useActiveCanvas';
 import { shiftPitch } from '../../utils/pitchUtils';
-import { 
+import {
   Trash2, Search, Activity, Square, Music, Play, Pause,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
@@ -12,12 +13,46 @@ import {
 } from 'lucide-react';
 export const ContextMenu: React.FC = () => {
   const canvasContext = useCanvasContext();
-  const { contextMenu, closeContextMenu, blocks, removeBlock, groupRects, removeGroupRect, selectedBlockIds, deleteSelected, trackPlaybackStatus, playTrack, pauseTrack, stopTrack, isPlaying } = useStore();
-  const contextBlocks = canvasContext === 'editor'
-    ? useLevelEditorStore.getState().gameBlocks
-    : canvasContext === 'game'
-      ? useGameStore.getState().gameBlocks
-      : blocks;
+  const { blocks, groupRects, trackPlaybackStatus, playTrack, pauseTrack, stopTrack, isPlaying } = useStore();
+
+  // Context-aware contextMenu: each store has its own contextMenu state
+  const playgroundContextMenu = useStore(s => s.contextMenu);
+  const editorContextMenu = useLevelEditorStore(s => s.contextMenu);
+  const gameContextMenu = useGameStore(s => s.contextMenu);
+  const contextMenu = canvasContext === 'editor' ? editorContextMenu
+    : canvasContext === 'game' ? gameContextMenu
+    : playgroundContextMenu;
+
+  const closeContextMenu = () => {
+    if (canvasContext === 'editor') useLevelEditorStore.getState().closeContextMenu();
+    else if (canvasContext === 'game') useGameStore.getState().closeContextMenu();
+    else useStore.getState().closeContextMenu();
+  };
+
+  // Context-aware store mutations
+  const getContextSt = () => {
+    if (canvasContext === 'editor') return useLevelEditorStore.getState();
+    if (canvasContext === 'game') return useGameStore.getState();
+    return useStore.getState();
+  };
+
+  const selectedBlockIds = useActiveCanvasSelectedBlockIds();
+
+  const editorBlocks = useLevelEditorStore(s => s.blocks);
+  const editorGroupRects = useLevelEditorStore(s => s.groupRects);
+  const editorTracks = useLevelEditorStore(s => s.tracks);
+  const gameBlocks = useGameStore(s => s.blocks);
+  const gameGroupRects = useGameStore(s => s.groupRects);
+  const gameTracks = useGameStore(s => s.tracks);
+  const { tracks: playgroundTracks } = useStore();
+
+  const contextBlocks = canvasContext === 'editor' ? editorBlocks
+    : canvasContext === 'game' ? gameBlocks
+    : blocks;
+
+  const contextGroupRects = canvasContext === 'editor' ? editorGroupRects
+    : canvasContext === 'game' ? gameGroupRects
+    : groupRects;
 
   const menuRef = React.useRef<HTMLDivElement>(null);
   const [measuredPos, setMeasuredPos] = React.useState<{x: number, y: number} | null>(null);
@@ -114,13 +149,17 @@ export const ContextMenu: React.FC = () => {
   const isTrack = contextMenu.blockId.startsWith('track:');
   const actualId = isGroupRect ? contextMenu.blockId.split(':')[1] : (isTrack ? contextMenu.blockId.split(':')[1] : contextMenu.blockId);
 
+  const contextTracks = canvasContext === 'editor' ? editorTracks
+    : canvasContext === 'game' ? gameTracks
+    : playgroundTracks;
+
   if (isTrack) {
-    const track = useStore.getState().tracks.find(t => t.id === actualId);
+    const track = contextTracks.find(t => t.id === actualId);
     if (!track) return null;
 
     const handleDelete = (e: React.MouseEvent) => {
       e.stopPropagation();
-      useStore.getState().deleteTrack(track.id);
+      getContextSt().deleteTrack(track.id);
       closeContextMenu();
     };
 
@@ -219,7 +258,7 @@ export const ContextMenu: React.FC = () => {
             type="text" 
             value={track.name || ''} 
             onChange={(e) => {
-              useStore.getState().updateTrack(track.id, { name: e.target.value });
+              getContextSt().updateTrack(track.id, { name: e.target.value });
             }}
             style={{ background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '4px' }}
           />
@@ -231,7 +270,7 @@ export const ContextMenu: React.FC = () => {
             type="number" 
             value={track.bpm || 120} 
             onChange={(e) => {
-              useStore.getState().updateTrack(track.id, { bpm: Number(e.target.value) || 120 });
+              getContextSt().updateTrack(track.id, { bpm: Number(e.target.value) || 120 });
             }}
             style={{ background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '4px' }}
           />
@@ -246,7 +285,7 @@ export const ContextMenu: React.FC = () => {
               let loopVal: boolean | 'restart' = false;
               if (val === 'circular') loopVal = true;
               if (val === 'restart') loopVal = 'restart';
-              useStore.getState().updateTrack(track.id, { loop: loopVal });
+              getContextSt().updateTrack(track.id, { loop: loopVal });
             }}
             style={{ background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '4px' }}
           >
@@ -258,7 +297,7 @@ export const ContextMenu: React.FC = () => {
 
         <div 
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px', cursor: 'pointer' }}
-          onClick={() => useStore.getState().updateTrack(track.id, { enabled: track.enabled === false ? true : false })}
+          onClick={() => getContextSt().updateTrack(track.id, { enabled: track.enabled === false ? true : false })}
         >
           <span style={{ fontSize: '12px', opacity: 0.8, userSelect: 'none' }}>Enable Track</span>
           <div className={`switch-track ${track.enabled !== false ? 'active' : ''}`} style={{ zoom: 0.8 }}>
@@ -270,12 +309,12 @@ export const ContextMenu: React.FC = () => {
   }
 
   if (isGroupRect) {
-    const rect = groupRects.find(g => g.id === actualId);
+    const rect = contextGroupRects.find(g => g.id === actualId);
     if (!rect) return null;
 
     const handleDelete = (e: React.MouseEvent) => {
       e.stopPropagation();
-      removeGroupRect(rect.id);
+      getContextSt().removeGroupRect(rect.id);
       closeContextMenu();
     };
 
@@ -339,7 +378,7 @@ export const ContextMenu: React.FC = () => {
             type="text" 
             value={rect.name || ''} 
             onChange={(e) => {
-              useStore.getState().updateGroupRect(rect.id, { name: e.target.value });
+              getContextSt().updateGroupRect(rect.id, { name: e.target.value });
             }}
             style={{ background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '4px' }}
           />
@@ -355,7 +394,7 @@ export const ContextMenu: React.FC = () => {
             value={rect.volume ?? 1} 
             onChange={(e) => {
               const vol = parseFloat(e.target.value);
-              useStore.getState().updateGroupRect(rect.id, { volume: vol });
+              getContextSt().updateGroupRect(rect.id, { volume: vol });
             }} 
           />
         </div>
@@ -370,9 +409,9 @@ export const ContextMenu: React.FC = () => {
             onKeyDown={(e) => {
               e.preventDefault();
               if (e.key === 'Backspace' || e.key === 'Delete') {
-                useStore.getState().updateGroupRect(rect.id, { keyBinding: '' });
+                getContextSt().updateGroupRect(rect.id, { keyBinding: '' });
               } else if (e.key.length === 1) {
-                useStore.getState().updateGroupRect(rect.id, { keyBinding: e.key.toLowerCase() });
+                getContextSt().updateGroupRect(rect.id, { keyBinding: e.key.toLowerCase() });
               }
             }}
             placeholder="No Key"
@@ -383,7 +422,7 @@ export const ContextMenu: React.FC = () => {
 
         <div 
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px', cursor: 'pointer' }}
-          onClick={() => useStore.getState().updateGroupRect(rect.id, { enabled: rect.enabled === false ? true : false })}
+          onClick={() => getContextSt().updateGroupRect(rect.id, { enabled: rect.enabled === false ? true : false })}
         >
           <span style={{ fontSize: '12px', opacity: 0.8, userSelect: 'none' }}>Enable Group</span>
           <div className={`switch-track ${rect.enabled !== false ? 'active' : ''}`} style={{ zoom: 0.8 }}>
@@ -394,7 +433,7 @@ export const ContextMenu: React.FC = () => {
     );
   }
 
-  const block = contextBlocks.find(b => b.id === actualId) || blocks.find(b => b.id === actualId);
+  const block = contextBlocks.find(b => b.id === actualId);
   if (!block) return null;
 
   const targetBlocks = selectedBlockIds.length > 0 && selectedBlockIds.includes(block.id)
@@ -402,7 +441,7 @@ export const ContextMenu: React.FC = () => {
     : [block];
 
   const tunePitch = (semitones: number) => {
-    useStore.getState().mutateBlocks(
+    getContextSt().mutateBlocks(
       [block.id],
       (b) => ({ pitch: shiftPitch(b.pitch, semitones), playedAt: Date.now(), playedVolumeMultiplier: 1 })
     );
@@ -421,9 +460,9 @@ export const ContextMenu: React.FC = () => {
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (targetBlocks.length > 1) {
-      deleteSelected();
+      getContextSt().deleteSelected();
     } else {
-      removeBlock(block.id);
+      getContextSt().removeBlock(block.id);
     }
     closeContextMenu();
   };
@@ -431,7 +470,7 @@ export const ContextMenu: React.FC = () => {
   const handleAlignLeft = (e: React.MouseEvent) => {
     e.stopPropagation();
     const minX = Math.min(...targetBlocks.map(b => b.x));
-    useStore.getState().mutateBlocks([block.id], () => ({ x: minX }));
+    getContextSt().mutateBlocks([block.id], () => ({ x: minX }));
   };
 
   const handleAlignCenterHorizontal = (e: React.MouseEvent) => {
@@ -439,19 +478,19 @@ export const ContextMenu: React.FC = () => {
     const minX = Math.min(...targetBlocks.map(b => b.x));
     const maxX = Math.max(...targetBlocks.map(b => b.x));
     const centerX = (minX + maxX) / 2;
-    useStore.getState().mutateBlocks([block.id], () => ({ x: centerX }));
+    getContextSt().mutateBlocks([block.id], () => ({ x: centerX }));
   };
 
   const handleAlignRight = (e: React.MouseEvent) => {
     e.stopPropagation();
     const maxX = Math.max(...targetBlocks.map(b => b.x));
-    useStore.getState().mutateBlocks([block.id], () => ({ x: maxX }));
+    getContextSt().mutateBlocks([block.id], () => ({ x: maxX }));
   };
 
   const handleAlignTop = (e: React.MouseEvent) => {
     e.stopPropagation();
     const minY = Math.min(...targetBlocks.map(b => b.y));
-    useStore.getState().mutateBlocks([block.id], () => ({ y: minY }));
+    getContextSt().mutateBlocks([block.id], () => ({ y: minY }));
   };
 
   const handleAlignCenterVertical = (e: React.MouseEvent) => {
@@ -459,13 +498,13 @@ export const ContextMenu: React.FC = () => {
     const minY = Math.min(...targetBlocks.map(b => b.y));
     const maxY = Math.max(...targetBlocks.map(b => b.y));
     const centerY = (minY + maxY) / 2;
-    useStore.getState().mutateBlocks([block.id], () => ({ y: centerY }));
+    getContextSt().mutateBlocks([block.id], () => ({ y: centerY }));
   };
 
   const handleAlignBottom = (e: React.MouseEvent) => {
     e.stopPropagation();
     const maxY = Math.max(...targetBlocks.map(b => b.y));
-    useStore.getState().mutateBlocks([block.id], () => ({ y: maxY }));
+    getContextSt().mutateBlocks([block.id], () => ({ y: maxY }));
   };
 
   const handleDistributeHorizontal = (e: React.MouseEvent) => {
@@ -480,7 +519,7 @@ export const ContextMenu: React.FC = () => {
       id: b.id,
       updates: { x: minX + step * i }
     }));
-    useStore.getState().updateBlocks(updates);
+    getContextSt().updateBlocks(updates);
   };
 
   const handleDistributeVertical = (e: React.MouseEvent) => {
@@ -495,7 +534,7 @@ export const ContextMenu: React.FC = () => {
       id: b.id,
       updates: { y: minY + step * i }
     }));
-    useStore.getState().updateBlocks(updates);
+    getContextSt().updateBlocks(updates);
   };
 
   return (
@@ -593,7 +632,7 @@ export const ContextMenu: React.FC = () => {
             value={block.instrument || 'piano'} 
             onChange={(e) => {
               const inst = e.target.value;
-              useStore.getState().mutateBlocks(
+              getContextSt().mutateBlocks(
                 [block.id],
                 () => ({ instrument: inst, playedAt: Date.now(), playedVolumeMultiplier: 1 })
               );
@@ -614,7 +653,7 @@ export const ContextMenu: React.FC = () => {
           <select 
             value={block.pitch} 
             onChange={(e) => {
-              useStore.getState().mutateBlocks(
+              getContextSt().mutateBlocks(
                 [block.id],
                 () => ({ pitch: e.target.value, playedAt: Date.now(), playedVolumeMultiplier: 1 })
               );
@@ -646,7 +685,7 @@ export const ContextMenu: React.FC = () => {
           value={block.volume ?? 1} 
           onChange={(e) => {
             const vol = parseFloat(e.target.value);
-            useStore.getState().mutateBlocks(
+            getContextSt().mutateBlocks(
               [block.id],
               () => ({ volume: vol, playedAt: Date.now(), playedVolumeMultiplier: 1 })
             );
@@ -664,12 +703,12 @@ export const ContextMenu: React.FC = () => {
           onKeyDown={(e) => {
             e.preventDefault();
             if (e.key === 'Backspace' || e.key === 'Delete') {
-              useStore.getState().mutateBlocks(
+              getContextSt().mutateBlocks(
                 [block.id],
                 () => ({ keyBinding: '' })
               );
             } else if (e.key.length === 1) {
-              useStore.getState().mutateBlocks(
+              getContextSt().mutateBlocks(
                 [block.id],
                 () => ({ keyBinding: e.key.toLowerCase() })
               );

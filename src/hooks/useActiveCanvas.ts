@@ -1,79 +1,61 @@
-import { useCanvasContext, type CanvasContextType } from '../components/canvas/CanvasContext';
-import { useStore } from '../store/useStore';
-import { useGameStore } from '../store/useGameStore';
-import { useLevelEditorStore } from '../store/useLevelEditorStore';
-import type { Block } from '../types';
+import type { CanvasContextType } from '../components/canvas/CanvasContext';
+import { useCanvas, getCanvasAdapter } from '../store/canvasAdapter';
+import type { Block, GroupRect, Track } from '../types';
 
-// Reactive: returns blocks for the current canvas context
-export const useActiveCanvasBlocks = () => {
-  const context = useCanvasContext();
-  const playgroundBlocks = useStore(s => s.blocks);
-  const gameBlocks = useGameStore(s => s.gameBlocks);
-  const editorBlocks = useLevelEditorStore(s => s.gameBlocks);
+// ─── Reactive hooks (call at top level of component/hook) ─────────────────────
 
-  if (context === 'game') return gameBlocks;
-  if (context === 'editor') return editorBlocks;
-  return playgroundBlocks;
-};
+export const useActiveCanvasBlocks               = () => useCanvas().useBlocks();
+export const useActiveCanvasCamera               = () => useCanvas().useCamera();
+export const useActiveCanvasGroupRects           = () => useCanvas().useGroupRects();
+export const useActiveCanvasTracks               = () => useCanvas().useTracks();
+export const useActiveCanvasSelectedBlockIds     = () => useCanvas().useSelectedBlockIds();
+export const useActiveCanvasSelectedGroupRectIds = () => useCanvas().useSelectedGroupRectIds();
+export const useActiveCanvasSelectedTrackIds     = () => useCanvas().useSelectedTrackIds();
 
-// Reactive: returns the camera for the current canvas context
-export const useActiveCanvasCamera = () => {
-  const context = useCanvasContext();
-  const mainCamera = useStore(s => s.camera);
-  const gameCamera = useGameStore(s => s.gameCamera);
+// ─── Non-reactive snapshots (for event handlers) ──────────────────────────────
 
-  if (context === 'game') return gameCamera;
-  return mainCamera; // 'playground' and 'editor' both use the main camera
-};
+export const getBlocksForContext               = (ctx: CanvasContextType) => getCanvasAdapter(ctx).getBlocks();
+export const getCameraForContext               = (ctx: CanvasContextType) => getCanvasAdapter(ctx).getCamera();
+export const getGroupRectsForContext           = (ctx: CanvasContextType) => getCanvasAdapter(ctx).getGroupRects();
+export const getTracksForContext               = (ctx: CanvasContextType) => getCanvasAdapter(ctx).getTracks();
+export const getSelectedBlockIdsForContext     = (ctx: CanvasContextType) => getCanvasAdapter(ctx).getSelectedBlockIds();
+export const getSelectedGroupRectIdsForContext = (ctx: CanvasContextType) => getCanvasAdapter(ctx).getSelectedGroupRectIds();
+export const getSelectedTrackIdsForContext     = (ctx: CanvasContextType) => getCanvasAdapter(ctx).getSelectedTrackIds();
+export const getLastSelectedForContext         = (ctx: CanvasContextType) => getCanvasAdapter(ctx).getLastSelected();
+export const getContextMenuForContext          = (ctx: CanvasContextType) => getCanvasAdapter(ctx).getContextMenu();
 
-// Non-reactive snapshot: get blocks for a given context (for use inside event handlers)
-export const getBlocksForContext = (context: CanvasContextType): Block[] => {
-  if (context === 'game') return useGameStore.getState().gameBlocks;
-  if (context === 'editor') return useLevelEditorStore.getState().gameBlocks;
-  return useStore.getState().blocks;
-};
+// ─── Write helpers ────────────────────────────────────────────────────────────
 
-// Non-reactive snapshot: get camera for a given context
-export const getCameraForContext = (context: CanvasContextType) => {
-  if (context === 'game') return useGameStore.getState().gameCamera;
-  return useStore.getState().camera;
-};
+export const updateBlocksInContext        = (ctx: CanvasContextType, updates: { id: string; updates: Partial<Block> }[]) => getCanvasAdapter(ctx).updateBlocks(updates);
+export const updateBlockInContext         = (ctx: CanvasContextType, id: string, updates: Partial<Block>) => getCanvasAdapter(ctx).updateBlock(id, updates);
+export const updateGroupRectInContext     = (ctx: CanvasContextType, id: string, updates: Partial<GroupRect>) => getCanvasAdapter(ctx).updateGroupRect(id, updates);
+export const updateTrackInContext         = (ctx: CanvasContextType, id: string, updates: Partial<Track>) => getCanvasAdapter(ctx).updateTrack(id, updates);
+export const selectBlockInContext         = (ctx: CanvasContextType, id: string, multi?: boolean) => getCanvasAdapter(ctx).selectBlock(id, multi);
+export const selectGroupRectInContext     = (ctx: CanvasContextType, id: string, multi?: boolean) => getCanvasAdapter(ctx).selectGroupRect(id, multi);
+export const selectTrackInContext         = (ctx: CanvasContextType, id: string, multi?: boolean) => getCanvasAdapter(ctx).selectTrack(id, multi);
+export const clearSelectionInContext      = (ctx: CanvasContextType) => getCanvasAdapter(ctx).clearSelection();
+export const openContextMenuInContext     = (ctx: CanvasContextType, menu: { x: number; y: number; blockId: string }) => getCanvasAdapter(ctx).openContextMenu(menu);
+export const closeContextMenuInContext    = (ctx: CanvasContextType) => getCanvasAdapter(ctx).closeContextMenu();
+export const setHoveredBlockIdInContext   = (ctx: CanvasContextType, id: string | null) => getCanvasAdapter(ctx).setHoveredBlockId(id);
+export const setHoveredGroupRectIdInContext = (ctx: CanvasContextType, id: string | null) => getCanvasAdapter(ctx).setHoveredGroupRectId(id);
+export const commitContextHistory         = (ctx: CanvasContextType) => getCanvasAdapter(ctx).commitHistory();
+
+// Batch selection helpers (used by OutlinerPanel)
+export const setSelectionBatchInContext = (
+  ctx: CanvasContextType,
+  updates: { selectedBlockIds: string[]; selectedGroupRectIds: string[]; selectedTrackIds: string[]; lastSelectedId: string; lastSelectedType: 'block' | 'groupRect' | 'track' }
+) => getCanvasAdapter(ctx).setState(updates);
+
+export const setGroupSelectionBatchInContext = (
+  ctx: CanvasContextType,
+  updates: { selectedBlockIds: string[]; selectedGroupRectIds: string[]; selectedTrackIds: string[]; lastSelectedId?: string; lastSelectedType?: 'block' | 'groupRect' | 'track' }
+) => getCanvasAdapter(ctx).setState(updates);
 
 // Non-reactive: add blocks to the correct store and return their IDs
-export const addBlocksToContext = (context: CanvasContextType, blocks: Block[]): string[] => {
-  if (context === 'game') {
-    const current = useGameStore.getState().gameBlocks;
-    useGameStore.getState().setGameBlocks([...current, ...blocks]);
-    return blocks.map(b => b.id);
-  }
-  if (context === 'editor') {
-    const current = useLevelEditorStore.getState().gameBlocks;
-    useLevelEditorStore.getState().setGameBlocks([...current, ...blocks]);
-    useLevelEditorStore.getState().commitHistory();
-    return blocks.map(b => b.id);
-  }
-  return useStore.getState().addBlocks(blocks);
-};
-
-// Non-reactive: update blocks in the correct store
-export const updateBlocksInContext = (
-  context: CanvasContextType,
-  updates: { id: string; updates: Partial<Block> }[]
-) => {
-  if (context === 'game') {
-    useGameStore.getState().updateGameBlocks(updates);
-  } else if (context === 'editor') {
-    useLevelEditorStore.getState().updateGameBlocks(updates);
-  } else {
-    useStore.getState().updateBlocks(updates);
-  }
-};
-
-// Non-reactive: commit undo history for contexts that maintain their own history
-export const commitContextHistory = (context: CanvasContextType) => {
-  if (context === 'editor') {
-    useLevelEditorStore.getState().commitHistory();
-  }
-  // 'playground' uses temporal (Zundo) — caller manages pause/resume
-  // 'game' has no undo history
+export const addBlocksToContext = (ctx: CanvasContextType, blocks: Block[]): string[] => {
+  const adapter = getCanvasAdapter(ctx);
+  const current = adapter.getBlocks();
+  adapter.setBlocks([...current, ...blocks]);
+  adapter.commitHistory();
+  return blocks.map(b => b.id);
 };

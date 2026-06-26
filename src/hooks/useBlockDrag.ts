@@ -1,12 +1,22 @@
 import { useState, useRef, useEffect } from 'react';
-import { useStore } from '../store/useStore';
 import { useLevelEditorStore } from '../store/useLevelEditorStore';
 import { useGameStore } from '../store/useGameStore';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { getCanvasAdapter } from '../store/canvasAdapter';
+import { snapValue } from '../utils/canvasUtils';
+import { createDragHistoryGuard } from '../utils/dragUtils';
+import { useDoubleClick } from './useDoubleClick';
 import { getAllChartNotes } from '../utils/chartUtils';
 import { useIsMobile } from './useIsMobile';
 import { useCanvasContext } from '../components/canvas/CanvasContext';
 import type { CanvasContextType } from '../components/canvas/CanvasContext';
+import {
+  getBlocksForContext, getCameraForContext,
+  getSelectedBlockIdsForContext, getSelectedTrackIdsForContext, getSelectedGroupRectIdsForContext,
+  getTracksForContext, getGroupRectsForContext,
+  selectBlockInContext, clearSelectionInContext, openContextMenuInContext, getContextMenuForContext, closeContextMenuInContext,
+  updateTrackInContext, updateGroupRectInContext,
+} from './useActiveCanvas';
 
 export const useBlockDrag = (id: string, x: number, y: number, isSelected: boolean, canvasContextOverride?: CanvasContextType) => {
   const isMobile = useIsMobile();
@@ -16,7 +26,7 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const clickStartPosRef = useRef<{x: number, y: number, pointerId?: number} | null>(null);
   const wasSelectedRef = useRef(false);
-  const lastClickTimeRef = useRef(0);
+  const { isDoubleClick } = useDoubleClick();
 
   const handlePointerDown = (e: import('pixi.js').FederatedPointerEvent) => {
     if (canvasContext === 'game' && useGameStore.getState().gamePhase === 'play') return;
@@ -33,24 +43,24 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
       }
     }
 
-    const state = useStore.getState();
     const button = e.button;
     const isMultiSelect = e.ctrlKey || e.shiftKey;
 
     if (button === 0) {
-      if (state.contextMenu && state.contextMenu.blockId !== id) {
-        state.closeContextMenu();
+      const ctxMenu = getContextMenuForContext(canvasContext);
+      if (ctxMenu && ctxMenu.blockId !== id) {
+        closeContextMenuInContext(canvasContext);
       }
       e.stopPropagation();
       wasSelectedRef.current = isSelected;
       clickStartPosRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
       let shouldDrag: boolean;
       if (isMultiSelect) {
-        state.selectBlock(id, true);
+        selectBlockInContext(canvasContext, id, true);
         shouldDrag = !isSelected;
       } else {
         if (!isSelected) {
-          state.selectBlock(id, false);
+          selectBlockInContext(canvasContext, id, false);
         }
         shouldDrag = true;
       }
@@ -68,15 +78,9 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
       const dx = e.clientX - clickStartPosRef.current.x;
       const dy = e.clientY - clickStartPosRef.current.y;
       const isClick = Math.sqrt(dx*dx + dy*dy) < 5;
-      if (isClick) {
-        const now = Date.now();
-        if (now - lastClickTimeRef.current < 300) {
-          if (!e.ctrlKey && !e.shiftKey) {
-            useStore.getState().openContextMenu({ x: e.clientX, y: e.clientY, blockId: id });
-          }
-          lastClickTimeRef.current = 0;
-        } else {
-          lastClickTimeRef.current = now;
+      if (isClick && isDoubleClick()) {
+        if (!e.ctrlKey && !e.shiftKey) {
+          openContextMenuInContext(canvasContext, { x: e.clientX, y: e.clientY, blockId: id });
         }
       }
     }
@@ -85,43 +89,25 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
   useEffect(() => {
     if (!isDragging) return;
 
-    let hasPaused = false;
-    const mainState = useStore.getState();
-    const selectedIds = mainState.selectedBlockIds;
-
-    const sourceBlocks =
-      canvasContext === 'editor'
-        ? useLevelEditorStore.getState().gameBlocks.filter(b => selectedIds.includes(b.id))
-        : canvasContext === 'game'
-          ? useGameStore.getState().gameBlocks.filter(b => selectedIds.includes(b.id))
-          : mainState.blocks.filter(b => selectedIds.includes(b.id));
+    const adapter = getCanvasAdapter(canvasContext);
+    const selectedIds = getSelectedBlockIdsForContext(canvasContext);
+    const sourceBlocks = getBlocksForContext(canvasContext).filter(b => selectedIds.includes(b.id));
 
     if (!sourceBlocks.find(b => b.id === id)) {
-      const thisBlock =
-        canvasContext === 'editor'
-          ? useLevelEditorStore.getState().gameBlocks.find(b => b.id === id)
-          : canvasContext === 'game'
-            ? useGameStore.getState().gameBlocks.find(b => b.id === id)
-            : mainState.blocks.find(b => b.id === id);
+      const thisBlock = getBlocksForContext(canvasContext).find(b => b.id === id);
       if (thisBlock) sourceBlocks.push(thisBlock);
     }
 
-    const selectedTracks = mainState.tracks.filter(t => mainState.selectedTrackIds.includes(t.id));
-    const selectedGroupRects = mainState.groupRects.filter(g => mainState.selectedGroupRectIds.includes(g.id));
+    const selectedTrackIds = getSelectedTrackIdsForContext(canvasContext);
+    const selectedGroupRectIds = getSelectedGroupRectIdsForContext(canvasContext);
+    const selectedTracks = getTracksForContext(canvasContext).filter(t => selectedTrackIds.includes(t.id));
+    const selectedGroupRects = getGroupRectsForContext(canvasContext).filter(g => selectedGroupRectIds.includes(g.id));
 
     const initialPositions = new Map(sourceBlocks.map(b => [b.id, { x: b.x, y: b.y }]));
     const initialTrackNodes = new Map(selectedTracks.map(t => [t.id, t.nodes.map(n => ({ ...n }))]));
     const initialGroupRects = new Map(selectedGroupRects.map(g => [g.id, { x: g.x, y: g.y }]));
 
-    const applyUpdates = (updates: { id: string; updates: { x: number; y: number } }[]) => {
-      if (canvasContext === 'editor') {
-        useLevelEditorStore.getState().updateGameBlocks(updates);
-      } else if (canvasContext === 'game') {
-        useGameStore.getState().updateGameBlocks(updates);
-      } else {
-        useStore.getState().updateBlocks(updates);
-      }
-    };
+    const historyGuard = createDragHistoryGuard(adapter);
 
     const handleGlobalMove = (e: PointerEvent) => {
       if (clickStartPosRef.current && clickStartPosRef.current.pointerId !== undefined && e.pointerId !== clickStartPosRef.current.pointerId) {
@@ -129,13 +115,12 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
       }
       if (isMobile && (window as { __activeTouches?: number }).__activeTouches && (window as { __activeTouches?: number }).__activeTouches! > 1) {
         setIsDragging(false);
-        if (hasPaused && canvasContext === 'playground') useStore.temporal.getState().resume();
-        useStore.getState().clearSelection();
+        historyGuard.onUp();
+        clearSelectionInContext(canvasContext);
         return;
       }
 
-      const state = useStore.getState();
-      const camera = canvasContext === 'game' ? useGameStore.getState().gameCamera : state.camera;
+      const camera = getCameraForContext(canvasContext);
       const { snapToGrid } = useSettingsStore.getState();
 
       const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
@@ -147,9 +132,8 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
       let newY = localY - dragOffset.y;
 
       if (snapToGrid) {
-        const snapSize = 30;
-        newX = Math.round(newX / snapSize) * snapSize;
-        newY = Math.round(newY / snapSize) * snapSize;
+        newX = snapValue(newX);
+        newY = snapValue(newY);
       }
 
       const thisInit = initialPositions.get(id);
@@ -163,40 +147,24 @@ export const useBlockDrag = (id: string, x: number, y: number, isSelected: boole
         return { id: b.id, updates: { x: init.x + deltaX, y: init.y + deltaY } };
       });
 
-      if (canvasContext === 'playground') {
-        if (!hasPaused) {
-          useStore.temporal.setState(s => ({
-            pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks }],
-            futureStates: []
-          }));
-          useStore.temporal.getState().pause();
-          hasPaused = true;
-        }
-      }
-
-      applyUpdates(finalUpdates);
+      historyGuard.onMove();
+      adapter.updateBlocks(finalUpdates);
 
       const trackUpdates = selectedTracks.map(t => {
         const initNodes = initialTrackNodes.get(t.id)!;
         return { id: t.id, nodes: initNodes.map(n => ({ ...n, x: n.x + deltaX, y: n.y + deltaY })) };
       });
-      trackUpdates.forEach(tu => state.updateTrack(tu.id, { nodes: tu.nodes }));
+      trackUpdates.forEach(tu => updateTrackInContext(canvasContext, tu.id, { nodes: tu.nodes }));
       selectedGroupRects.forEach(g => {
         const init = initialGroupRects.get(g.id)!;
-        state.updateGroupRect(g.id, { x: init.x + deltaX, y: init.y + deltaY });
+        updateGroupRectInContext(canvasContext, g.id, { x: init.x + deltaX, y: init.y + deltaY });
       });
     };
 
     const handleGlobalUp = () => {
       setIsDragging(false);
-      if (canvasContext === 'playground' && hasPaused) {
-        useStore.temporal.getState().resume();
-      } else if (canvasContext === 'editor') {
-        useLevelEditorStore.getState().commitHistory();
-      }
-      if (isMobile) {
-        useStore.getState().clearSelection();
-      }
+      historyGuard.onUp();
+      if (isMobile) clearSelectionInContext(canvasContext);
     };
 
     window.addEventListener('pointermove', handleGlobalMove);

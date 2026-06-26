@@ -17,6 +17,7 @@ interface SettingsState {
   showBlockPitch: boolean;
   showBlockVolume: boolean;
   showBlockInstrument: boolean;
+  showSelectionHud: boolean;
   pianoKeysCount: number;
   blockOpacity: number;
   mouseSensitivity: number;
@@ -25,7 +26,7 @@ interface SettingsState {
 
   setTheme: (theme: Theme) => void;
   setGridConfig: (config: { showGrid?: boolean; snapToGrid?: boolean }) => void;
-  setDisplaySettings: (settings: Partial<Pick<SettingsState, 'showGroupName' | 'showBlockPitch' | 'showBlockVolume' | 'showBlockInstrument'>>) => void;
+  setDisplaySettings: (settings: Partial<Pick<SettingsState, 'showGroupName' | 'showBlockPitch' | 'showBlockVolume' | 'showBlockInstrument' | 'showSelectionHud'>>) => void;
   setPianoKeysCount: (count: number) => void;
   setBlockOpacity: (opacity: number) => void;
   setMouseSensitivity: (sensitivity: number) => void;
@@ -43,6 +44,7 @@ export const useSettingsStore = create<SettingsState>()(
       showBlockPitch: true,
       showBlockVolume: true,
       showBlockInstrument: true,
+      showSelectionHud: true,
       pianoKeysCount: 36,
       blockOpacity: 1,
       mouseSensitivity: 1,

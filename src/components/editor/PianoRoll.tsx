@@ -256,14 +256,14 @@ export const PianoRoll: React.FC = () => {
     const selectedNoteIds = store.selectedNoteIds;
 
     for (const track of store.midiData.tracks) {
-      const isSelectedTrack = track.id === store.selectedTrackId;
+      const isSelectedTrack = track.id === store.selectedMidiTrackId;
       const isGhostVisible = store.ghostNoteVisibility[track.id];
       const isBackground = track.isBackground;
 
       if (!isSelectedTrack && !isGhostVisible) continue;
 
       const trackColor = getTrackColor(track.id);
-      const mainBlocks = useLevelEditorStore.getState().gameBlocks;
+      const mainBlocks = useLevelEditorStore.getState().blocks;
 
       for (const note of track.notes) {
         const noteX = note.timeStart * zoom - scrollLeft;
@@ -670,7 +670,7 @@ export const PianoRoll: React.FC = () => {
           velocity: 0.8,
         };
 
-        if (!e.shiftKey) store.clearSelection();
+        if (!e.shiftKey) store.clearNoteSelection();
         store.addNote(newNote, false);
         store.selectNote(newNote.id);
 
@@ -703,7 +703,7 @@ export const PianoRoll: React.FC = () => {
         startFadeAnimation(noteX, noteY, noteW, ROW_HEIGHT - 1);
         store.removeNote(note.id);
       } else if (target.type === 'empty') {
-        store.clearSelection();
+        store.clearNoteSelection();
         dragAction.current = 'none';
       }
     }
@@ -952,7 +952,7 @@ export const PianoRoll: React.FC = () => {
       if (track) {
         const zoom = store.zoomLevel;
         const scrollTop = store.scrollTop;
-        if (!e.shiftKey) store.clearSelection();
+        if (!e.shiftKey) store.clearNoteSelection();
 
         for (const note of track.notes) {
           const nx = note.timeStart * zoom;
@@ -1087,7 +1087,7 @@ export const PianoRoll: React.FC = () => {
     if (e.ctrlKey || e.metaKey) {
       if (e.key === 'a' || e.key === 'A') {
         e.preventDefault();
-        store.selectAll();
+        store.selectAllNotes();
         drawBgCanvas();
       } else if (e.key === 'c' || e.key === 'C') {
         e.preventDefault();
@@ -1147,7 +1147,7 @@ export const PianoRoll: React.FC = () => {
       drawBgCanvas();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      store.clearSelection();
+      store.clearNoteSelection();
       drawBgCanvas();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1178,7 +1178,7 @@ export const PianoRoll: React.FC = () => {
       if (
         state.midiData !== prevState.midiData ||
         state.selectedNoteIds !== prevState.selectedNoteIds ||
-        state.selectedTrackId !== prevState.selectedTrackId ||
+        state.selectedMidiTrackId !== prevState.selectedMidiTrackId ||
         state.scrollLeft !== prevState.scrollLeft ||
         state.scrollTop !== prevState.scrollTop ||
         state.zoomLevel !== prevState.zoomLevel ||

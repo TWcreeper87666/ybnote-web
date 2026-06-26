@@ -41,7 +41,7 @@ export const TrackPanel: React.FC = () => {
 
   const finishRename = () => {
     if (renamingTrackId !== null && renameInput.trim()) {
-      store.renameTrack(renamingTrackId, renameInput.trim());
+      store.renameMidiTrack(renamingTrackId, renameInput.trim());
     }
     setRenamingTrackId(null);
   };
@@ -51,19 +51,19 @@ export const TrackPanel: React.FC = () => {
   };
 
   const handleAddTrack = () => {
-    store.addTrack();
+    store.addMidiTrack();
   };
 
   const handleDuplicateTrack = () => {
-    if (store.selectedTrackId !== null) {
-      store.duplicateTrack(store.selectedTrackId);
+    if (store.selectedMidiTrackId !== null) {
+      store.duplicateMidiTrack(store.selectedMidiTrackId);
     }
   };
 
   const handleRemoveTrack = (trackId: number | null = null) => {
-    const idToRemove = trackId ?? store.selectedTrackId;
+    const idToRemove = trackId ?? store.selectedMidiTrackId;
     if (idToRemove !== null && tracks.length > 0) {
-      store.removeTrack(idToRemove);
+      store.removeMidiTrack(idToRemove);
     }
   };
 
@@ -73,17 +73,17 @@ export const TrackPanel: React.FC = () => {
       const target = e.target as HTMLElement;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
 
-      if (e.key === 'F2' && store.selectedTrackId !== null) {
+      if (e.key === 'F2' && store.selectedMidiTrackId !== null) {
         e.preventDefault();
-        const track = tracks.find(t => t.id === store.selectedTrackId);
+        const track = tracks.find(t => t.id === store.selectedMidiTrackId);
         if (track) startRename(track.id, track.name);
       }
 
-      if ((e.key === 'Delete' || e.key === 'Backspace') && store.selectedTrackId !== null) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && store.selectedMidiTrackId !== null) {
         // If focus is inside TrackPanel or no notes are selected in PianoRoll
         if (target.closest('.le-track-panel') || store.selectedNoteIds.size === 0) {
           e.preventDefault();
-          handleRemoveTrack(store.selectedTrackId);
+          handleRemoveTrack(store.selectedMidiTrackId);
         }
       }
     };
@@ -94,7 +94,7 @@ export const TrackPanel: React.FC = () => {
       window.removeEventListener('keydown', handleGlobalKeydown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.selectedTrackId, tracks, store.selectedNoteIds.size]);
+  }, [store.selectedMidiTrackId, tracks, store.selectedNoteIds.size]);
 
   const openContextMenu = (e: React.MouseEvent, trackId: number | null) => {
     e.preventDefault();
@@ -112,7 +112,7 @@ export const TrackPanel: React.FC = () => {
         const track = tracks.find(t => t.id === targetId);
         if (track) startRename(track.id, track.name);
       } else if (action === 'duplicate') {
-        store.duplicateTrack(targetId);
+        store.duplicateMidiTrack(targetId);
       } else if (action === 'remove') {
         handleRemoveTrack(targetId);
       }
@@ -121,7 +121,7 @@ export const TrackPanel: React.FC = () => {
 
   const handleInstrumentChange = (instrument: string) => {
     if (contextMenu && contextMenu.trackId !== null) {
-      store.updateTrackInstrument(contextMenu.trackId, instrument);
+      store.updateMidiTrackInstrument(contextMenu.trackId, instrument);
     }
     setContextMenu(null);
   };
@@ -135,7 +135,7 @@ export const TrackPanel: React.FC = () => {
 
       <div className="le-tp-list" onContextMenu={(e) => openContextMenu(e, null)}>
         {tracks.map(track => {
-          const isActive = store.selectedTrackId === track.id;
+          const isActive = store.selectedMidiTrackId === track.id;
           const isMuted = !!store.trackMute[track.id];
           const isGhostVisible = !!store.ghostNoteVisibility[track.id];
 
@@ -145,7 +145,7 @@ export const TrackPanel: React.FC = () => {
               tabIndex={-1}
               className={`le-tp-item ${isActive ? 'active' : ''}`}
               onClick={(e) => {
-                store.selectTrack(track.id);
+                store.selectMidiTrack(track.id);
                 e.currentTarget.focus();
               }}
               onDoubleClick={() => startRename(track.id, track.name)}
@@ -195,7 +195,7 @@ export const TrackPanel: React.FC = () => {
                     borderRadius: 4
                   }}
                   title={track.isBackground ? 'Play as Background (Hidden in Blocks)' : 'Include in Game Blocks'}
-                  onClick={(e) => { e.stopPropagation(); store.toggleTrackBackground(track.id); }}
+                  onClick={(e) => { e.stopPropagation(); store.toggleMidiTrackBackground(track.id); }}
                 >
                   <Blocks size={14} />
                 </button>
@@ -216,10 +216,10 @@ export const TrackPanel: React.FC = () => {
         <button className="le-tp-action-btn" onClick={handleAddTrack} title="Add Track">
           <Plus size={16} />
         </button>
-        <button className="le-tp-action-btn" onClick={handleDuplicateTrack} disabled={store.selectedTrackId === null} title="Duplicate Track">
+        <button className="le-tp-action-btn" onClick={handleDuplicateTrack} disabled={store.selectedMidiTrackId === null} title="Duplicate Track">
           <Copy size={14} />
         </button>
-        <button className="le-tp-action-btn remove" onClick={() => handleRemoveTrack(null)} disabled={store.selectedTrackId === null || tracks.length === 0} title="Remove Track">
+        <button className="le-tp-action-btn remove" onClick={() => handleRemoveTrack(null)} disabled={store.selectedMidiTrackId === null || tracks.length === 0} title="Remove Track">
           <Trash2 size={14} />
         </button>
       </div>

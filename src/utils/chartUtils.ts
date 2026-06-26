@@ -46,7 +46,7 @@ export function blockDistance(
 }
 
 export function setEditorBlocks(blocks: Block[]) {
-  useLevelEditorStore.getState().setGameBlocks(blocks);
+  useLevelEditorStore.getState().setBlocks(blocks);
 }
 
 export function syncGameBlocksToCanvas() {
@@ -127,7 +127,7 @@ export function getCandidateBlocks(note: EditorNote, track: EditorTrack): ChartC
       type: 'groupRect' as const,
     }));
   }
-  return editorState.gameBlocks
+  return editorState.blocks
     .filter((b) => b.pitch === note.name && b.instrument === track.instrument)
     .map((b) => ({ ...b, type: 'block' as const }));
 }
@@ -135,7 +135,7 @@ export function getCandidateBlocks(note: EditorNote, track: EditorTrack): ChartC
 export function generateMissingBlocks(midiData: ParsedMidiData): GenerateBlocksResult {
   const main = useStore.getState();
   const editorStore = useLevelEditorStore.getState();
-  const currentBlocks = [...editorStore.gameBlocks];
+  const currentBlocks = [...editorStore.blocks];
   const groupRects = [...main.groupRects];
   let addedBlocks = 0;
   let addedGroupRects = 0;
@@ -198,7 +198,7 @@ export function generateMissingBlocks(midiData: ParsedMidiData): GenerateBlocksR
   }
 
   if (addedBlocks > 0) {
-    useLevelEditorStore.getState().setGameBlocks(currentBlocks);
+    useLevelEditorStore.getState().setBlocks(currentBlocks);
   }
 
   return { addedBlocks, addedGroupRects };
@@ -305,7 +305,7 @@ export function matchRecordedHits(
 
     let hitPitch: string | null;
     if (hit.blockType === 'block') {
-      const block = useLevelEditorStore.getState().gameBlocks.find((b) => b.id === hit.blockId)
+      const block = useLevelEditorStore.getState().blocks.find((b) => b.id === hit.blockId)
         ?? useStore.getState().blocks.find((b) => b.id === hit.blockId);
       hitPitch = block?.pitch ?? null;
     } else {

@@ -6,11 +6,11 @@ import { PianoRoll } from '../components/editor/PianoRoll';
 import { LevelEditorToolbar } from '../components/editor/LevelEditorToolbar';
 import { EditorCanvas } from '../components/canvas/EditorCanvas';
 import { ChartingTab } from '../components/editor/ChartingTab';
-import { CanvasContext } from '../components/canvas/CanvasContext';
+import { CanvasProvider } from '../store/CanvasProvider';
 import { WaveformView } from '../components/editor/WaveformView';
 import { TrackPanel } from '../components/editor/TrackPanel';
 import { parseMidiFile } from '../utils/midiImport';
-import { FileDown, Play, Pause, Volume2 } from 'lucide-react';
+import { FileDown } from 'lucide-react';
 import { Toolbar } from '../components/ui/Toolbar';
 import { SettingsPanel } from '../components/ui/SettingsPanel';
 import { SelectionPropertiesHud } from '../components/ui/SelectionPropertiesHud';
@@ -19,6 +19,9 @@ import { HelpPanel } from '../components/ui/HelpPanel';
 import { OutlinerPanel } from '../components/ui/OutlinerPanel';
 import { PocketCanvasPanel } from '../components/ui/PocketCanvasPanel';
 import { PocketDragOverlay } from '../components/ui/PocketDragOverlay';
+import { PianoKeyboard } from '../components/instruments/PianoKeyboard';
+import { DrumKeyboard } from '../components/instruments/DrumKeyboard';
+import { CanvasPlayerBar } from '../components/ui/CanvasPlayerBar';
 import { useShortcuts } from '../hooks/useShortcuts';
 
 const ShortcutsEnabler = () => {
@@ -44,9 +47,9 @@ const BlocksPlaybackSync = () => {
 
         while (lastPlayedIndex < events.length && events[lastPlayedIndex].time <= currentMs) {
           const ev = events[lastPlayedIndex];
-          const block = editorState.gameBlocks.find(b => b.id === ev.blockId);
+          const block = editorState.blocks.find(b => b.id === ev.blockId);
           if (block) {
-            editorState.updateGameBlock(ev.blockId, { playedAt: Date.now() });
+            editorState.updateBlock(ev.blockId, { playedAt: Date.now() });
           } else {
             const gr = useStore.getState().groupRects.find(g => g.id === ev.blockId);
             if (gr) useStore.getState().updateGroupRect(ev.blockId, { playedAt: Date.now() });
@@ -68,49 +71,6 @@ const BlocksPlaybackSync = () => {
   return null;
 };
 
-const MiniPlayerSlider = () => {
-  const store = useLevelEditorStore();
-  const wasPlayingRef = React.useRef(false);
-  const [localVal, setLocalVal] = React.useState<number | null>(null);
-
-  const handlePointerDown = () => {
-    wasPlayingRef.current = useLevelEditorStore.getState().isPlaying;
-    if (wasPlayingRef.current) {
-      store.stopPlayback();
-    }
-    setLocalVal(store.playbackPosition);
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setLocalVal(val);
-    store.setPlaybackAnchor(val);
-  };
-
-  const handlePointerUp = () => {
-    setLocalVal(null);
-    if (wasPlayingRef.current && !useLevelEditorStore.getState().isPlaying) {
-      store.togglePlayback();
-    }
-  };
-
-  return (
-    <input 
-      type="range"
-      min="0"
-      max={store.chartEndPosition || 100}
-      step="0.1"
-      value={localVal !== null ? localVal : store.playbackPosition}
-      onChange={handleChange}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onFocus={(e) => e.target.blur()}
-      onKeyDown={(e) => e.preventDefault()}
-      tabIndex={-1}
-      style={{ flex: 1, accentColor: '#6366f1', cursor: 'pointer' }}
-    />
-  );
-};
 
 const GlobalPlayhead = () => {
   const ref = React.useRef<HTMLDivElement>(null);
@@ -308,7 +268,7 @@ export const LevelEditorPage: React.FC = () => {
           pointerEvents: activeTab === 'blocks' || activeTab === 'charting' ? 'auto' : 'none'
         }}>
           <div className="le-blocks-container" style={{ position: 'relative', width: '100%', height: '100%' }}>
-            <CanvasContext.Provider value="editor">
+            <CanvasProvider type="editor">
                 <ShortcutsEnabler />
                 <BlocksPlaybackSync />
                 <EditorCanvas />
@@ -332,9 +292,11 @@ export const LevelEditorPage: React.FC = () => {
                       <OutlinerPanel />
                       <PocketCanvasPanel />
                       <PocketDragOverlay />
+                      <PianoKeyboard />
+                      <DrumKeyboard />
                       <SettingsPanel />
                       <HelpPanel />
-                      <SelectionPropertiesHud />
+                      <SelectionPropertiesHud bottomOffset={100} />
                       <ContextMenu />
                     </div>
                   )}
@@ -342,39 +304,8 @@ export const LevelEditorPage: React.FC = () => {
                 
                 {activeTab === 'charting' && <ChartingTab />}
 
-                {/* Bottom Mini Player (blocks tab only) */}
-                {activeTab === 'blocks' && (
-                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 24px', background: 'linear-gradient(to top, rgba(0,0,0,0.9), transparent)', zIndex: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                   <div style={{ color: 'white', fontSize: 14, opacity: 0.8 }}>Preview Playback</div>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                      <button 
-                        onClick={() => store.togglePlayback()}
-                        style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}
-                      >
-                        {store.isPlaying ? <Pause size={28} /> : <Play size={28} />}
-                      </button>
-                      
-                      <MiniPlayerSlider />
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                         <Volume2 size={20} color="white" />
-                         <input 
-                           type="range"
-                           min="0"
-                           max="100"
-                           step="1"
-                           value={store.audioVolume}
-                           onChange={(e) => store.setAudioVolume(parseFloat(e.target.value))}
-                           style={{ width: 80, accentColor: '#6366f1', cursor: 'pointer' }}
-                           tabIndex={-1}
-                           onFocus={(e) => e.target.blur()}
-                           onKeyDown={(e) => e.preventDefault()}
-                         />
-                      </div>
-                   </div>
-                </div>
-                )}
-            </CanvasContext.Provider>
+                {activeTab === 'blocks' && <CanvasPlayerBar />}
+            </CanvasProvider>
               </div>
             </div>
           </div>

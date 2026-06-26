@@ -1,17 +1,17 @@
 import React, { useCallback } from 'react';
 import * as PIXI from 'pixi.js';
 import { computeTrackControlPoints } from '../../utils/spline';
-import { useStore } from '../../store/useStore';
 import type { Track, TrackNode } from '../../types';
 
 const TrackHandle: React.FC<{
   x: number;
   y: number;
   color: number;
+  isNodeDragging?: boolean;
   onDragStart: (e: PIXI.FederatedPointerEvent) => void;
   onRightClick: (e: PIXI.FederatedPointerEvent) => void;
   onDoubleClick?: (e: PIXI.FederatedPointerEvent) => void;
-}> = ({ x, y, color, onDragStart, onRightClick, onDoubleClick }) => {
+}> = ({ x, y, color, isNodeDragging, onDragStart, onRightClick, onDoubleClick }) => {
   const lastClickTimeRef = React.useRef(0);
   const draw = useCallback((g: PIXI.Graphics) => {
     g.clear();
@@ -48,7 +48,7 @@ const TrackHandle: React.FC<{
         } 
       }}
       onPointerEnter={(e: PIXI.FederatedPointerEvent) => {
-        if (e.buttons === 2 && !useStore.getState().activeNodeDrag) {
+        if (e.buttons === 2 && !isNodeDragging) {
           onRightClick(e);
         }
       }}
@@ -128,6 +128,7 @@ export interface BaseTrackProps {
   isActive: boolean;
   isSelected: boolean;
   isInteractive?: boolean;
+  isNodeDragging?: boolean;
   onTrackPointerDown?: (e: PIXI.FederatedPointerEvent) => void;
   onNodeDragStart?: (nodeId: string, e: PIXI.FederatedPointerEvent) => void;
   onNodeRightClick?: (nodeId: string, e: PIXI.FederatedPointerEvent) => void;
@@ -139,6 +140,7 @@ export const BaseTrack: React.FC<BaseTrackProps> = ({
   isActive,
   isSelected,
   isInteractive = true,
+  isNodeDragging = false,
   onTrackPointerDown,
   onNodeDragStart,
   onNodeRightClick,
@@ -178,8 +180,9 @@ export const BaseTrack: React.FC<BaseTrackProps> = ({
 
       {isActive && isInteractive && track.nodes.map((node: TrackNode) => (
         <React.Fragment key={node.id}>
-          <TrackHandle 
-            x={node.x} y={node.y} color={0x6366f1} 
+          <TrackHandle
+            x={node.x} y={node.y} color={0x6366f1}
+            isNodeDragging={isNodeDragging}
             onDragStart={(e) => onNodeDragStart && onNodeDragStart(node.id, e)}
             onRightClick={(e) => onNodeRightClick && onNodeRightClick(node.id, e)}
             onDoubleClick={(e) => onNodeDoubleClick && onNodeDoubleClick(node.id, e)}

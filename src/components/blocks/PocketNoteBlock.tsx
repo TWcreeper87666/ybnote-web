@@ -1,5 +1,8 @@
 import React from "react";
 import { useStore } from "../../store/useStore";
+import { useLevelEditorStore } from "../../store/useLevelEditorStore";
+import { useGameStore } from "../../store/useGameStore";
+import { useCanvasContext } from "../canvas/CanvasContext";
 import { useSettingsStore } from "../../store/useSettingsStore";
 import { BaseBlock } from "./BaseBlock";
 import { DrumBlock } from "./DrumBlock";
@@ -38,12 +41,16 @@ export const PocketNoteBlock: React.FC<PocketNoteBlockProps> = ({
   const pianoKeysCount = useSettingsStore((state) => state.pianoKeysCount);
   const blockColor = getPitchColorNumber(pitch, pianoKeysCount);
 
-  // Check if it's missing on the main canvas (playground context)
-  const isMissingOnMain = useStore((state) => {
-    return !state.blocks.some(
-      (b) => b.pitch === pitch && (b.instrument || "piano") === instrument,
-    );
-  });
+  const canvasContext = useCanvasContext();
+  const playgroundBlocks = useStore(state => state.blocks);
+  const editorBlocks = useLevelEditorStore(state => state.blocks);
+  const gameBlocks = useGameStore(state => state.blocks);
+  const mainBlocks = canvasContext === 'editor' ? editorBlocks
+    : canvasContext === 'game' ? gameBlocks
+    : playgroundBlocks;
+  const isMissingOnMain = !mainBlocks.some(
+    b => b.pitch === pitch && (b.instrument || 'piano') === instrument,
+  );
 
   const handlePointerDown = (
     e: import("pixi.js").FederatedPointerEvent | React.PointerEvent,

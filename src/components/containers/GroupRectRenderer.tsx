@@ -1,14 +1,23 @@
 import React, { useState } from 'react';
-import { useStore } from '../../store/useStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useCanvasContext } from '../canvas/CanvasContext';
-import { getBlocksForContext, getCameraForContext, updateBlocksInContext, commitContextHistory } from '../../hooks/useActiveCanvas';
+import { getCanvasAdapter } from '../../store/canvasAdapter';
+import {
+  getBlocksForContext, getCameraForContext, updateBlocksInContext, commitContextHistory,
+  useActiveCanvasGroupRects, useActiveCanvasSelectedGroupRectIds,
+  getGroupRectsForContext, getSelectedGroupRectIdsForContext, getSelectedBlockIdsForContext, getSelectedTrackIdsForContext, getTracksForContext,
+  updateGroupRectInContext, selectGroupRectInContext, openContextMenuInContext, closeContextMenuInContext,
+  setHoveredGroupRectIdInContext, updateTrackInContext,
+} from '../../hooks/useActiveCanvas';
 import { BaseGroupRect } from './BaseGroupRect';
 import type { GroupRect } from '../../types';
 import * as PIXI from 'pixi.js';
+import { getCanvasContainerRect, snapValue } from '../../utils/canvasUtils';
+import { createDragHistoryGuard } from '../../utils/dragUtils';
+import { useDoubleClick } from '../../hooks/useDoubleClick';
 
 export const GroupRectRenderer: React.FC = () => {
-  const groupRects = useStore(state => state.groupRects);
+  const groupRects = useActiveCanvasGroupRects();
   return (
     <>
       {groupRects.map(rect => (
@@ -20,7 +29,7 @@ export const GroupRectRenderer: React.FC = () => {
 
 const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
   const canvasContext = useCanvasContext();
-  const { selectGroupRect, selectedGroupRectIds } = useStore();
+  const selectedGroupRectIds = useActiveCanvasSelectedGroupRectIds();
   const isSelected = selectedGroupRectIds.includes(rect.id);
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -31,7 +40,7 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
   const initialRectRef = React.useRef<{x: number, y: number, w: number, h: number} | null>(null);
   const clickStartPosRef = React.useRef<{x: number, y: number} | null>(null);
   const wasSelectedRef = React.useRef(false);
-  const lastClickTimeRef = React.useRef(0);
+  const { isDoubleClick } = useDoubleClick();
 
   const showBlockVolume = useSettingsStore(state => state.showBlockVolume);
   const showGroupName = useSettingsStore(state => state.showGroupName);
@@ -53,9 +62,9 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
   React.useEffect(() => {
     if (!isResizing || !resizeType || !initialRectRef.current || !resizeStartPosRef.current) return;
 
-    let hasPaused = false;
+    const adapter = getCanvasAdapter(canvasContext);
+    const historyGuard = createDragHistoryGuard(adapter);
     const handleGlobalMove = (e: PointerEvent) => {
-      const state = useStore.getState();
       const camera = getCameraForContext(canvasContext);
 
       const localX = (e.clientX - camera.x) / camera.zoom;
@@ -88,24 +97,21 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
       }
 
       if (useSettingsStore.getState().snapToGrid) {
-        const snapSize = 30;
         if (resizeType.includes('w')) {
-          const snappedX = Math.round(newX / snapSize) * snapSize;
+          const snappedX = snapValue(newX);
           newW = newW + (newX - snappedX);
           newX = snappedX;
         }
         if (resizeType.includes('e')) {
-          const snappedRight = Math.round((newX + newW) / snapSize) * snapSize;
-          newW = snappedRight - newX;
+          newW = snapValue(newX + newW) - newX;
         }
         if (resizeType.includes('n')) {
-          const snappedY = Math.round(newY / snapSize) * snapSize;
+          const snappedY = snapValue(newY);
           newH = newH + (newY - snappedY);
           newY = snappedY;
         }
         if (resizeType.includes('s')) {
-          const snappedBottom = Math.round((newY + newH) / snapSize) * snapSize;
-          newH = snappedBottom - newY;
+          newH = snapValue(newY + newH) - newY;
         }
       }
 
@@ -119,24 +125,14 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
         newH = MIN_SIZE;
       }
 
-      if (!hasPaused) {
-        useStore.temporal.setState(s => ({
-          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks }],
-          futureStates: []
-        }));
-        useStore.temporal.getState().pause();
-        hasPaused = true;
-      }
-
-      state.updateGroupRect(rect.id, { x: newX, y: newY, w: newW, h: newH });
+      historyGuard.onMove();
+      updateGroupRectInContext(canvasContext, rect.id, { x: newX, y: newY, w: newW, h: newH });
     };
 
     const handleGlobalUp = () => {
       setIsResizing(false);
       setResizeType(null);
-      if (hasPaused) {
-        useStore.temporal.getState().resume();
-      }
+      historyGuard.onUp();
     };
 
     window.addEventListener('pointermove', handleGlobalMove);
@@ -151,13 +147,13 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
   }, [isResizing, resizeType, rect.id]);
 
   const handlePointerDown = (e: PIXI.FederatedPointerEvent) => {
-    const button = e.button; 
+    const button = e.button;
     const isMultiSelect = e.ctrlKey || e.shiftKey;
-    
+
     if (button === 0) { // Left click
-      const state = useStore.getState();
-      if (state.contextMenu && state.contextMenu.blockId !== `groupRect:${rect.id}`) {
-        state.closeContextMenu();
+      const ctxMenu = getCanvasAdapter(canvasContext).getContextMenu();
+      if (ctxMenu && ctxMenu.blockId !== `groupRect:${rect.id}`) {
+        closeContextMenuInContext(canvasContext);
       }
       e.stopPropagation();
       wasSelectedRef.current = isSelected;
@@ -165,11 +161,11 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
 
       let shouldDrag: boolean;
       if (isMultiSelect) {
-        selectGroupRect(rect.id, true);
+        selectGroupRectInContext(canvasContext, rect.id, true);
         shouldDrag = !isSelected;
       } else {
         if (!isSelected) {
-          selectGroupRect(rect.id, false);
+          selectGroupRectInContext(canvasContext, rect.id, false);
         }
         // Allow drag even if already selected (deselect/solo handled on pointerUp if no drag)
         shouldDrag = true;
@@ -186,13 +182,17 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
   React.useEffect(() => {
     if (!isDragging) return;
 
-    let hasPaused = false;
-    const state = useStore.getState();
-    const selectedBlocks = getBlocksForContext(canvasContext).filter(b => state.selectedBlockIds.includes(b.id));
-    const selectedTracks = state.tracks.filter(t => state.selectedTrackIds.includes(t.id));
-    const selectedGroupRects = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
+    const adapter = getCanvasAdapter(canvasContext);
+    const historyGuard = createDragHistoryGuard(adapter);
+    const selectedBlockIds = getSelectedBlockIdsForContext(canvasContext);
+    const selectedTrackIds = getSelectedTrackIdsForContext(canvasContext);
+    const ctxGroupRects = getGroupRectsForContext(canvasContext);
+    const ctxSelectedGroupRectIds = getSelectedGroupRectIdsForContext(canvasContext);
+    const selectedBlocks = getBlocksForContext(canvasContext).filter(b => selectedBlockIds.includes(b.id));
+    const selectedTracks = getTracksForContext(canvasContext).filter(t => selectedTrackIds.includes(t.id));
+    const selectedGroupRects = ctxGroupRects.filter(g => ctxSelectedGroupRectIds.includes(g.id));
     if (!selectedGroupRects.find(g => g.id === rect.id)) {
-      const thisRect = state.groupRects.find(g => g.id === rect.id);
+      const thisRect = ctxGroupRects.find(g => g.id === rect.id);
       if (thisRect) selectedGroupRects.push(thisRect);
     }
 
@@ -201,19 +201,18 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
     const initialGroupRects = new Map(selectedGroupRects.map(g => [g.id, { x: g.x, y: g.y }]));
 
     const handleGlobalMove = (e: PointerEvent) => {
-      const state = useStore.getState();
       const camera = getCameraForContext(canvasContext);
+      const canvasRect = getCanvasContainerRect(canvasContext);
 
-      const localX = (e.clientX - camera.x) / camera.zoom;
-      const localY = (e.clientY - camera.y) / camera.zoom;
+      const localX = (e.clientX - canvasRect.left - camera.x) / camera.zoom;
+      const localY = (e.clientY - canvasRect.top - camera.y) / camera.zoom;
 
       let newX = localX - dragOffset.x;
       let newY = localY - dragOffset.y;
 
       if (useSettingsStore.getState().snapToGrid) {
-        const snapSize = 30;
-        newX = Math.round(newX / snapSize) * snapSize;
-        newY = Math.round(newY / snapSize) * snapSize;
+        newX = snapValue(newX);
+        newY = snapValue(newY);
       }
 
       const thisInit = initialGroupRects.get(rect.id);
@@ -222,7 +221,7 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
       const deltaX = newX - thisInit.x;
       const deltaY = newY - thisInit.y;
 
-      const currentGroupRect = state.groupRects.find(sg => sg.id === rect.id);
+      const currentGroupRect = getGroupRectsForContext(canvasContext).find(sg => sg.id === rect.id);
       if (currentGroupRect && (thisInit.x + deltaX) === currentGroupRect.x && (thisInit.y + deltaY) === currentGroupRect.y) {
         return;
       }
@@ -238,32 +237,20 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
         return { id: t.id, nodes: newNodes };
       });
 
-      if (canvasContext === 'playground' && !hasPaused) {
-        useStore.temporal.setState(s => ({
-          pastStates: [...s.pastStates, { blocks: state.blocks, groups: state.groups, groupRects: state.groupRects, tracks: state.tracks }],
-          futureStates: []
-        }));
-        useStore.temporal.getState().pause();
-        hasPaused = true;
-      }
-
+      historyGuard.onMove();
       updateBlocksInContext(canvasContext, finalUpdates);
       trackUpdates.forEach(tu => {
-        state.updateTrack(tu.id, { nodes: tu.nodes });
+        updateTrackInContext(canvasContext, tu.id, { nodes: tu.nodes });
       });
       selectedGroupRects.forEach(g => {
         const init = initialGroupRects.get(g.id)!;
-        state.updateGroupRect(g.id, { x: init.x + deltaX, y: init.y + deltaY });
+        updateGroupRectInContext(canvasContext, g.id, { x: init.x + deltaX, y: init.y + deltaY });
       });
     };
 
     const handleGlobalUp = () => {
       setIsDragging(false);
-      if (canvasContext === 'playground' && hasPaused) {
-        useStore.temporal.getState().resume();
-      } else {
-        commitContextHistory(canvasContext);
-      }
+      historyGuard.onUp();
     };
 
     window.addEventListener('pointermove', handleGlobalMove);
@@ -284,30 +271,18 @@ const GroupRectItem: React.FC<{ rect: GroupRect }> = ({ rect }) => {
       const dx = e.clientX - clickStartPosRef.current.x;
       const dy = e.clientY - clickStartPosRef.current.y;
       const isClick = Math.hypot(dx, dy) < 5;
-      if (isClick) {
-        const now = Date.now();
-        if (now - lastClickTimeRef.current < 300) {
-          if (!e.ctrlKey && !e.shiftKey) {
-            useStore.getState().openContextMenu({
-              x: e.clientX, y: e.clientY, blockId: `groupRect:${rect.id}`
-            });
-          }
-          lastClickTimeRef.current = 0;
-        } else {
-          lastClickTimeRef.current = now;
-          // Single click: no deselect behaviour
+      if (isClick && isDoubleClick()) {
+        if (!e.ctrlKey && !e.shiftKey) {
+          openContextMenuInContext(canvasContext, {
+            x: e.clientX, y: e.clientY, blockId: `groupRect:${rect.id}`
+          });
         }
       }
     }
   };
 
-  const handlePointerEnter = () => useStore.getState().setHoveredGroupRectId(rect.id);
-  const handlePointerLeave = () => {
-    const state = useStore.getState();
-    if (state.hoveredGroupRectId === rect.id) {
-      state.setHoveredGroupRectId(null);
-    }
-  };
+  const handlePointerEnter = () => setHoveredGroupRectIdInContext(canvasContext, rect.id);
+  const handlePointerLeave = () => setHoveredGroupRectIdInContext(canvasContext, null);
 
   return (
     <BaseGroupRect

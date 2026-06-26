@@ -1,6 +1,11 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
+import { useLevelEditorStore } from '../../store/useLevelEditorStore';
+import { useGameStore } from '../../store/useGameStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
+import { useCanvasContext } from '../canvas/CanvasContext';
+import { getCanvasAdapter } from '../../store/canvasAdapter';
+import { getCanvasContainerRect, snapValue } from '../../utils/canvasUtils';
 import { playNote } from '../../utils/audio';
 import { X } from 'lucide-react';
 import { getPitchColorHex } from '../../utils/colors';
@@ -15,6 +20,7 @@ const DRUMS = [
 
 export const DrumKeyboard: React.FC = () => {
   const { mode, setMode } = useStore();
+  const canvasContext = useCanvasContext();
   const keyboardRef = useRef<HTMLDivElement>(null);
   
   const [drumPos, setDrumPos] = useState({ x: window.innerWidth / 2 - 150, y: window.innerHeight - 150 });
@@ -73,27 +79,26 @@ export const DrumKeyboard: React.FC = () => {
         setDraggedDrum(null);
         
         if (keyboardRef.current && !keyboardRef.current.contains(upEv.target as Node)) {
-          const state = useStore.getState();
-          const rect = document.body.getBoundingClientRect(); 
-          const x = (upEv.clientX - rect.left - state.camera.x) / state.camera.zoom;
-          const y = (upEv.clientY - rect.top - state.camera.y) / state.camera.zoom;
-          
-          let newX = x - 30; // center of 60x60 block
+          const adapter = getCanvasAdapter(canvasContext);
+          const camera = adapter.getCamera();
+          const canvasRect = getCanvasContainerRect(canvasContext);
+          const x = (upEv.clientX - canvasRect.left - camera.x) / camera.zoom;
+          const y = (upEv.clientY - canvasRect.top - camera.y) / camera.zoom;
+
+          let newX = x - 30;
           let newY = y - 30;
-          
+
           if (useSettingsStore.getState().snapToGrid) {
-            const snapSize = 30;
-            newX = Math.round(newX / snapSize) * snapSize;
-            newY = Math.round(newY / snapSize) * snapSize;
+            newX = snapValue(newX);
+            newY = snapValue(newY);
           }
-          
-          const newBlockId = state.addBlock({
-            pitch,
-            x: newX,
-            y: newY,
-            instrument: 'percussion'
-          });
-          state.selectBlock(newBlockId, false);
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const ctxSt = (canvasContext === 'editor' ? useLevelEditorStore.getState()
+            : canvasContext === 'game' ? useGameStore.getState()
+            : useStore.getState()) as any;
+          const newBlockId = ctxSt.addBlock({ pitch, x: newX, y: newY, instrument: 'percussion' });
+          adapter.selectBlock(newBlockId, false);
         }
       };
 

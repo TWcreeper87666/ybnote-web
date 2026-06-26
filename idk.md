@@ -1,22 +1,25 @@
 # bug
 audio delay when no interaction
-noteblock can't delete
-level-editor goto offset (window -> canvas, as a function?)
+level-editor goto offset
+
+# muti tab
+warnning
 
 # midi
 整理樂器script, 方便新增
+midi note extract algorithm, only main melody(or unlimited noteblock and group rect?)
 
-# canvas object
-- just like canvas use useCanvasStore, why canvas object like noteblock can't do that?
+# group rect
+- add pitch modifier
 
 # pocket canavs
-- instrument filter
+- instrument filter, tracks filter?
 
 # level-editor:
 - help panel update
 - remove velocity modify completely
-- playground canvas, midi and blocks action rethink
 - history fix
+- tab memory
 
 
 # game
@@ -43,7 +46,6 @@ mobile editor/level-editor page
 
 # optimize
 
-my ToolbarDivider is kinda useless
 css seperate
 template check
 dup code check

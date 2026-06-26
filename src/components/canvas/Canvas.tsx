@@ -14,7 +14,7 @@ import { SelectionBoxRenderer, GroupDrawBoxRenderer } from './shared/SelectionBo
 import { useCanvasCamera } from '../../hooks/useCanvasCamera';
 import { useCanvasInteractions } from '../../hooks/useCanvasInteractions';
 import { lineIntersectsRect } from '../../utils/geometry';
-import { CanvasContext } from './CanvasContext';
+import { trySetPointerCapture, tryReleasePointerCapture } from '../../utils/canvasUtils';
 
 export const Canvas: React.FC = () => {
   const store = useStore();
@@ -300,10 +300,7 @@ export const Canvas: React.FC = () => {
           }
           const nodeId = state.addTrackNode(trackId, { x: pos.x, y: pos.y });
           state.setActiveNodeDrag({ trackId, nodeId, isNewNode: true });
-          const target = e.target as unknown as { setPointerCapture?: (id: number) => void };
-          if (e.pointerId !== undefined && target.setPointerCapture) {
-            target.setPointerCapture(e.pointerId);
-          }
+          trySetPointerCapture(e.target, e.pointerId);
         }
         return;
       }
@@ -339,10 +336,7 @@ export const Canvas: React.FC = () => {
           const newBox = { x: pos.x, y: pos.y, w: 0, h: 0 };
           setGroupDrawBox(newBox);
           groupDrawBoxRef.current = newBox;
-          const target = e.target as unknown as { setPointerCapture?: (id: number) => void };
-          if (e.pointerId !== undefined && target.setPointerCapture) {
-            target.setPointerCapture(e.pointerId);
-          }
+          trySetPointerCapture(e.target, e.pointerId);
         }
         return;
       }
@@ -454,10 +448,7 @@ export const Canvas: React.FC = () => {
         // Start marquee selection on left click
         const pos = e.currentTarget.toLocal(e.global);
         startSelection(pos.x, pos.y);
-        const target = e.target as unknown as { setPointerCapture?: (id: number) => void };
-        if (e.pointerId !== undefined && target.setPointerCapture) {
-          target.setPointerCapture(e.pointerId);
-        }
+        trySetPointerCapture(e.target, e.pointerId);
       }
     } else if (button === 2) {
       useStore.getState().closeContextMenu();
@@ -465,17 +456,14 @@ export const Canvas: React.FC = () => {
         useStore.getState().clearSelection();
       }
       const pos = e.currentTarget.toLocal(e.global);
-      startTrail(pos.x, pos.y);
       let startedOnBlock = false;
       let current = e.target as PIXI.Container | null;
       while (current) {
-        if (current.label === 'note-block') {
-          startedOnBlock = true;
-          break;
-        }
+        if (current.label === 'note-block') { startedOnBlock = true; break; }
         current = current.parent;
       }
       intersectedBlocksRef.current.clear();
+      startTrail(pos.x, pos.y);
       checkTrailIntersection(pos.x, pos.y, pos.x, pos.y, true, startedOnBlock);
     }
   };
@@ -527,7 +515,7 @@ export const Canvas: React.FC = () => {
       const selectedGIds = groupRects.filter(g => directlySelectedGroupRects.includes(g) || (g.groupId && activeGroupIds.has(g.groupId))).map(g => g.id);
       
       useStore.setState({ selectedBlockIds: selectedIds, selectedTrackIds: selectedTIds, selectedGroupRectIds: selectedGIds });
-    } else if (e.buttons === 2) {
+    } else if (e.buttons === 2 && !useStore.getState().activeNodeDrag) {
       const pos = e.currentTarget.toLocal(e.global);
       updateTrail(pos.x, pos.y, (p1, p2) => {
         checkTrailIntersection(p1.x, p1.y, p2.x, p2.y);
@@ -539,19 +527,14 @@ export const Canvas: React.FC = () => {
     if (useStore.getState().mode === 'play') return;
     endPan();
     endSelection();
-    
     finishGroupDraw();
 
-    const target = e.target as unknown as { releasePointerCapture?: (id: number) => void };
-    if (e.pointerId !== undefined && target && target.releasePointerCapture) {
-      try { target.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
-    }
+    tryReleasePointerCapture(e.target, e.pointerId);
   };
 
 
 
   return (
-    <CanvasContext.Provider value="playground">
     <div
       style={{ width: '100%', height: '100%', position: 'relative' }}
     >
@@ -593,7 +576,10 @@ export const Canvas: React.FC = () => {
             />
           ))}
 
-          <TrackRenderer />
+          <TrackRenderer onNodeDeletedByDrag={() => {
+            activeStrokesRef.current = activeStrokesRef.current.filter(s => s.id !== currentStrokeId.current);
+            endTrail();
+          }} />
           <TrailRenderer activeStrokesRef={activeStrokesRef} currentStrokeId={currentStrokeId} />
         </pixiContainer>
       </Application>
@@ -640,6 +626,5 @@ export const Canvas: React.FC = () => {
         <Plus size={32} strokeWidth={1.5} />
       </div>
     </div>
-    </CanvasContext.Provider>
   );
 };

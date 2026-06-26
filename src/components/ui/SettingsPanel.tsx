@@ -121,6 +121,14 @@ export const SettingsPanel: React.FC<{ hideProjectActions?: boolean }> = ({ hide
               onChange={(e) => useSettingsStore.getState().setDisplaySettings({ showBlockInstrument: e.target.checked })}
             />
           </label>
+          <label className="switch-row">
+            <span>Show Selection HUD</span>
+            <input
+              type="checkbox"
+              checked={useSettingsStore.getState().showSelectionHud}
+              onChange={(e) => useSettingsStore.getState().setDisplaySettings({ showSelectionHud: e.target.checked })}
+            />
+          </label>
         </div>
 
         {/* Actions - Hidden in Game Mode */}

@@ -1,17 +1,25 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
 import { useGameStore } from '../../store/useGameStore';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import { useCanvasContext } from '../canvas/CanvasContext';
 import type { CanvasContextType } from '../canvas/CanvasContext';
-import { getBlocksForContext } from '../../hooks/useActiveCanvas';
+import {
+  useActiveCanvasGroupRects, useActiveCanvasSelectedGroupRectIds,
+  useActiveCanvasSelectedBlockIds, useActiveCanvasTracks, useActiveCanvasSelectedTrackIds,
+  useActiveCanvasCamera,
+  getBlocksForContext, getGroupRectsForContext, getTracksForContext, getCameraForContext,
+  getLastSelectedForContext, setSelectionBatchInContext, setGroupSelectionBatchInContext,
+  selectBlockInContext, selectGroupRectInContext, selectTrackInContext,
+  updateBlockInContext, updateGroupRectInContext, updateTrackInContext,
+  openContextMenuInContext,
+} from '../../hooks/useActiveCanvas';
 import { Search, Music, LayoutList, GitBranch, Square, ChevronRight, ChevronDown, Keyboard, Check, CheckSquare, Play, Pause } from 'lucide-react';
 import { FloatingWindow } from './FloatingWindow';
+import { getCanvasCenter } from '../../utils/canvasUtils';
 
-// Smooth camera animation helper — animates either playground or game camera
-const animateCameraTo = (targetX: number, targetY: number, canvasCtx: CanvasContextType = 'playground', duration = 300) => {
-  const isGame = canvasCtx === 'game';
-  const startCam = isGame ? useGameStore.getState().gameCamera : useStore.getState().camera;
+const animateCameraTo = (targetX: number, targetY: number, context: CanvasContextType = 'playground', duration = 300) => {
+  const startCam = getCameraForContext(context);
   const startX = startCam.x;
   const startY = startCam.y;
   const startTime = performance.now();
@@ -21,11 +29,9 @@ const animateCameraTo = (targetX: number, targetY: number, canvasCtx: CanvasCont
     const t = Math.min(elapsed / duration, 1);
     const ease = 1 - Math.pow(1 - t, 3);
     const next = { x: startX + (targetX - startX) * ease, y: startY + (targetY - startY) * ease };
-    if (isGame) {
-      useGameStore.getState().updateGameCamera(next);
-    } else {
-      useStore.getState().updateCamera(next);
-    }
+    if (context === 'game') useGameStore.getState().updateCamera(next);
+    else if (context === 'editor') useLevelEditorStore.getState().updateCamera(next);
+    else useStore.getState().updateCamera(next);
     if (t < 1) requestAnimationFrame(tick);
   };
 
@@ -36,33 +42,17 @@ type FilterState = { notes: boolean; groups: boolean; tracks: boolean; enable: b
 
 export const OutlinerPanel: React.FC = () => {
   const canvasContext = useCanvasContext();
-  const {
-    blocks: defaultBlocks, groupRects, tracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds,
-    isOutlinerOpen,
-    selectBlock, updateBlock, updateGroupRect, selectGroupRect, selectTrack,
-    searchQuery, setSearchQuery,
-    camera: defaultCamera,
-  } = useStore();
 
-  // Always subscribe to both external stores so the panel re-renders reactively
-  const gameBlocks = useGameStore(s => s.gameBlocks);
-  const editorBlocks = useLevelEditorStore(s => s.gameBlocks);
-  const gameCamera = useGameStore(s => s.gameCamera);
+  // Reactive canvas data from the correct store
+  const groupRects = useActiveCanvasGroupRects();
+  const tracks = useActiveCanvasTracks();
+  const selectedBlockIds = useActiveCanvasSelectedBlockIds();
+  const selectedGroupRectIds = useActiveCanvasSelectedGroupRectIds();
+  const selectedTrackIds = useActiveCanvasSelectedTrackIds();
+  const camera = useActiveCanvasCamera();
 
-  const blocks = canvasContext === 'editor'
-    ? editorBlocks
-    : canvasContext === 'game'
-      ? gameBlocks
-      : defaultBlocks;
-
-  const activeUpdateBlock = canvasContext === 'editor'
-    ? useLevelEditorStore.getState().updateGameBlock
-    : canvasContext === 'game'
-      ? useGameStore.getState().updateGameBlock
-      : updateBlock;
-
-  const camera = canvasContext === 'game' ? gameCamera : defaultCamera;
-  const isGameContext = canvasContext === 'game';
+  // UI state stays in useStore for now (UIStore migration deferred)
+  const { isOutlinerOpen, searchQuery, setSearchQuery } = useStore();
 
   const [filters, setFilters] = useState<FilterState>({ notes: true, groups: true, tracks: true, enable: false });
 
@@ -72,44 +62,43 @@ export const OutlinerPanel: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const handleFind = (e: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
+    const handleFind = (e: CustomEvent<string>) => {
       const id = e.detail;
-      
-      // Force open outliner panel if closed
+
       useStore.setState({ isOutlinerOpen: true });
-      
-      // Determine if we need to expand a group and check if item is disabled
-      const state = useStore.getState();
+
+      const ctxGroupRects = getGroupRectsForContext(canvasContext);
+      const ctxTracks = getTracksForContext(canvasContext);
       let needsNotes = false;
       let needsGroups = false;
       let needsTracks = false;
       let isDisabled = false;
 
       if (id.startsWith('groupRect:')) {
-         needsGroups = true;
-         const gr = state.groupRects.find(g => g.id === id.split(':')[1]);
-         if (gr && gr.enabled === false) isDisabled = true;
+        needsGroups = true;
+        const gr = ctxGroupRects.find(g => g.id === id.split(':')[1]);
+        if (gr && gr.enabled === false) isDisabled = true;
       } else if (id.startsWith('track:')) {
-         needsTracks = true;
-         const tr = state.tracks.find(t => t.id === id.split(':')[1]);
-         if (tr && tr.enabled === false) isDisabled = true;
+        needsTracks = true;
+        const tr = ctxTracks.find(t => t.id === id.split(':')[1]);
+        if (tr && (tr as { enabled?: boolean }).enabled === false) isDisabled = true;
       } else {
-         needsNotes = true;
-         const contextBlocks = getBlocksForContext(canvasContext);
-         const block = contextBlocks.find(b => b.id === id);
-         if (block) {
-           if ((block as any /* eslint-disable-line @typescript-eslint/no-explicit-any */).enabled === false) isDisabled = true;
-           for (const gr of state.groupRects) {
-             const bCenterX = block.x + 30;
-             const bCenterY = block.y + 30;
-             if (bCenterX >= gr.x && bCenterX <= gr.x + gr.w && bCenterY >= gr.y && bCenterY <= gr.y + gr.h) {
-               needsGroups = true;
-               if (gr.enabled === false) isDisabled = true;
-               window.dispatchEvent(new CustomEvent('expand-group', { detail: gr.id }));
-               break;
-             }
-           }
-         }
+        needsNotes = true;
+        const contextBlocks = getBlocksForContext(canvasContext);
+        const block = contextBlocks.find(b => b.id === id);
+        if (block) {
+          if ((block as { enabled?: boolean }).enabled === false) isDisabled = true;
+          for (const gr of ctxGroupRects) {
+            const bCenterX = block.x + 30;
+            const bCenterY = block.y + 30;
+            if (bCenterX >= gr.x && bCenterX <= gr.x + gr.w && bCenterY >= gr.y && bCenterY <= gr.y + gr.h) {
+              needsGroups = true;
+              if (gr.enabled === false) isDisabled = true;
+              window.dispatchEvent(new CustomEvent('expand-group', { detail: gr.id }));
+              break;
+            }
+          }
+        }
       }
 
       useStore.setState({ searchQuery: '' });
@@ -135,67 +124,65 @@ export const OutlinerPanel: React.FC = () => {
         }
       }, 100);
     };
-    window.addEventListener('find-in-outliner', handleFind);
-    return () => window.removeEventListener('find-in-outliner', handleFind);
-  }, []);
+    window.addEventListener('find-in-outliner', handleFind as EventListener);
+    return () => window.removeEventListener('find-in-outliner', handleFind as EventListener);
+  }, [canvasContext]);
 
   const handleShiftClick = (clickedId: string, clickedType: 'block' | 'groupRect' | 'track') => {
-    const state = useStore.getState();
-    const lastId = state.lastSelectedId;
-    const lastType = state.lastSelectedType;
-    
-    if (!lastId || !lastType) {
-      if (clickedType === 'block') selectBlock(clickedId, false);
-      else if (clickedType === 'groupRect') selectGroupRect(clickedId, false);
-      else if (clickedType === 'track') selectTrack(clickedId, false);
+    const { lastSelectedId, lastSelectedType } = getLastSelectedForContext(canvasContext);
+    const state = {
+      selectedBlockIds: selectedBlockIds,
+      selectedGroupRectIds: selectedGroupRectIds,
+      selectedTrackIds: selectedTrackIds,
+    };
+
+    if (!lastSelectedId || !lastSelectedType) {
+      if (clickedType === 'block') selectBlockInContext(canvasContext, clickedId, false);
+      else if (clickedType === 'groupRect') selectGroupRectInContext(canvasContext, clickedId, false);
+      else if (clickedType === 'track') selectTrackInContext(canvasContext, clickedId, false);
       return;
     }
 
     const itemEls = Array.from(document.querySelectorAll('.outliner-item'));
-    const getElId = (id: string, type: string) => 
+    const getElId = (id: string, type: string) =>
       type === 'groupRect' ? `outliner-item-groupRect-${id}` :
       type === 'track' ? `outliner-item-track-${id}` :
       `outliner-item-${id}`;
 
     const clickedElId = getElId(clickedId, clickedType);
-    const lastElId = getElId(lastId, lastType);
+    const lastElId = getElId(lastSelectedId, lastSelectedType);
 
     const clickedIdx = itemEls.findIndex(el => el.id === clickedElId);
     const lastIdx = itemEls.findIndex(el => el.id === lastElId);
 
     if (clickedIdx === -1 || lastIdx === -1) {
-      if (clickedType === 'block') selectBlock(clickedId, true);
-      else if (clickedType === 'groupRect') selectGroupRect(clickedId, true);
-      else if (clickedType === 'track') selectTrack(clickedId, true);
+      if (clickedType === 'block') selectBlockInContext(canvasContext, clickedId, true);
+      else if (clickedType === 'groupRect') selectGroupRectInContext(canvasContext, clickedId, true);
+      else if (clickedType === 'track') selectTrackInContext(canvasContext, clickedId, true);
       return;
     }
 
     const startIdx = Math.min(clickedIdx, lastIdx);
     const endIdx = Math.max(clickedIdx, lastIdx);
-
     const rangeEls = itemEls.slice(startIdx, endIdx + 1);
-    
+
     const newSelectedBlocks = new Set(state.selectedBlockIds);
     const newSelectedGroups = new Set(state.selectedGroupRectIds);
     const newSelectedTracks = new Set(state.selectedTrackIds);
 
     rangeEls.forEach(el => {
-      const id = el.id;
-      if (id.startsWith('outliner-item-groupRect-')) {
-        newSelectedGroups.add(id.replace('outliner-item-groupRect-', ''));
-      } else if (id.startsWith('outliner-item-track-')) {
-        newSelectedTracks.add(id.replace('outliner-item-track-', ''));
-      } else if (id.startsWith('outliner-item-')) {
-        newSelectedBlocks.add(id.replace('outliner-item-', ''));
-      }
+      const elId = el.id;
+      if (elId.startsWith('outliner-item-groupRect-')) newSelectedGroups.add(elId.replace('outliner-item-groupRect-', ''));
+      else if (elId.startsWith('outliner-item-track-')) newSelectedTracks.add(elId.replace('outliner-item-track-', ''));
+      else if (elId.startsWith('outliner-item-')) newSelectedBlocks.add(elId.replace('outliner-item-', ''));
     });
 
-    useStore.setState({
+    setSelectionBatchInContext(canvasContext, {
       selectedBlockIds: Array.from(newSelectedBlocks),
       selectedGroupRectIds: Array.from(newSelectedGroups),
       selectedTrackIds: Array.from(newSelectedTracks),
       lastSelectedId: clickedId,
-      lastSelectedType: clickedType
+      lastSelectedType: clickedType,
     });
   };
 
@@ -217,35 +204,27 @@ export const OutlinerPanel: React.FC = () => {
 
   const query = searchQuery.toLowerCase();
 
-  // Filter blocks by search and enabled
-  const filteredBlocks = blocks.filter(b =>
+  const filteredBlocks = getBlocksForContext(canvasContext).filter(b =>
     (b.pitch.toLowerCase().includes(query) ||
     (b.keyBinding && b.keyBinding.toLowerCase().includes(query))) &&
-    (!filters.enable || (b as any /* eslint-disable-line @typescript-eslint/no-explicit-any */).enabled !== false)
+    (!filters.enable || (b as { enabled?: boolean }).enabled !== false)
   );
 
-  // Filter groupRects by search and enabled
   const filteredGroupRects = groupRects.filter(g =>
     ((g.name || '').toLowerCase().includes(query) || !query) &&
     (!filters.enable || g.enabled !== false)
   );
 
-  // Filter tracks by search (match by index-based label) and enabled
   const filteredTracks = tracks.filter((t, i) =>
     (`Track ${i + 1}`.toLowerCase().includes(query) || !query) &&
-    (!filters.enable || t.enabled !== false)
+    (!filters.enable || (t as { enabled?: boolean }).enabled !== false)
   );
 
-  // Determine which notes are spatially inside which group rects
-  const noteToGroupRect = new Map<string, string>(); // blockId -> groupRectId
-  const groupRectChildren = new Map<string, { blocks: typeof blocks; tracks: typeof tracks }>();
+  const noteToGroupRect = new Map<string, string>();
+  const groupRectChildren = new Map<string, { blocks: typeof filteredBlocks; tracks: typeof filteredTracks }>();
 
-  // Initialize children map
-  filteredGroupRects.forEach(gr => {
-    groupRectChildren.set(gr.id, { blocks: [], tracks: [] });
-  });
+  filteredGroupRects.forEach(gr => groupRectChildren.set(gr.id, { blocks: [], tracks: [] }));
 
-  // Assign blocks to group rects (first containing rect wins)
   filteredBlocks.forEach(block => {
     for (const gr of groupRects) {
       const bCenterX = block.x + 30;
@@ -259,7 +238,6 @@ export const OutlinerPanel: React.FC = () => {
     }
   });
 
-  // Assign tracks to group rects (majority of nodes inside)
   const trackToGroupRect = new Map<string, string>();
   filteredTracks.forEach(track => {
     if (track.nodes.length === 0) return;
@@ -276,13 +254,10 @@ export const OutlinerPanel: React.FC = () => {
     }
   });
 
-  // Ungrouped
   const ungroupedBlocks = filteredBlocks.filter(b => !noteToGroupRect.has(b.id));
   const ungroupedTracks = filteredTracks.filter(t => !trackToGroupRect.has(t.id));
 
-  const toggleFilter = (key: keyof FilterState) => {
-    setFilters(prev => ({ ...prev, [key]: !prev[key] }));
-  };
+  const toggleFilter = (key: keyof FilterState) => setFilters(prev => ({ ...prev, [key]: !prev[key] }));
 
   return (
     <FloatingWindow
@@ -294,52 +269,32 @@ export const OutlinerPanel: React.FC = () => {
       minSize={{ width: '250px', height: '400px' }}
       headerStyle={{ marginBottom: '8px' }}
     >
-      {/* Filter Toggles */}
-      <div 
+      <div
         className="outliner-filter-bar"
         onWheel={(e) => {
-          if (e.deltaY !== 0) {
-            e.stopPropagation();
-            e.currentTarget.scrollLeft += e.deltaY;
-          }
+          if (e.deltaY !== 0) { e.stopPropagation(); e.currentTarget.scrollLeft += e.deltaY; }
         }}
       >
-        <button
-          className={`outliner-filter-btn ${filters.notes ? 'active' : ''}`}
-          onClick={() => toggleFilter('notes')}
-          title="Toggle Notes"
-        >
+        <button className={`outliner-filter-btn ${filters.notes ? 'active' : ''}`} onClick={() => toggleFilter('notes')} title="Toggle Notes">
           <Music size={14} /> Notes
         </button>
-        <button
-          className={`outliner-filter-btn ${filters.groups ? 'active' : ''}`}
-          onClick={() => toggleFilter('groups')}
-          title="Toggle Groups"
-        >
+        <button className={`outliner-filter-btn ${filters.groups ? 'active' : ''}`} onClick={() => toggleFilter('groups')} title="Toggle Groups">
           <Square size={14} fill="currentColor" /> Groups
         </button>
-        <button
-          className={`outliner-filter-btn ${filters.tracks ? 'active' : ''}`}
-          onClick={() => toggleFilter('tracks')}
-          title="Toggle Tracks"
-        >
+        <button className={`outliner-filter-btn ${filters.tracks ? 'active' : ''}`} onClick={() => toggleFilter('tracks')} title="Toggle Tracks">
           <GitBranch size={14} /> Tracks
         </button>
-        <button
-          className={`outliner-filter-btn ${filters.enable ? 'active' : ''}`}
-          onClick={() => toggleFilter('enable')}
-          title="Toggle Enabled Only"
-        >
+        <button className={`outliner-filter-btn ${filters.enable ? 'active' : ''}`} onClick={() => toggleFilter('enable')} title="Toggle Enabled Only">
           <Check size={14} /> Enabled
         </button>
       </div>
-      
+
       <div className="outliner-search">
         <Search size={16} className="search-icon" />
-        <input 
+        <input
           id="outliner-search-input"
-          type="text" 
-          placeholder="Search (Ctrl+F)" 
+          type="text"
+          placeholder="Search (Ctrl+F)"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="search-input"
@@ -347,7 +302,6 @@ export const OutlinerPanel: React.FC = () => {
       </div>
 
       <div className="outliner-content">
-        {/* GroupRects with their children */}
         {filters.groups && filteredGroupRects.map((gr, grIdx) => {
           const children = groupRectChildren.get(gr.id) || { blocks: [], tracks: [] };
           return (
@@ -360,44 +314,34 @@ export const OutlinerPanel: React.FC = () => {
               selectedBlockIds={selectedBlockIds}
               selectedGroupRectIds={selectedGroupRectIds}
               selectedTrackIds={selectedTrackIds}
-              selectBlock={selectBlock}
-              selectGroupRect={selectGroupRect}
-              selectTrack={selectTrack}
-              updateBlock={activeUpdateBlock}
-              updateGroupRect={updateGroupRect}
               camera={camera}
               tracks={tracks}
               handleShiftClick={handleShiftClick}
-              isGameContext={isGameContext}
+              canvasContext={canvasContext}
             />
           );
         })}
 
-        {/* Ungrouped blocks */}
         {filters.notes && ungroupedBlocks.map(block => (
           <BlockItem
             key={block.id}
             block={block}
             selected={selectedBlockIds.includes(block.id)}
-            selectBlock={selectBlock}
-            updateBlock={activeUpdateBlock}
             camera={camera}
             handleShiftClick={handleShiftClick}
-            isGameContext={isGameContext}
+            canvasContext={canvasContext}
           />
         ))}
 
-        {/* Ungrouped tracks */}
         {filters.tracks && ungroupedTracks.map((track) => (
           <TrackItem
             key={track.id}
             track={track}
             label={`Track ${tracks.indexOf(track) + 1}`}
             selected={selectedTrackIds.includes(track.id)}
-            selectTrack={selectTrack}
             camera={camera}
             handleShiftClick={handleShiftClick}
-            isGameContext={isGameContext}
+            canvasContext={canvasContext}
           />
         ))}
       </div>
@@ -407,7 +351,19 @@ export const OutlinerPanel: React.FC = () => {
 
 // ─── GroupRect Item ───────────────────────────────────────────────────────────
 
-const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds, selectBlock, selectGroupRect, selectTrack, updateBlock, updateGroupRect, camera, tracks, handleShiftClick, isGameContext }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
+const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlockIds, selectedGroupRectIds, selectedTrackIds, camera, tracks, handleShiftClick, canvasContext }: {
+  groupRect: import('../../types').GroupRect;
+  index: number;
+  childBlocks: import('../../types').Block[];
+  childTracks: import('../../types').Track[];
+  selectedBlockIds: string[];
+  selectedGroupRectIds: string[];
+  selectedTrackIds: string[];
+  camera: import('../../types').CameraState;
+  tracks: import('../../types').Track[];
+  handleShiftClick: (id: string, type: 'block' | 'groupRect' | 'track') => void;
+  canvasContext: CanvasContextType;
+}) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -415,18 +371,24 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
   const hasChildren = childBlocks.length > 0 || childTracks.length > 0;
   const wasSelectedRef = useRef(false);
 
-  const blockIdsToSelect = childBlocks.map((b: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => b.id);
-  const trackIdsToSelect = childTracks.map((t: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => t.id);
-  const isAllSelected = 
+  const blockIdsToSelect = childBlocks.map(b => b.id);
+  const trackIdsToSelect = childTracks.map(t => t.id);
+  const isAllSelected =
     isSelected &&
-    blockIdsToSelect.every((id: string) => selectedBlockIds.includes(id)) &&
-    trackIdsToSelect.every((id: string) => selectedTrackIds.includes(id));
+    blockIdsToSelect.every(id => selectedBlockIds.includes(id)) &&
+    trackIdsToSelect.every(id => selectedTrackIds.includes(id));
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F2' && isSelected && !isEditing) {
-        const state = useStore.getState();
-        const totalSelectedCount = state.selectedBlockIds.length + state.selectedGroupRectIds.length + state.selectedTrackIds.length;
+        const { lastSelectedId } = getLastSelectedForContext(canvasContext);
+        const ctxState = canvasContext === 'editor'
+          ? useLevelEditorStore.getState()
+          : canvasContext === 'game'
+            ? useGameStore.getState()
+            : useStore.getState();
+        const totalSelectedCount = ctxState.selectedBlockIds.length + ctxState.selectedGroupRectIds.length + ctxState.selectedTrackIds.length;
+        void lastSelectedId;
         if (totalSelectedCount === 1) {
           setEditName(groupRect.name || `Group ${index + 1}`);
           setIsEditing(true);
@@ -436,75 +398,60 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSelected, isEditing, groupRect.name, index]);
+  }, [isSelected, isEditing, groupRect.name, index, canvasContext]);
 
   useEffect(() => {
-    const handleExpand = (e: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
-      if (e.detail === groupRect.id) {
-        setIsCollapsed(false);
-      }
+    const handleExpand = (e: CustomEvent<string>) => {
+      if (e.detail === groupRect.id) setIsCollapsed(false);
     };
-    window.addEventListener('expand-group', handleExpand);
-    return () => window.removeEventListener('expand-group', handleExpand);
+    window.addEventListener('expand-group', handleExpand as EventListener);
+    return () => window.removeEventListener('expand-group', handleExpand as EventListener);
   }, [groupRect.id]);
 
   const handleGoTo = () => {
-    const targetX = -(groupRect.x + groupRect.w / 2) * camera.zoom + window.innerWidth / 2;
-    const targetY = -(groupRect.y + groupRect.h / 2) * camera.zoom + window.innerHeight / 2;
-    animateCameraTo(targetX, targetY, isGameContext ? 'game' : 'playground');
+    const center = getCanvasCenter(canvasContext);
+    const targetX = -(groupRect.x + groupRect.w / 2) * camera.zoom + center.x;
+    const targetY = -(groupRect.y + groupRect.h / 2) * camera.zoom + center.y;
+    animateCameraTo(targetX, targetY, canvasContext);
   };
 
   return (
     <div className="outliner-group">
-      <div 
+      <div
         id={`outliner-item-groupRect-${groupRect.id}`}
         className={`outliner-item group-rect-item ${isSelected ? 'selected' : ''}`}
         style={{ opacity: groupRect.enabled === false && !isSelected ? 0.4 : 1 }}
         onPointerDown={() => wasSelectedRef.current = isSelected}
         onClick={(e) => {
-          if (e.shiftKey) {
-            handleShiftClick(groupRect.id, 'groupRect');
-          } else {
-            selectGroupRect(groupRect.id, e.ctrlKey);
-          }
+          if (e.shiftKey) handleShiftClick(groupRect.id, 'groupRect');
+          else selectGroupRectInContext(canvasContext, groupRect.id, e.ctrlKey);
         }}
         onDoubleClick={(e) => {
           e.stopPropagation();
-          useStore.getState().openContextMenu({ x: e.clientX, y: e.clientY, blockId: `groupRect:${groupRect.id}` });
+          openContextMenuInContext(canvasContext, { x: e.clientX, y: e.clientY, blockId: `groupRect:${groupRect.id}` });
         }}
         onContextMenu={(e) => {
           e.preventDefault();
-          selectGroupRect(groupRect.id, e.ctrlKey || e.shiftKey);
+          selectGroupRectInContext(canvasContext, groupRect.id, e.ctrlKey || e.shiftKey);
           handleGoTo();
         }}
       >
         <button
           className="outliner-collapse-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsCollapsed(!isCollapsed);
-          }}
+          onClick={(e) => { e.stopPropagation(); setIsCollapsed(!isCollapsed); }}
           style={{ visibility: hasChildren ? 'visible' : 'hidden' }}
         >
           {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
         </button>
         <Square size={16} className="flex-shrink-0" style={{ opacity: 0.7 }} fill="currentColor" />
         {isEditing ? (
-          <input 
-            value={editName} 
+          <input
+            value={editName}
             onChange={(e) => setEditName(e.target.value)}
-            onBlur={() => {
-              updateGroupRect(groupRect.id, { name: editName });
-              setIsEditing(false);
-            }}
+            onBlur={() => { updateGroupRectInContext(canvasContext, groupRect.id, { name: editName }); setIsEditing(false); }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                updateGroupRect(groupRect.id, { name: editName });
-                setIsEditing(false);
-              } else if (e.key === 'Escape') {
-                setIsEditing(false);
-                e.stopPropagation();
-              }
+              if (e.key === 'Enter') { updateGroupRectInContext(canvasContext, groupRect.id, { name: editName }); setIsEditing(false); }
+              else if (e.key === 'Escape') { setIsEditing(false); e.stopPropagation(); }
             }}
             className="outliner-input font-semibold"
             onClick={(e) => e.stopPropagation()}
@@ -523,32 +470,29 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
         <button
           className="icon-btn"
           onClick={(e) => {
-             e.stopPropagation();
-             if (isAllSelected) {
-               useStore.setState(s => ({
-                 selectedGroupRectIds: s.selectedGroupRectIds.filter(id => id !== groupRect.id),
-                 selectedBlockIds: s.selectedBlockIds.filter(id => !blockIdsToSelect.includes(id)),
-                 selectedTrackIds: s.selectedTrackIds.filter(id => !trackIdsToSelect.includes(id))
-               }));
-             } else {
-               useStore.setState(s => ({
-                 selectedGroupRectIds: [...new Set([...s.selectedGroupRectIds, groupRect.id])],
-                 selectedBlockIds: [...new Set([...s.selectedBlockIds, ...blockIdsToSelect])],
-                 selectedTrackIds: [...new Set([...s.selectedTrackIds, ...trackIdsToSelect])],
-                 lastSelectedId: groupRect.id,
-                 lastSelectedType: 'groupRect'
-               }));
-             }
+            e.stopPropagation();
+            if (isAllSelected) {
+              setGroupSelectionBatchInContext(canvasContext, {
+                selectedGroupRectIds: selectedGroupRectIds.filter(id => id !== groupRect.id),
+                selectedBlockIds: selectedBlockIds.filter(id => !blockIdsToSelect.includes(id)),
+                selectedTrackIds: selectedTrackIds.filter(id => !trackIdsToSelect.includes(id)),
+              });
+            } else {
+              setGroupSelectionBatchInContext(canvasContext, {
+                selectedGroupRectIds: [...new Set([...selectedGroupRectIds, groupRect.id])],
+                selectedBlockIds: [...new Set([...selectedBlockIds, ...blockIdsToSelect])],
+                selectedTrackIds: [...new Set([...selectedTrackIds, ...trackIdsToSelect])],
+                lastSelectedId: groupRect.id,
+                lastSelectedType: 'groupRect',
+              });
+            }
           }}
           title={isAllSelected ? "Deselect Group and Children" : "Select Group and Children"}
           style={{ width: '20px', height: '20px', padding: 0, marginRight: '4px', opacity: 0.7 }}
         >
           {isAllSelected ? <CheckSquare size={14} /> : <Square size={14} />}
         </button>
-        <div 
-          className="outliner-key-badge"
-          title={groupRect.keyBinding ? `Key bound: ${groupRect.keyBinding}` : "No key bound"}
-        >
+        <div className="outliner-key-badge" title={groupRect.keyBinding ? `Key bound: ${groupRect.keyBinding}` : "No key bound"}>
           <Keyboard size={12} />
           <span className="select-none" style={{ fontSize: '12px', minWidth: '12px', textAlign: 'center' }}>
             {groupRect.keyBinding || '-'}
@@ -557,28 +501,25 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
       </div>
       {!isCollapsed && hasChildren && (
         <div className="outliner-group-children">
-          {childBlocks.map((block: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => (
+          {childBlocks.map(block => (
             <BlockItem
               key={block.id}
               block={block}
               selected={selectedBlockIds.includes(block.id)}
-              selectBlock={selectBlock}
-              updateBlock={updateBlock}
               camera={camera}
               handleShiftClick={handleShiftClick}
-              isGameContext={isGameContext}
+              canvasContext={canvasContext}
             />
           ))}
-          {childTracks.map((track: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => (
+          {childTracks.map(track => (
             <TrackItem
               key={track.id}
               track={track}
               label={`Track ${tracks.indexOf(track) + 1}`}
               selected={selectedTrackIds.includes(track.id)}
-              selectTrack={selectTrack}
               camera={camera}
               handleShiftClick={handleShiftClick}
-              isGameContext={isGameContext}
+              canvasContext={canvasContext}
             />
           ))}
         </div>
@@ -587,50 +528,47 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
   );
 };
 
-// ─── Block Item ──────────────────────────────────────────────────────────────
+// ─── Block Item ───────────────────────────────────────────────────────────────
 
-const BlockItem = ({ block, selected, selectBlock, camera, handleShiftClick, isGameContext }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
+const BlockItem = ({ block, selected, camera, handleShiftClick, canvasContext }: {
+  block: import('../../types').Block;
+  selected: boolean;
+  camera: import('../../types').CameraState;
+  handleShiftClick: (id: string, type: 'block' | 'groupRect' | 'track') => void;
+  canvasContext: CanvasContextType;
+}) => {
   const wasSelectedRef = useRef(false);
 
   const handleGoTo = () => {
-    const targetX = -(block.x + 30) * camera.zoom + window.innerWidth / 2;
-    const targetY = -(block.y + 30) * camera.zoom + window.innerHeight / 2;
-    animateCameraTo(targetX, targetY, isGameContext ? 'game' : 'playground');
+    const center = getCanvasCenter(canvasContext);
+    const targetX = -(block.x + 30) * camera.zoom + center.x;
+    const targetY = -(block.y + 30) * camera.zoom + center.y;
+    animateCameraTo(targetX, targetY, canvasContext);
   };
 
   return (
-    <div 
+    <div
       id={`outliner-item-${block.id}`}
       className={`outliner-item block-item ${selected ? 'selected' : ''}`}
-      style={{ opacity: block.enabled === false && !selected ? 0.4 : 1 }}
+      style={{ opacity: (block as { enabled?: boolean }).enabled === false && !selected ? 0.4 : 1 }}
       onPointerDown={() => wasSelectedRef.current = selected}
       onClick={(e) => {
-        if (e.shiftKey) {
-          handleShiftClick(block.id, 'block');
-        } else {
-          selectBlock(block.id, e.ctrlKey);
-        }
+        if (e.shiftKey) handleShiftClick(block.id, 'block');
+        else selectBlockInContext(canvasContext, block.id, e.ctrlKey);
       }}
       onDoubleClick={(e) => {
         e.stopPropagation();
-        useStore.getState().openContextMenu({ x: e.clientX, y: e.clientY, blockId: block.id });
+        openContextMenuInContext(canvasContext, { x: e.clientX, y: e.clientY, blockId: block.id });
       }}
       onContextMenu={(e) => {
         e.preventDefault();
-        selectBlock(block.id, e.ctrlKey || e.shiftKey);
+        selectBlockInContext(canvasContext, block.id, e.ctrlKey || e.shiftKey);
         handleGoTo();
       }}
     >
       <Music size={16} className="text-gray-400 flex-shrink-0" />
-      
-      <span className="flex-1 truncate select-none" style={{ fontSize: '14px' }}>
-        {block.pitch}
-      </span>
-
-      <div 
-        className="outliner-key-badge"
-        title={block.keyBinding ? `Key bound: ${block.keyBinding}` : "No key bound"}
-      >
+      <span className="flex-1 truncate select-none" style={{ fontSize: '14px' }}>{block.pitch}</span>
+      <div className="outliner-key-badge" title={block.keyBinding ? `Key bound: ${block.keyBinding}` : "No key bound"}>
         <Keyboard size={12} />
         <span className="select-none" style={{ fontSize: '12px', minWidth: '12px', textAlign: 'center' }}>
           {block.keyBinding || '-'}
@@ -640,23 +578,34 @@ const BlockItem = ({ block, selected, selectBlock, camera, handleShiftClick, isG
   );
 };
 
-// ─── Track Item ──────────────────────────────────────────────────────────────
+// ─── Track Item ───────────────────────────────────────────────────────────────
 
-const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftClick, isGameContext }: any /* eslint-disable-line @typescript-eslint/no-explicit-any */) => {
+const TrackItem = ({ track, label, selected, camera, handleShiftClick, canvasContext }: {
+  track: import('../../types').Track;
+  label: string;
+  selected: boolean;
+  camera: import('../../types').CameraState;
+  handleShiftClick: (id: string, type: 'block' | 'groupRect' | 'track') => void;
+  canvasContext: CanvasContextType;
+}) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const wasSelectedRef = useRef(false);
 
   const isPlaying = useStore(state => state.isPlaying);
   const playbackStatus = useStore(state => state.trackPlaybackStatus[track.id]);
-  const isTrackPlaying = playbackStatus === 'playing' || (isPlaying && track.enabled !== false);
+  const isTrackPlaying = playbackStatus === 'playing' || (isPlaying && (track as { enabled?: boolean }).enabled !== false);
   const isTrackPaused = playbackStatus === 'paused' && !isPlaying;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F2' && selected && !isEditing) {
-        const state = useStore.getState();
-        const totalSelectedCount = state.selectedBlockIds.length + state.selectedGroupRectIds.length + state.selectedTrackIds.length;
+        const ctxState = canvasContext === 'editor'
+          ? useLevelEditorStore.getState()
+          : canvasContext === 'game'
+            ? useGameStore.getState()
+            : useStore.getState();
+        const totalSelectedCount = ctxState.selectedBlockIds.length + ctxState.selectedGroupRectIds.length + ctxState.selectedTrackIds.length;
         if (totalSelectedCount === 1) {
           setEditName(track.name || label);
           setIsEditing(true);
@@ -666,55 +615,45 @@ const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftCli
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selected, isEditing, track.name, label]);
+  }, [selected, isEditing, track.name, label, canvasContext]);
 
   const handleGoTo = () => {
     if (track.nodes.length === 0) return;
-    const targetX = -track.nodes[0].x * camera.zoom + window.innerWidth / 2;
-    const targetY = -track.nodes[0].y * camera.zoom + window.innerHeight / 2;
-    animateCameraTo(targetX, targetY, isGameContext ? 'game' : 'playground');
+    const center = getCanvasCenter(canvasContext);
+    const targetX = -track.nodes[0].x * camera.zoom + center.x;
+    const targetY = -track.nodes[0].y * camera.zoom + center.y;
+    animateCameraTo(targetX, targetY, canvasContext);
   };
 
   return (
-    <div 
+    <div
       id={`outliner-item-track-${track.id}`}
       className={`outliner-item track-item ${selected ? 'selected' : ''}`}
-      style={{ opacity: track.enabled === false && !selected ? 0.4 : 1 }}
+      style={{ opacity: (track as { enabled?: boolean }).enabled === false && !selected ? 0.4 : 1 }}
       onPointerDown={() => wasSelectedRef.current = selected}
       onClick={(e) => {
-        if (e.shiftKey) {
-          handleShiftClick(track.id, 'track');
-        } else {
-          selectTrack(track.id, e.ctrlKey);
-        }
+        if (e.shiftKey) handleShiftClick(track.id, 'track');
+        else selectTrackInContext(canvasContext, track.id, e.ctrlKey);
       }}
       onDoubleClick={(e) => {
         e.stopPropagation();
-        useStore.getState().openContextMenu({ x: e.clientX, y: e.clientY, blockId: `track:${track.id}` });
+        openContextMenuInContext(canvasContext, { x: e.clientX, y: e.clientY, blockId: `track:${track.id}` });
       }}
       onContextMenu={(e) => {
         e.preventDefault();
-        selectTrack(track.id, e.ctrlKey || e.shiftKey);
+        selectTrackInContext(canvasContext, track.id, e.ctrlKey || e.shiftKey);
         handleGoTo();
       }}
     >
       <GitBranch size={16} className="flex-shrink-0" style={{ opacity: 0.7 }} />
       {isEditing ? (
-        <input 
+        <input
           value={editName}
           onChange={(e) => setEditName(e.target.value)}
-          onBlur={() => {
-            useStore.getState().updateTrack(track.id, { name: editName });
-            setIsEditing(false);
-          }}
+          onBlur={() => { updateTrackInContext(canvasContext, track.id, { name: editName }); setIsEditing(false); }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              useStore.getState().updateTrack(track.id, { name: editName });
-              setIsEditing(false);
-            } else if (e.key === 'Escape') {
-              setIsEditing(false);
-              e.stopPropagation();
-            }
+            if (e.key === 'Enter') { updateTrackInContext(canvasContext, track.id, { name: editName }); setIsEditing(false); }
+            else if (e.key === 'Escape') { setIsEditing(false); e.stopPropagation(); }
           }}
           className="outliner-input font-semibold"
           onClick={(e) => e.stopPropagation()}
@@ -723,14 +662,11 @@ const TrackItem = ({ track, label, selected, selectTrack, camera, handleShiftCli
       ) : (
         <div className="flex-1 truncate select-none" style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span className="truncate">{track.name || label}</span>
-          {isTrackPlaying && <Play size={12} fill="currentColor" style={{ color: '#22c55e' }} />}
-          {isTrackPaused && <Pause size={12} fill="currentColor" style={{ color: '#eab308' }} />}
+          {canvasContext === 'playground' && isTrackPlaying && <Play size={12} fill="currentColor" style={{ color: '#22c55e' }} />}
+          {canvasContext === 'playground' && isTrackPaused && <Pause size={12} fill="currentColor" style={{ color: '#eab308' }} />}
         </div>
       )}
-      <span style={{ fontSize: '11px', opacity: 0.5 }}>
-        {track.nodes.length} nodes
-      </span>
+      <span style={{ fontSize: '11px', opacity: 0.5 }}>{track.nodes.length} nodes</span>
     </div>
   );
 };
-
