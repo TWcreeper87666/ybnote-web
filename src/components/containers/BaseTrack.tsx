@@ -147,7 +147,7 @@ export const BaseTrack: React.FC<BaseTrackProps> = ({
   onNodeDoubleClick
 }) => {
   return (
-    <pixiContainer zIndex={isSelected ? 102 : 20}>
+    <pixiContainer label="track-interactive" zIndex={isSelected ? 102 : 20}>
       <TrackPath track={track} isActive={isActive} isSelected={isSelected} />
       
       {/* Invisible thick path for double click hit detection */}

@@ -4,7 +4,6 @@ import type { Block, GroupRect, Track } from '../types';
 
 // ─── Reactive hooks (call at top level of component/hook) ─────────────────────
 
-export const useActiveCanvasBlocks               = () => useCanvas().useBlocks();
 export const useActiveCanvasCamera               = () => useCanvas().useCamera();
 export const useActiveCanvasGroupRects           = () => useCanvas().useGroupRects();
 export const useActiveCanvasTracks               = () => useCanvas().useTracks();
@@ -38,7 +37,6 @@ export const openContextMenuInContext     = (ctx: CanvasContextType, menu: { x: 
 export const closeContextMenuInContext    = (ctx: CanvasContextType) => getCanvasAdapter(ctx).closeContextMenu();
 export const setHoveredBlockIdInContext   = (ctx: CanvasContextType, id: string | null) => getCanvasAdapter(ctx).setHoveredBlockId(id);
 export const setHoveredGroupRectIdInContext = (ctx: CanvasContextType, id: string | null) => getCanvasAdapter(ctx).setHoveredGroupRectId(id);
-export const commitContextHistory         = (ctx: CanvasContextType) => getCanvasAdapter(ctx).commitHistory();
 
 // Batch selection helpers (used by OutlinerPanel)
 export const setSelectionBatchInContext = (

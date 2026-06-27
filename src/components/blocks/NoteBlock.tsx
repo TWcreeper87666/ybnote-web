@@ -8,7 +8,8 @@ import { getPitchColorNumber } from '../../utils/colors';
 import { useCanvasContext } from '../canvas/CanvasContext';
 import type { CanvasContextType } from '../canvas/CanvasContext';
 import { useBlockDrag } from '../../hooks/useBlockDrag';
-import { useActiveCanvasSelectedBlockIds, setHoveredBlockIdInContext } from '../../hooks/useActiveCanvas';
+import { useBlockDragHandlers } from '../../hooks/useBlockDragHandlers';
+import { useActiveCanvasSelectedBlockIds, setHoveredBlockIdInContext, openContextMenuInContext } from '../../hooks/useActiveCanvas';
 
 interface NoteBlockProps {
   id: string;
@@ -34,7 +35,12 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({
   const isSelected = selectedBlockIds.includes(id);
   const { blockOpacity, showBlockPitch, showBlockVolume, showBlockInstrument, pianoKeysCount } = useSettingsStore();
 
-  const { handlePointerDown, handlePointerUp } = useBlockDrag(id, x, y, isSelected, canvasContextProp);
+  const { onDragStart } = useBlockDragHandlers(id, canvasContextProp);
+  const { handlePointerDown, handlePointerUp } = useBlockDrag(id, x, y, isSelected, {
+    canvasContext: canvasContextProp,
+    onDragStart,
+    onContextMenu: (pos) => openContextMenuInContext(canvasContext, { ...pos, blockId: id }),
+  });
 
   const blockColor = getPitchColorNumber(pitch, pianoKeysCount);
   const lastPlayedRef = React.useRef(playedAt || 0);

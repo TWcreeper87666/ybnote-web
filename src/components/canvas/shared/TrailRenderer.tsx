@@ -26,6 +26,7 @@ export const TrailRenderer: React.FC<{
 }> = ({ activeStrokesRef, currentStrokeId }) => {
   const gRef = useRef<PIXI.Graphics>(null);
   const idleParticlesRef = useRef<IdleParticle[]>([]);
+  const lastTipRef = useRef<{ x: number; y: number; movedAt: number } | null>(null);
 
   useTick(() => {
     if (!gRef.current) return;
@@ -40,22 +41,36 @@ export const TrailRenderer: React.FC<{
     });
     activeStrokesRef.current = activeStrokesRef.current.filter(s => s.points.length > 0);
 
-    // Spawn idle particles at cursor while mouse is held
-    if (currentStrokeId.current !== null && idleParticlesRef.current.length < MAX_PARTICLES) {
-      const activeStroke = activeStrokesRef.current.find(s => s.id === currentStrokeId.current);
-      if (activeStroke && activeStroke.points.length > 0) {
-        const tip = activeStroke.points[activeStroke.points.length - 1];
-        for (let i = 0; i < PARTICLES_PER_TICK; i++) {
-          const angle = Math.random() * Math.PI * 2;
-          const speed = Math.random() * 1.8 + 0.3;
-          idleParticlesRef.current.push({
-            x: tip.x,
-            y: tip.y,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            birthTime: now,
-          });
-        }
+    // Track whether the trail tip is actually moving
+    const activeTip = (() => {
+      if (currentStrokeId.current === null) return null;
+      const s = activeStrokesRef.current.find(s => s.id === currentStrokeId.current);
+      return s && s.points.length > 0 ? s.points[s.points.length - 1] : null;
+    })();
+
+    if (activeTip) {
+      const last = lastTipRef.current;
+      if (!last || last.x !== activeTip.x || last.y !== activeTip.y) {
+        lastTipRef.current = { x: activeTip.x, y: activeTip.y, movedAt: now };
+      }
+    } else {
+      lastTipRef.current = null;
+    }
+
+    // Spawn particles only while the trail tip is actively moving (within 200ms of last movement)
+    const tipIsMoving = lastTipRef.current !== null && now - lastTipRef.current.movedAt < 200;
+    if (tipIsMoving && idleParticlesRef.current.length < MAX_PARTICLES) {
+      const tip = lastTipRef.current!;
+      for (let i = 0; i < PARTICLES_PER_TICK; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 1.8 + 0.3;
+        idleParticlesRef.current.push({
+          x: tip.x,
+          y: tip.y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          birthTime: now,
+        });
       }
     }
 

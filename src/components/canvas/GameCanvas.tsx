@@ -221,6 +221,7 @@ export const GameCanvas: React.FC = () => {
     let pendingMovementX = 0;
     let pendingMovementY = 0;
     let buttonsPressed = 0;
+    let keysDown = 0;
 
     let leftTouchId: number | null = null;
     let rightTouchId: number | null = null;
@@ -236,10 +237,11 @@ export const GameCanvas: React.FC = () => {
       const newCamX = gs.camera.x - pendingMovementX * (isMobile ? mouseSensitivity * 2 : mouseSensitivity);
       const newCamY = gs.camera.y - pendingMovementY * (isMobile ? mouseSensitivity * 2 : mouseSensitivity);
 
-      if (buttonsPressed > 0 && mobileControlMode === 'crosshair') {
+      if ((buttonsPressed > 0 || keysDown > 0) && mobileControlMode === 'crosshair' &&
+          (pendingMovementX !== 0 || pendingMovementY !== 0)) {
         const centerX = window.innerWidth / 2;
         const centerY = window.innerHeight / 2;
-        
+
         const newLocalX = (centerX - newCamX) / gs.camera.zoom;
         const newLocalY = (centerY - newCamY) / gs.camera.zoom;
 
@@ -307,7 +309,23 @@ export const GameCanvas: React.FC = () => {
     };
 
     const handleMouseUp = (e: MouseEvent) => {
-      if (e.buttons === 0) {
+      if (e.buttons === 0 && keysDown === 0) {
+        intersectedBlocksRef.current.clear();
+        endTrail();
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.repeat) return;
+      if (useSettingsStore.getState().mobileControlMode !== 'crosshair') return;
+      keysDown++;
+      if (keysDown === 1) handleMouseDown();
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (useSettingsStore.getState().mobileControlMode !== 'crosshair') return;
+      keysDown = Math.max(0, keysDown - 1);
+      if (keysDown === 0 && buttonsPressed === 0) {
         intersectedBlocksRef.current.clear();
         endTrail();
       }
@@ -507,6 +525,8 @@ export const GameCanvas: React.FC = () => {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mousedown', handleMouseDown);
       window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('keyup', handleKeyUp);
     }
 
     return () => {
@@ -520,6 +540,8 @@ export const GameCanvas: React.FC = () => {
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mousedown', handleMouseDown);
         window.removeEventListener('mouseup', handleMouseUp);
+        window.removeEventListener('keydown', handleKeyDown);
+        window.removeEventListener('keyup', handleKeyUp);
         if (document.pointerLockElement) {
           document.exitPointerLock();
         }

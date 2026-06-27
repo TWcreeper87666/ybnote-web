@@ -5,7 +5,7 @@ import { useLevelEditorStore } from './useLevelEditorStore';
 import type { GameState } from './useGameStore';
 import type { LevelEditorState } from './useLevelEditorStore';
 import type { CanvasContextType } from '../components/canvas/CanvasContext';
-import type { CanvasSliceState, CanvasSliceActions } from './createCanvasSlice';
+import type { CanvasSliceState, CanvasSliceActions, CanvasSliceAPI } from './createCanvasSlice';
 import type { Block, GroupRect, Track, CameraState } from '../types';
 
 // ─── Interface ────────────────────────────────────────────────────────────────
@@ -166,3 +166,6 @@ export const getCanvasAdapter = (context: CanvasContextType): CanvasStoreAdapter
   context === 'game'   ? gameCanvasAdapter :
   context === 'editor' ? editorCanvasAdapter :
                          playgroundCanvasAdapter;
+
+export const getCanvasState = (context: 'playground' | 'editor'): CanvasSliceAPI =>
+  (context === 'editor' ? useLevelEditorStore : useStore).getState() as unknown as CanvasSliceAPI;

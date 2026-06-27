@@ -13,7 +13,7 @@
 3. [Directory Structure](#3-directory-structure)
 4. [Core Data Types](#4-core-data-types)
 5. [State Management](#5-state-management)
-6. [Canvas & Rendering Architecture](#6-canvas--rendering-architecture)
+6. [Canvas & Rendering Architecture](#6-canvas--rendering-architecture) *(SharedCanvas, tools, layers)*
 7. [Event Flows](#7-event-flows)
 8. [Key Hooks](#8-key-hooks)
 9. [Audio System](#9-audio-system)
@@ -74,15 +74,29 @@ src/
 │   └── CanvasProvider.tsx      # React context providing CanvasContextType + adapter
 ├── components/
 │   ├── canvas/
-│   │   ├── Canvas.tsx          # Playground Pixi canvas
-│   │   ├── EditorCanvas.tsx    # Level Editor Pixi canvas
+│   │   ├── SharedCanvas.tsx    # Unified Pixi canvas for playground + editor (parametrized by context)
 │   │   ├── GameCanvas.tsx      # Game Pixi canvas (approach circles, touch)
 │   │   ├── PocketCanvas.tsx    # Miniature block grid (pocket view)
 │   │   ├── CanvasContext.ts    # CanvasContextType React context
-│   │   └── shared/
-│   │       ├── GridBackground.tsx
-│   │       ├── SelectionBoxRenderer.tsx
-│   │       └── TrailRenderer.tsx       # Right-click trail + idle particles
+│   │   ├── shared/
+│   │   │   ├── GridBackground.tsx
+│   │   │   ├── SelectionBoxRenderer.tsx
+│   │   │   └── TrailRenderer.tsx       # Right-click trail + idle particles
+│   │   ├── tools/              # Interaction tool hooks — each returns { onPointerDown?, onPointerMove?, onPointerUp? }
+│   │   │   ├── useTrailTool.ts
+│   │   │   ├── useSelectTool.ts
+│   │   │   ├── useSpawnTool.ts
+│   │   │   ├── useDrawGroupTool.ts
+│   │   │   ├── useDrawTrackTool.ts
+│   │   │   ├── usePlayTool.ts          # Extracts 3 play-mode useEffects (pointer lock, RAF mouse, trail intersection)
+│   │   │   └── useCameraTool.ts
+│   │   └── layers/             # Self-contained Pixi/HTML layer components (own their store subscriptions)
+│   │       ├── BlockLayer.tsx
+│   │       ├── GridLayer.tsx
+│   │       ├── SelectionLayer.tsx
+│   │       ├── TrailLayer.tsx
+│   │       ├── TrackLayer.tsx
+│   │       └── OverlayLayer.tsx        # HTML overlays: vignette, perform-hit flash, crosshair
 │   ├── blocks/
 │   │   ├── BaseBlock.tsx       # Rectangular note block (Pixi Graphics)
 │   │   ├── DrumBlock.tsx       # Circular percussion block
@@ -111,13 +125,14 @@ src/
 │       ├── CanvasPlayerBar.tsx     # Editor playback bar
 │       └── PocketDragOverlay.tsx   # Drag ghost when dragging from pocket
 ├── hooks/
-│   ├── useCanvasInteractions.ts  # Trail / selection / pan state machine
-│   ├── useBlockDrag.ts           # Block drag lifecycle hook
-│   ├── useActiveCanvas.ts        # Context-aware reactive + snapshot accessors
-│   ├── useCanvasCamera.ts        # Scroll-wheel zoom + play-mode pointer-lock
-│   ├── useDoubleClick.ts         # 300ms double-click detector
-│   ├── useShortcuts.ts           # Global keyboard shortcuts
-│   └── useIsMobile.ts            # Mobile detection
+│   ├── useCanvasInteractions.ts    # Trail / selection / pan state machine
+│   ├── useBlockDrag.ts             # Block drag pointer mechanics (selection, delta calc, double-click)
+│   ├── useBlockDragHandlers.ts     # Block drag coordination (which blocks/tracks/groupRects move, history)
+│   ├── useActiveCanvas.ts          # Context-aware reactive + snapshot accessors
+│   ├── useCanvasCamera.ts          # Scroll-wheel zoom + play-mode pointer-lock
+│   ├── useDoubleClick.ts           # 300ms double-click detector
+│   ├── useShortcuts.ts             # Global keyboard shortcuts
+│   └── useIsMobile.ts              # Mobile detection
 ├── utils/
 │   ├── canvasUtils.ts    # snapValue, clampZoom, getTouchDistance, pointer capture, rect helpers
 │   ├── dragUtils.ts      # createDragHistoryGuard
@@ -321,6 +336,11 @@ interface CanvasStoreAdapter {
 - `'editor'`     → `editorCanvasAdapter` (wraps `useLevelEditorStore`)
 - `'game'`       → `gameCanvasAdapter` (wraps `useGameStore`, no history)
 
+**Snapshot utility:** `getCanvasState(context: 'playground' | 'editor'): CanvasSliceAPI`
+- Non-reactive getter for event handlers and tool hooks that need a one-shot state read
+- Returns raw store state cast to `CanvasSliceAPI = CanvasSliceState & CanvasSliceActions` (exported from `createCanvasSlice.ts`)
+- Replaces the repeated `(context === 'editor' ? useLevelEditorStore : useStore).getState() as unknown as CanvasSliceAPI` pattern
+
 ---
 
 ### 5c. CanvasContext (`src/components/canvas/CanvasContext.ts` + `src/store/CanvasProvider.tsx`)
@@ -424,13 +444,13 @@ Block `pixiContainer` has `hitArea={new PIXI.Rectangle(0, 0, 60, 60)}` and `even
 
 ---
 
-### 6b. Three Canvas Components
+### 6b. Canvas Components
 
 | File | Store | Extra behaviors |
 |------|-------|----------------|
-| `Canvas.tsx` | `useStore` | Play mode pointer lock; double-click spawn; `draw_group` mode bbox draw |
-| `EditorCanvas.tsx` | `useLevelEditorStore` | Same event model as Canvas; wrapped in `<CanvasProvider type="editor">` |
+| `SharedCanvas.tsx` | `useStore` / `useLevelEditorStore` | Unified canvas for `context: 'playground' \| 'editor'`; composes 7 tool hooks + 6 layers; wrapped in `<CanvasProvider type="editor">` for editor context |
 | `GameCanvas.tsx` | `useGameStore` | Approach circles (shrinking square, 800ms before event); mobile touch pinch-zoom; long-press right-click; score hit detection (±50ms window) |
+| `PocketCanvas.tsx` | `useStore` (pocketBlocks) | Separate pocket camera; grid auto-layout; `PocketNoteBlock`; trail-to-play only |
 
 ---
 
@@ -458,6 +478,44 @@ Block `pixiContainer` has `hitArea={new PIXI.Rectangle(0, 0, 60, 60)}` and `even
 - Right-click on track segment → inserts new node at closest point
 - Double-click node → activates runner
 - `draw_track` mode: click on background creates track + first node, drag places node
+
+---
+
+### 6e. Tool Hooks (`src/components/canvas/tools/`)
+
+Each tool hook is called at the top of `SharedCanvas` and plugged into the pointer-event pipeline via short-circuit `||` or explicit early return:
+
+```typescript
+// SharedCanvas pointer pipeline:
+handlePointerDown: cameraTool → trail → drawTrack → drawGroup → spawn → select
+handlePointerMove: cameraTool || drawGroup || select || trail
+handlePointerUp:   cameraTool + trail + drawGroup + select (all called unconditionally)
+```
+
+| Hook | Returns | Owns |
+|------|---------|------|
+| `useCameraTool(context, { startPan, updatePan, endPan })` | `{ onPointerDown, onPointerMove, onPointerUp }` | Middle-click pan |
+| `useTrailTool(context, { startTrail, updateTrail, endTrail, intersectedBlocksRef })` | `{ onPointerDown, onPointerMove, onPointerUp, checkIntersection }` | Right-click trail |
+| `useSelectTool(context, { isSelectingRef, startSelection, updateSelection, endSelection })` | `{ onPointerDown, onPointerMove, onPointerUp }` | Marquee selection |
+| `useSpawnTool(context)` | `{ onPointerDown }` | Double-click block/track/groupRect spawn |
+| `useDrawGroupTool(context)` | `{ onPointerDown, onPointerMove, onPointerUp, groupDrawBox }` | `draw_group` bbox drag |
+| `useDrawTrackTool(context)` | `{ onPointerDown }` | `draw_track` node placement |
+| `usePlayTool(context, { checkIntersection, intersectedBlocksRef })` | *(void — pure side effects)* | Play-mode pointer lock, RAF mouse movement, trail intersection |
+
+---
+
+### 6f. Layer Components (`src/components/canvas/layers/`)
+
+Self-contained Pixi or HTML components rendered inside the `pixiContainer`. Each owns its own store subscriptions where possible.
+
+| Layer | Purpose |
+|-------|---------|
+| `GridLayer` | Subscribes to camera zoom + settings; renders `GridBackground` |
+| `SelectionLayer` | Wraps `SelectionBoxRenderer` + `GroupDrawBoxRenderer` |
+| `BlockLayer` | Subscribes to blocks from active store; renders `NoteBlock` map |
+| `TrailLayer` | Thin wrapper for `TrailRenderer` |
+| `TrackLayer` | Thin wrapper for `TrackRenderer` |
+| `OverlayLayer` | HTML overlays: play-mode vignette, perform-hit flash, crosshair |
 
 ---
 
@@ -507,32 +565,50 @@ Block `pixiContainer` has `hitArea={new PIXI.Rectangle(0, 0, 60, 60)}` and `even
 
 ### 7b. Left-Click Block Drag
 
+Drag is split across two hooks: `useBlockDrag` owns pointer mechanics; `useBlockDragHandlers` owns canvas coordination.
+
 ```
-[pointerdown, button=0] on NoteBlock's pixiContainer
- ├─ e.stopPropagation()  ← prevents canvas from starting a marquee selection
+NoteBlock:
+  const { onDragStart } = useBlockDragHandlers(id, canvasContext)
+  const { handlePointerDown, handlePointerUp } = useBlockDrag(id, x, y, isSelected, {
+    canvasContext, onDragStart,
+    onContextMenu: (pos) => openContextMenuInContext(ctx, { ...pos, blockId: id })
+  })
+
+useBlockDrag — pointer mechanics:
+[pointerdown, button=0]
+ ├─ e.stopPropagation()
  ├─ if Ctrl/Shift: selectBlock(id, multi=true), shouldDrag = !wasSelected
  ├─ else: if !isSelected: selectBlock(id, false); shouldDrag = true
+ ├─ initialPosRef.current = { x, y }   ← captures position at drag start
  ├─ setIsDragging(true)
  └─ setDragOffset({ x: parentLocal.x - block.x, y: parentLocal.y - block.y })
 
-[useEffect, isDragging=true] → attaches global window listeners:
-  const adapter = getCanvasAdapter(ctx);
-  const historyGuard = createDragHistoryGuard(adapter);
-  const initialPositions = Map<blockId, {x,y}>
+[useEffect, isDragging=true]
+ ├─ handlers = onDragStart()   ← calls useBlockDragHandlers factory (snapshots initial positions)
+ │
+ ├─ [pointermove]
+ │   ├─ worldX = (clientX - rect.left - cam.x) / cam.zoom
+ │   ├─ newX = worldX - dragOffset.x
+ │   ├─ if snapToGrid: newX = snapValue(newX, 30)
+ │   └─ handlers.onMove(newX - initialPosRef.x, newY - initialPosRef.y)
+ │
+ └─ [pointerup | pointercancel | contextmenu]
+      ├─ setIsDragging(false)
+      └─ handlers.onUp()
 
-  [pointermove]
-   ├─ worldX = (clientX - rect.left - cam.x) / cam.zoom
-   ├─ newX = worldX - dragOffset.x
-   ├─ if snapToGrid: newX = snapValue(newX, 30)
-   ├─ deltaX = newX - initialPositions.get(id).x
-   ├─ historyGuard.onMove()   ← first call only: pushUndoSnapshot + pauseHistory
-   └─ adapter.updateBlocks(allSelected, { x: init.x + deltaX, y: init.y + deltaY })
-      + updateTrackInContext / updateGroupRectInContext for co-selected items
-
-  [pointerup | pointercancel | contextmenu]
-   ├─ setIsDragging(false)
-   ├─ historyGuard.onUp()     ← resumeHistory + commitHistory
-   └─ (mobile: clearSelection)
+useBlockDragHandlers.onDragStart() — canvas coordination (called once at drag start):
+ ├─ sourceBlocks = selectedBlocks + this block (if not already selected)
+ ├─ selectedTracks, selectedGroupRects
+ ├─ initialPositions = Map<id, {x,y}>  ← snapshot
+ ├─ historyGuard = createDragHistoryGuard(adapter)
+ ├─ returns onMove(deltaX, deltaY):
+ │     historyGuard.onMove()  ← first call: pushUndoSnapshot + pauseHistory
+ │     adapter.updateBlocks(allSelected, { x: init.x + deltaX, y: init.y + deltaY })
+ │     + updateTrackInContext / updateGroupRectInContext for co-selected items
+ └─ returns onUp():
+       historyGuard.onUp()  ← resumeHistory + commitHistory
+       (mobile: clearSelection)
 ```
 
 ---
@@ -671,15 +747,35 @@ useBlockDrag(
   x: number,
   y: number,
   isSelected: boolean,
-  canvasContextOverride?: CanvasContextType
+  {
+    canvasContext?: CanvasContextType;
+    onDragStart?: () => { onMove(deltaX, deltaY): void; onUp(): void } | void;
+    onContextMenu?: (pos: { x: number; y: number }) => void;
+  }
 ) => { handlePointerDown, handlePointerUp, isDragging }
 ```
 
-- Pass `handlePointerDown` → block's `onPointerDown`
-- Pass `handlePointerUp` → block's `onPointerUp`
-- Internally uses `createDragHistoryGuard`, `useDoubleClick`, `getCanvasAdapter`, `snapValue`
-- Multi-pointer safety: tracks `pointerId` to ignore other pointers during drag
-- Mobile: clears selection on pointer up; aborts drag if `__activeTouches > 1`
+- Owns **pointer mechanics only**: selection on click, drag offset tracking, delta calculation, double-click detection
+- Calls `onDragStart()` once when drag begins; uses the returned `{ onMove, onUp }` for the duration of the gesture
+- `onContextMenu` is called on double-click pointer-up (replaces inline `openContextMenuInContext`)
+- No direct store imports for move/history — those are injected via `onDragStart`
+- Multi-pointer safety: tracks `pointerId` to ignore other pointers
+- Mobile: aborts drag on `__activeTouches > 1`
+
+---
+
+### `useBlockDragHandlers` (`src/hooks/useBlockDragHandlers.ts`)
+
+```typescript
+useBlockDragHandlers(
+  id: string,
+  canvasContextOverride?: CanvasContextType
+) => { onDragStart: () => { onMove(deltaX, deltaY): void; onUp(): void } }
+```
+
+- Owns **canvas coordination**: which blocks/tracks/groupRects to move together, history management
+- `onDragStart` is a stable `useCallback` — safe to pass as a dep to `useBlockDrag`'s effect
+- Called by `NoteBlock`; result injected into `useBlockDrag` as `onDragStart`
 
 ---
 
@@ -689,7 +785,6 @@ Two categories:
 
 **Reactive hooks** (call at component top level, trigger re-renders on change):
 ```typescript
-useActiveCanvasBlocks()            // Block[]
 useActiveCanvasCamera()            // CameraState
 useActiveCanvasGroupRects()        // GroupRect[]
 useActiveCanvasTracks()            // Track[]
@@ -717,7 +812,6 @@ selectGroupRectInContext(ctx, id, multi?)
 clearSelectionInContext(ctx)
 openContextMenuInContext(ctx, state)
 closeContextMenuInContext(ctx)
-commitContextHistory(ctx)
 addBlocksToContext(ctx, blocks[])  // returns new block IDs
 ```
 
@@ -947,9 +1041,9 @@ GroupRect is a separate concept: a visual rectangle that can trigger all blocks 
 *           → redirect to /
 ```
 
-**`PlaygroundPage.tsx`** — Mounts `<Canvas>` (playground), toolbar, outliner, pocket view, keyboard instruments, settings panel.
+**`PlaygroundPage.tsx`** — Mounts `<SharedCanvas context="playground">`, toolbar, outliner, pocket view, keyboard instruments, settings panel.
 
-**`LevelEditorPage.tsx`** — Mounts `<EditorCanvas>` wrapped in `<CanvasProvider type="editor">`, pianoroll, track panel, charting tab, audio waveform, playback bar. Handles drag-drop of MIDI and audio files.
+**`LevelEditorPage.tsx`** — Mounts `<SharedCanvas context="editor">` wrapped in `<CanvasProvider type="editor">`, pianoroll, track panel, charting tab, audio waveform, playback bar. Handles drag-drop of MIDI and audio files.
 
 **`GamePage.tsx`** — Mounts `<GameCanvas>` wrapped in `<CanvasProvider type="game">`. Manages game phase transitions: upload → arrange → play → result. Audio via `HTMLAudioElement` (not Tone.js). Supports fullscreen on mobile.
 

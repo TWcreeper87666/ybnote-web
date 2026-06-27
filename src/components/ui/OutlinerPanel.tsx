@@ -16,7 +16,7 @@ import {
 } from '../../hooks/useActiveCanvas';
 import { Search, Music, LayoutList, GitBranch, Square, ChevronRight, ChevronDown, Keyboard, Check, CheckSquare, Play, Pause } from 'lucide-react';
 import { FloatingWindow } from './FloatingWindow';
-import { getCanvasCenter } from '../../utils/canvasUtils';
+import { getCanvasCenterLocal } from '../../utils/canvasUtils';
 
 const animateCameraTo = (targetX: number, targetY: number, context: CanvasContextType = 'playground', duration = 300) => {
   const startCam = getCameraForContext(context);
@@ -409,7 +409,7 @@ const GroupRectItem = ({ groupRect, index, childBlocks, childTracks, selectedBlo
   }, [groupRect.id]);
 
   const handleGoTo = () => {
-    const center = getCanvasCenter(canvasContext);
+    const center = getCanvasCenterLocal(canvasContext);
     const targetX = -(groupRect.x + groupRect.w / 2) * camera.zoom + center.x;
     const targetY = -(groupRect.y + groupRect.h / 2) * camera.zoom + center.y;
     animateCameraTo(targetX, targetY, canvasContext);
@@ -540,7 +540,7 @@ const BlockItem = ({ block, selected, camera, handleShiftClick, canvasContext }:
   const wasSelectedRef = useRef(false);
 
   const handleGoTo = () => {
-    const center = getCanvasCenter(canvasContext);
+    const center = getCanvasCenterLocal(canvasContext);
     const targetX = -(block.x + 30) * camera.zoom + center.x;
     const targetY = -(block.y + 30) * camera.zoom + center.y;
     animateCameraTo(targetX, targetY, canvasContext);
@@ -619,7 +619,7 @@ const TrackItem = ({ track, label, selected, camera, handleShiftClick, canvasCon
 
   const handleGoTo = () => {
     if (track.nodes.length === 0) return;
-    const center = getCanvasCenter(canvasContext);
+    const center = getCanvasCenterLocal(canvasContext);
     const targetX = -track.nodes[0].x * camera.zoom + center.x;
     const targetY = -track.nodes[0].y * camera.zoom + center.y;
     animateCameraTo(targetX, targetY, canvasContext);

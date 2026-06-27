@@ -936,6 +936,7 @@ export const useLevelEditorStore = create<LevelEditorState>()(
         gameEvents: s.gameEvents,
         selectedMidiTrackId: s.selectedMidiTrackId,
         chartEndPosition: s.chartEndPosition,
+        activeTab: s.activeTab,
       })
     }
   )

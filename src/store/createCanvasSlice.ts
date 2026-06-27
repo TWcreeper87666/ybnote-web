@@ -95,6 +95,8 @@ export interface CanvasSliceActions {
   setActivePocketDrag: (drag: PocketDragState | null) => void;
 }
 
+export type CanvasSliceAPI = CanvasSliceState & CanvasSliceActions;
+
 // ─── Initial State ────────────────────────────────────────────────────────────
 
 export const INITIAL_CANVAS_STATE: CanvasSliceState = {

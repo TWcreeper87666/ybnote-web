@@ -3,7 +3,7 @@ import { useSettingsStore } from '../../store/useSettingsStore';
 import { useCanvasContext } from '../canvas/CanvasContext';
 import { getCanvasAdapter } from '../../store/canvasAdapter';
 import {
-  getBlocksForContext, getCameraForContext, updateBlocksInContext, commitContextHistory,
+  getBlocksForContext, getCameraForContext, updateBlocksInContext,
   useActiveCanvasGroupRects, useActiveCanvasSelectedGroupRectIds,
   getGroupRectsForContext, getSelectedGroupRectIdsForContext, getSelectedBlockIdsForContext, getSelectedTrackIdsForContext, getTracksForContext,
   updateGroupRectInContext, selectGroupRectInContext, openContextMenuInContext, closeContextMenuInContext,

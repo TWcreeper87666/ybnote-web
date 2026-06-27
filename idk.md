@@ -1,6 +1,7 @@
 # bug
 audio delay when no interaction
 level-editor goto offset
+adding new point on tracks make notes behind trigger, and a particle stucks there
 
 # muti tab
 warnning
