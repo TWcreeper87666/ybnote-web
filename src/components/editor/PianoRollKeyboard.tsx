@@ -1,5 +1,6 @@
 import React from 'react';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
+import { DRUM_REGISTRY } from '../../config/instruments';
 
 const MAX_PITCH = 127;
 const ROW_HEIGHT = 16;
@@ -32,14 +33,8 @@ export const PianoRollKeyboard: React.FC<PianoRollKeyboardProps> = ({ scrollTop,
     if (isDrumMode) {
       let label = `LANE ${pitch}`;
       if (track?.instrument === 'percussion') {
-        switch (noteIndex) {
-          case 0: label = 'Kick'; break;      // C
-          case 2: label = 'Snare'; break;     // D
-          case 4: label = 'Hi-Hat'; break;    // E
-          case 5: label = 'Tom'; break;       // F
-          case 7: label = 'Cymbal'; break;    // G
-          default: label = ''; break;
-        }
+        const drum = DRUM_REGISTRY.find(d => d.pianoRollMidi === noteIndex);
+        label = drum ? drum.label : '';
       }
 
       keys.push(

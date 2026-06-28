@@ -9,14 +9,7 @@ import { getCanvasContainerRect, snapValue } from '../../utils/canvasUtils';
 import { playNote } from '../../utils/audio';
 import { X } from 'lucide-react';
 import { getPitchColorHex } from '../../utils/colors';
-
-const DRUMS = [
-  { pitch: 'kick', label: 'Kick' },
-  { pitch: 'snare', label: 'Snare' },
-  { pitch: 'hihat', label: 'Hi-Hat' },
-  { pitch: 'tom', label: 'Tom' },
-  { pitch: 'cymbal', label: 'Cymbal' }
-];
+import { DRUM_REGISTRY } from '../../config/instruments';
 
 export const DrumKeyboard: React.FC = () => {
   const { mode, setMode } = useStore();
@@ -130,7 +123,7 @@ export const DrumKeyboard: React.FC = () => {
         </div>
         
         <div ref={keyboardRef} className="keyboard-keys" style={{ flexWrap: 'wrap', gap: '8px', padding: '8px' }}>
-          {DRUMS.map(drum => (
+          {DRUM_REGISTRY.map(drum => (
             <div 
               key={drum.pitch}
               onPointerDown={(e) => handleDrumPointerDown(e, drum.pitch)}

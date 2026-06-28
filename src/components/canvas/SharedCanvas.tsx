@@ -61,6 +61,7 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({ context }) => {
     onWheelIntercept: React.useCallback((e: WheelEvent) => {
       const canvas = getCanvasState(context);
       if (useStore.getState().mode === 'play') return false;
+      if (context === 'editor' && useLevelEditorStore.getState().activeTab === 'charting') return false;
 
       let targetBlockId = canvas.hoveredBlockId;
       let targetGroupRectId = canvas.hoveredGroupRectId;

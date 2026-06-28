@@ -1,19 +1,22 @@
 import * as Tone from 'tone';
+import { DRUM_REGISTRY, INSTRUMENT_REGISTRY } from '../config/instruments';
 
 let compressor: Tone.Compressor;
 let masterVolume: Tone.Volume;
-let pianoSynth: Tone.PolySynth<Tone.Synth>;
-let synthInstrument: Tone.PolySynth<Tone.FMSynth>;
-let bassInstrument: Tone.PolySynth<Tone.MonoSynth>;
-let kickSynth: Tone.PolySynth<Tone.MembraneSynth>;
-let tomSynth: Tone.PolySynth<Tone.MembraneSynth>;
+
+// Maps instrument id → PolySynth, built dynamically from INSTRUMENT_REGISTRY
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const melodicSynths = new Map<string, Tone.PolySynth<any>>();
 
 class DrumPool {
   synths: Tone.NoiseSynth[];
   index: number = 0;
 
-  constructor(synthFactory: () => Tone.NoiseSynth, count: number = 4) {
-    this.synths = Array.from({ length: count }, synthFactory);
+  constructor(noiseType: 'white' | 'pink', options: Record<string, unknown>, count: number = 4) {
+    this.synths = Array.from({ length: count }, () => new Tone.NoiseSynth({
+      noise: { type: noiseType },
+      ...options,
+    } as Tone.NoiseSynthOptions));
   }
 
   connect(dest: Tone.InputNode) {
@@ -28,15 +31,18 @@ class DrumPool {
   }
 }
 
-let snareSynth: DrumPool;
-let hihatSynth: DrumPool;
-let cymbalSynth: DrumPool;
+// Maps drum pitch string → trigger function, built dynamically from DRUM_REGISTRY
+const drumTriggers = new Map<string, (velocity: number) => void>();
+// Maps piano-roll note name (e.g. 'C', 'D') → drum pitch string, for MIDI-style input
+const noteNameToDrum = new Map<string, string>();
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 let isAudioInitialized = false;
 
 const initAudio = () => {
   if (isAudioInitialized) return;
-  
+
   // 1. & 2. Create Compressor, Limiter and Master Volume to prevent clipping and handle high polyphony
   compressor = new Tone.Compressor({
     threshold: -24,
@@ -44,60 +50,43 @@ const initAudio = () => {
     attack: 0.003,
     release: 0.25
   });
-  
+
   const limiter = new Tone.Limiter(-2).toDestination();
   compressor.connect(limiter);
-  
+
   masterVolume = new Tone.Volume(-12).connect(compressor);
 
-  // Use Synthesized Piano instead of Sampler to avoid network requests and connection resets
-  pianoSynth = new Tone.PolySynth(Tone.Synth).connect(masterVolume);
-  pianoSynth.set({
-    oscillator: { type: 'triangle' },
-    envelope: {
-      attack: 0.01,
-      decay: 0.5,
-      sustain: 0.2,
-      release: 1.2,
-    },
+  // Build melodic synths dynamically from INSTRUMENT_REGISTRY
+  INSTRUMENT_REGISTRY.forEach(instr => {
+    if (!instr.synthType) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let synth: Tone.PolySynth<any>;
+    switch (instr.synthType) {
+      case 'poly-fm':   synth = new Tone.PolySynth(Tone.FMSynth);   break;
+      case 'poly-mono': synth = new Tone.PolySynth(Tone.MonoSynth); break;
+      case 'poly-am':   synth = new Tone.PolySynth(Tone.AMSynth);   break;
+      default:          synth = new Tone.PolySynth(Tone.Synth);      break;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (instr.synthOptions) synth.set(instr.synthOptions as any);
+    synth.connect(masterVolume);
+    melodicSynths.set(instr.id, synth);
   });
 
-  // Additional Instruments
-  synthInstrument = new Tone.PolySynth<Tone.FMSynth>(Tone.FMSynth).connect(masterVolume);
-  synthInstrument.set({
-    harmonicity: 3,
-    modulationIndex: 10,
-    oscillator: { type: "sine" },
-    envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.5 },
-    modulation: { type: "square" },
-    modulationEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.5 }
+  // Build drum synths dynamically from DRUM_REGISTRY
+  DRUM_REGISTRY.forEach(drum => {
+    let trigger: (velocity: number) => void;
+    if (drum.synthType === 'membrane') {
+      const synth = new Tone.PolySynth(Tone.MembraneSynth, drum.synthOptions as Tone.MembraneSynthOptions).connect(masterVolume);
+      const pitch = drum.triggerPitch!;
+      trigger = (velocity) => synth.triggerAttackRelease(pitch, '8n', Tone.now(), velocity);
+    } else {
+      const pool = new DrumPool(drum.noiseType!, drum.synthOptions).connect(masterVolume);
+      trigger = (velocity) => pool.triggerAttackRelease('8n', Tone.now(), velocity);
+    }
+    drumTriggers.set(drum.pitch, trigger);
+    noteNameToDrum.set(NOTE_NAMES[drum.pianoRollMidi], drum.pitch);
   });
-
-  bassInstrument = new Tone.PolySynth<Tone.MonoSynth>(Tone.MonoSynth).connect(masterVolume);
-  bassInstrument.set({
-    oscillator: { type: "sawtooth" },
-    filter: { Q: 2, type: "lowpass", rolloff: -24 },
-    envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.2 },
-    filterEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.5, release: 0.2, baseFrequency: 100, octaves: 4 }
-  });
-
-  kickSynth = new Tone.PolySynth<Tone.MembraneSynth>(Tone.MembraneSynth).connect(masterVolume);
-  tomSynth = new Tone.PolySynth<Tone.MembraneSynth>(Tone.MembraneSynth).connect(masterVolume);
-
-  snareSynth = new DrumPool(() => new Tone.NoiseSynth({
-    noise: { type: 'white' },
-    envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.1 }
-  })).connect(masterVolume);
-  
-  hihatSynth = new DrumPool(() => new Tone.NoiseSynth({
-    noise: { type: 'pink' },
-    envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.01 }
-  })).connect(masterVolume);
-  
-  cymbalSynth = new DrumPool(() => new Tone.NoiseSynth({
-    noise: { type: 'white' },
-    envelope: { attack: 0.005, decay: 1.5, sustain: 0, release: 0.1 }
-  })).connect(masterVolume);
 
   // Prevent browser from suspending AudioContext after a period of inactivity
   const silentOsc = new Tone.Oscillator().start();
@@ -148,42 +137,26 @@ export const playNote = async (pitch: string, volume: number = 1.0, instrument: 
   const velocity = Math.max(0, Math.min(1, volume));
   
   if (instrument === 'percussion') {
-    const note = pitch.replace(/[0-9]/g, '');
-    if (pitch === 'kick' || note === 'C') {
-      kickSynth.triggerAttackRelease('C1', '8n', Tone.now(), velocity);
-    } else if (pitch === 'snare' || note === 'D') {
-      snareSynth.triggerAttackRelease('8n', Tone.now(), velocity);
-    } else if (pitch === 'hihat' || note === 'E') {
-      hihatSynth.triggerAttackRelease('8n', Tone.now(), velocity);
-    } else if (pitch === 'tom' || note === 'F') {
-      tomSynth.triggerAttackRelease('G2', '8n', Tone.now(), velocity);
-    } else if (pitch === 'cymbal' || note === 'G') {
-      cymbalSynth.triggerAttackRelease('8n', Tone.now(), velocity);
-    } else {
-      hihatSynth.triggerAttackRelease('8n', Tone.now(), velocity);
-    }
+    // Resolve piano-roll note names (e.g. 'C4' → 'kick') or use pitch directly
+    const noteName = pitch.replace(/[0-9]/g, '');
+    const resolvedPitch = drumTriggers.has(pitch)
+      ? pitch
+      : (noteNameToDrum.get(noteName) ?? 'hihat');
+    drumTriggers.get(resolvedPitch)?.(velocity);
     return;
   }
 
-  // Adjust pitch for bass to make it actually sound like a bass even if written in C4
+  // Apply octave shift if defined (e.g. bass drops 2 octaves)
   let playPitch = pitch;
-  if (instrument === 'bass') {
-    // shift down 1 or 2 octaves if it's 4 or higher, just an easy trick
+  const instrDef = INSTRUMENT_REGISTRY.find(i => i.id === instrument);
+  if (instrDef?.octaveShift) {
     const octaveMatch = pitch.match(/\d/);
     if (octaveMatch) {
       const octave = parseInt(octaveMatch[0], 10);
-      playPitch = pitch.replace(/\d/, Math.max(1, octave - 2).toString());
+      playPitch = pitch.replace(/\d/, Math.max(1, octave + instrDef.octaveShift).toString());
     }
   }
 
-  const activeSynth = instrument === 'synth' ? synthInstrument 
-                    : instrument === 'bass' ? bassInstrument
-                    : null;
-
-  if (activeSynth) {
-    activeSynth.triggerAttackRelease(playPitch, '8n', Tone.now(), velocity);
-  } else {
-    // Default to piano synth
-    pianoSynth.triggerAttackRelease(playPitch, '8n', Tone.now(), velocity);
-  }
+  const synth = melodicSynths.get(instrument) ?? melodicSynths.get('piano');
+  synth?.triggerAttackRelease(playPitch, '8n', Tone.now(), velocity);
 };

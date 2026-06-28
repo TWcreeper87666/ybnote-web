@@ -1,5 +1,6 @@
 import { Midi } from '@tonejs/midi';
 import type { ParsedMidiData, EditorTrack, EditorNote } from '../types';
+import { INSTRUMENT_REGISTRY } from '../config/instruments';
 
 export const parseMidiFile = async (arrayBuffer: ArrayBuffer): Promise<ParsedMidiData> => {
   const midi = new Midi(arrayBuffer);
@@ -22,13 +23,12 @@ export const parseMidiFile = async (arrayBuffer: ArrayBuffer): Promise<ParsedMid
       velocity: n.velocity,
     }));
 
+    const midiNum = track.instrument.number;
     const instrument = track.instrument.percussion
       ? 'percussion'
-      : (track.instrument.number >= 32 && track.instrument.number <= 39)
-        ? 'bass'
-        : (track.instrument.number >= 80 && track.instrument.number <= 87)
-          ? 'synth'
-          : 'piano';
+      : (INSTRUMENT_REGISTRY.find(i =>
+          i.midiNumberRange && midiNum >= i.midiNumberRange[0] && midiNum <= i.midiNumberRange[1]
+        )?.id ?? 'piano');
 
     tracks.push({
       id: index,

@@ -2,6 +2,7 @@ import React from "react";
 import { useStore } from "../../store/useStore";
 import { useLevelEditorStore } from "../../store/useLevelEditorStore";
 import { useGameStore } from "../../store/useGameStore";
+import { MELODIC_INSTRUMENTS, DRUM_REGISTRY } from "../../config/instruments";
 import { useCanvasContext } from "../canvas/CanvasContext";
 import { useActiveCanvasSelectedBlockIds } from "../../hooks/useActiveCanvas";
 import { shiftPitch } from "../../utils/pitchUtils";
@@ -1105,9 +1106,9 @@ export const ContextMenu: React.FC = () => {
               padding: "4px",
             }}
           >
-            <option value="piano">Piano</option>
-            <option value="synth">Synth</option>
-            <option value="bass">Bass</option>
+            {MELODIC_INSTRUMENTS.map(i => (
+              <option key={i.id} value={i.id}>{i.icon} {i.label}</option>
+            ))}
           </select>
         </div>
       )}
@@ -1142,11 +1143,9 @@ export const ContextMenu: React.FC = () => {
                 padding: "4px",
               }}
             >
-              <option value="kick">Kick</option>
-              <option value="snare">Snare</option>
-              <option value="hihat">Hi-Hat</option>
-              <option value="tom">Tom</option>
-              <option value="cymbal">Cymbal</option>
+              {DRUM_REGISTRY.map(d => (
+                <option key={d.pitch} value={d.pitch}>{d.label}</option>
+              ))}
             </select>
           ) : (
             <div style={{ display: "flex", gap: "4px" }}>

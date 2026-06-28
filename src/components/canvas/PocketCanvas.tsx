@@ -35,6 +35,7 @@ export const PocketCanvas: React.FC<PocketCanvasProps> = ({ containerWidth, cont
   const blocks = useStore(state => state.blocks);
   const editorBlocks = useLevelEditorStore(state => state.blocks);
   const gamePhase = useGameStore(state => state.gamePhase);
+  const midiData = useLevelEditorStore(state => state.midiData);
   const pocketSortMode = useStore(state => state.pocketSortMode);
   const pocketCamera = useStore(state => state.pocketCamera);
   const clearPocketSelection = useStore(state => state.clearPocketSelection);
@@ -56,17 +57,38 @@ export const PocketCanvas: React.FC<PocketCanvasProps> = ({ containerWidth, cont
 
   const layoutWidth = Math.max(200, containerWidth);
 
+  // Build set of pitch+instrument combos that belong to at least one non-background track
+  const nonBackgroundCombos = useMemo(() => {
+    if (!midiData) return null;
+    const set = new Set<string>();
+    for (const track of midiData.tracks) {
+      if (!track.isBackground) {
+        for (const note of track.notes) {
+          set.add(`${note.name}-${track.instrument}`);
+        }
+      }
+    }
+    return set;
+  }, [midiData]);
+
   const filteredBlocks = useMemo(() => {
-    if (!showOnlyMissing) return pocketBlocks;
+    let result = pocketBlocks;
+
+    // Hide pocket blocks whose pitch+instrument only appear in background tracks
+    if (nonBackgroundCombos) {
+      result = result.filter(b => nonBackgroundCombos.has(`${b.pitch}-${b.instrument || 'piano'}`));
+    }
+
+    if (!showOnlyMissing) return result;
     const allMainBlocks = gamePhase === 'arrange'
       ? useGameStore.getState().blocks
       : canvasContext === 'editor'
         ? editorBlocks
         : blocks;
-    return pocketBlocks.filter(pocketBlock => {
+    return result.filter(pocketBlock => {
       return !allMainBlocks.some(b => b.pitch === pocketBlock.pitch && (b.instrument || 'piano') === pocketBlock.instrument);
     });
-  }, [pocketBlocks, blocks, editorBlocks, gamePhase, canvasContext, showOnlyMissing]);
+  }, [pocketBlocks, blocks, editorBlocks, gamePhase, canvasContext, showOnlyMissing, nonBackgroundCombos]);
 
   const gridBounds = useMemo(() => {
     const availableWidthForBlocks = layoutWidth - PADDING * 2 + SPACING;

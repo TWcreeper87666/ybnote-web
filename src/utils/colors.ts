@@ -1,13 +1,11 @@
 import * as PIXI from 'pixi.js';
+import { DRUM_REGISTRY } from '../config/instruments';
+
+const drumColors: Record<string, number> = Object.fromEntries(
+  DRUM_REGISTRY.map(d => [d.pitch, d.color])
+);
 
 export const getPitchColorNumber = (pitch: string, pianoKeysCount: number) => {
-  const drumColors: Record<string, number> = {
-    kick: 0xef4444, // Red
-    snare: 0x3b82f6, // Blue
-    hihat: 0xf59e0b, // Amber
-    tom: 0x8b5cf6, // Purple
-    cymbal: 0x10b981 // Emerald
-  };
   if (drumColors[pitch]) {
     return drumColors[pitch];
   }

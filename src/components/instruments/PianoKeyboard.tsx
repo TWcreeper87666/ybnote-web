@@ -9,6 +9,7 @@ import { getCanvasContainerRect, snapValue } from '../../utils/canvasUtils';
 import { playNote } from '../../utils/audio';
 import { X } from 'lucide-react';
 import { getPitchColorHex } from '../../utils/colors';
+import { MELODIC_INSTRUMENTS } from '../../config/instruments';
 
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -157,14 +158,14 @@ export const PianoKeyboard: React.FC = () => {
         <div className="piano-header" onPointerDown={handlePianoHeaderDown} style={{ cursor: 'move', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span className="piano-title">Virtual Piano (Drag keys to Canvas)</span>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }} onPointerDown={e => e.stopPropagation()}>
-            <select 
-              value={instrument} 
+            <select
+              value={instrument}
               onChange={(e) => setInstrument(e.target.value)}
               style={{ background: 'rgba(0,0,0,0.5)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '2px 4px', fontSize: '12px' }}
             >
-              <option value="piano">Piano</option>
-              <option value="synth">Synth</option>
-              <option value="bass">Bass</option>
+              {MELODIC_INSTRUMENTS.map(i => (
+                <option key={i.id} value={i.id}>{i.icon} {i.label}</option>
+              ))}
             </select>
             <button onClick={togglePiano} className="icon-btn">
               <X size={18} />

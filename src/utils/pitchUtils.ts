@@ -1,5 +1,20 @@
-export const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-export const PERCUSSION_PITCHES = ['kick', 'snare', 'hihat', 'tom', 'cymbal'];
+import { PERCUSSION_PITCHES } from "../config/instruments";
+
+export const NOTES = [
+  "C",
+  "C#",
+  "D",
+  "D#",
+  "E",
+  "F",
+  "F#",
+  "G",
+  "G#",
+  "A",
+  "A#",
+  "B",
+];
+export { PERCUSSION_PITCHES } from "../config/instruments";
 
 /**
  * Shifts a pitch string (e.g. 'C4' or 'kick') by a given number of semitones or steps.
@@ -25,7 +40,7 @@ export const shiftPitch = (pitch: string, delta: number): string => {
   if (noteIndex === -1) return pitch;
 
   let totalSemitones = octave * 12 + noteIndex + delta;
-  
+
   // Ensure we don't go below C0
   if (totalSemitones < 0) totalSemitones = 0;
 

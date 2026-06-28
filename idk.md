@@ -6,11 +6,7 @@ holding key makes camera movement lag
 warning
 
 # midi
-整理樂器script, 方便新增
 midi note extract algorithm, only main melody(or unlimited noteblock and group rect?)
-
-# group rect
-- add pitch modifier
 
 # pocket canavs
 - instrument filter, tracks filter?
@@ -19,7 +15,6 @@ midi note extract algorithm, only main melody(or unlimited noteblock and group r
 - help panel update
 - remove velocity modify completely
 - history fix
-- tab memory
 
 
 # game
@@ -28,7 +23,6 @@ midi note extract algorithm, only main melody(or unlimited noteblock and group r
 - level selector
 - offset lol
 - arrangement player drag music sync
-- crosshair mode, any key treats as hit key
 
 # making
 record mode

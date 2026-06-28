@@ -53,7 +53,9 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({
   const isEditor = canvasContext === 'editor';
   const isRecordingChart = useLevelEditorStore((s) => isEditor ? s.isRecordingChart : false);
   const chartingHighlightIds = useLevelEditorStore((s) => s.chartingHighlightIds);
+  const chartingHighlightWeights = useLevelEditorStore((s) => s.chartingHighlightWeights);
   const isChartingHighlight = chartingHighlightIds.includes(id);
+  const highlightIntensity = isChartingHighlight ? (chartingHighlightWeights[id] ?? 1) : 1;
   const midiData = useLevelEditorStore((s) => isEditor ? s.midiData : null);
 
 
@@ -121,6 +123,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({
       onPointerLeave={handlePointerLeave}
       isInvalid={isInvalid}
       isHighlighted={isChartingHighlight}
+      highlightIntensity={highlightIntensity}
     />
   );
 };

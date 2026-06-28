@@ -73,6 +73,7 @@ interface LevelEditorSpecificState {
   chartingAutoSkipAssigned: boolean;
   chartingAwaitingPick: boolean;
   chartingHighlightIds: string[];
+  chartingHighlightWeights: Record<string, number>;
 
   isRecordingChart: boolean;
   recordedChartHits: RecordedHit[];
@@ -145,6 +146,7 @@ interface LevelEditorSpecificActions {
   setChartingAutoSkipAssigned: (v: boolean) => void;
   setChartingAwaitingPick: (v: boolean) => void;
   setChartingHighlightIds: (ids: string[]) => void;
+  setChartingHighlightWeights: (weights: Record<string, number>) => void;
   assignNoteTarget: (noteId: string, trackId: number, targetId: string, targetType: 'block' | 'groupRect') => void;
   clearNoteTarget: (noteId: string, trackId: number) => void;
   startChartRecording: () => void;
@@ -247,6 +249,7 @@ export const useLevelEditorStore = create<LevelEditorState>()(
       chartingAutoSkipAssigned: true,
       chartingAwaitingPick: false,
       chartingHighlightIds: [],
+      chartingHighlightWeights: {},
 
       isRecordingChart: false,
       recordedChartHits: [],
@@ -788,6 +791,7 @@ export const useLevelEditorStore = create<LevelEditorState>()(
       setChartingAutoSkipAssigned: (v) => set({ chartingAutoSkipAssigned: v }),
       setChartingAwaitingPick: (v) => set({ chartingAwaitingPick: v }),
       setChartingHighlightIds: (ids) => set({ chartingHighlightIds: ids }),
+      setChartingHighlightWeights: (weights) => set({ chartingHighlightWeights: weights }),
 
       assignNoteTarget: (noteId, trackId, targetId, targetType) => {
         const s = get();
@@ -799,7 +803,7 @@ export const useLevelEditorStore = create<LevelEditorState>()(
         note.targetId = targetId;
         note.targetType = targetType;
         const midiData = { ...s.midiData, tracks };
-        set({ midiData, chartingAwaitingPick: false, chartingHighlightIds: [] });
+        set({ midiData, chartingAwaitingPick: false, chartingHighlightIds: [], chartingHighlightWeights: {} });
         syncGameEventsFromMidi(midiData);
         get().commitHistory();
       },
@@ -908,6 +912,7 @@ export const useLevelEditorStore = create<LevelEditorState>()(
           chartingAutoSkipAssigned: true,
           chartingAwaitingPick: false,
           chartingHighlightIds: [],
+          chartingHighlightWeights: {},
           isRecordingChart: false,
           recordedChartHits: [],
           recordMatchPreview: null,

@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useEffect } from 'react';
 import * as PIXI from 'pixi.js';
+import { getInstrumentById } from '../../config/instruments';
 
 export interface BaseBlockProps {
   id: string;
@@ -22,10 +23,11 @@ export interface BaseBlockProps {
   onPointerLeave?: (e: PIXI.FederatedPointerEvent) => void;
   isInvalid?: boolean;
   isHighlighted?: boolean;
+  highlightIntensity?: number;
 }
 
 export const BaseBlock: React.FC<BaseBlockProps> = ({
-  x, y, pitch, instrument, volume = 1, isInteractive = true, blockColor, onPointerDown, onPointerUp, onPointerEnter, onPointerLeave, opacity = 1, showPitch, showInstrument, showVolume, playedAt, isSelected = false, isInvalid = false, isHighlighted = false
+  x, y, pitch, instrument, volume = 1, isInteractive = true, blockColor, onPointerDown, onPointerUp, onPointerEnter, onPointerLeave, opacity = 1, showPitch, showInstrument, showVolume, playedAt, isSelected = false, isInvalid = false, isHighlighted = false, highlightIntensity = 1
 }) => {
   const graphicsRef = useRef<PIXI.Graphics>(null);
   const ripplesRef = useRef<{id: number, progress: number}[]>([]);
@@ -60,7 +62,9 @@ export const BaseBlock: React.FC<BaseBlockProps> = ({
 
     if (isHighlighted) {
       g.roundRect(-6, -6, 72, 72, 10);
-      g.stroke({ width: 3, color: 0xffcc00, alpha: 0.9 + Math.sin(Date.now() / 150) * 0.1 });
+      g.stroke({ width: 3, color: 0x00d4ff, alpha: 0.4 + highlightIntensity * 0.6 });
+      g.roundRect(0, 0, 60, 60, 8);
+      g.fill({ color: 0x00d4ff, alpha: 0.08 + highlightIntensity * 0.12 });
     }
 
     g.roundRect(0, 0, 60, 60, 8); // Square block
@@ -79,7 +83,7 @@ export const BaseBlock: React.FC<BaseBlockProps> = ({
       g.roundRect(4, 50, 52 * volume, 6, 3);
       g.fill({ color: 0xffffff, alpha: 0.8 });
     }
-  }, [blockColor, opacity, showVolume, volume, isSelected, isInvalid, isHighlighted]);
+  }, [blockColor, opacity, showVolume, volume, isSelected, isInvalid, isHighlighted, highlightIntensity]);
 
   useEffect(() => {
     let animationFrameId: number;
@@ -103,11 +107,7 @@ export const BaseBlock: React.FC<BaseBlockProps> = ({
     return () => cancelAnimationFrame(animationFrameId);
   }, [draw]);
 
-  let instrumentIcon = '🎵';
-  if (instrument === 'piano') instrumentIcon = '🎹';
-  else if (instrument === 'synth') instrumentIcon = '📻';
-  else if (instrument === 'bass') instrumentIcon = '🎸';
-  else if (instrument === 'percussion') instrumentIcon = '🥁';
+  const instrumentIcon = getInstrumentById(instrument)?.icon ?? '🎵';
 
   return (
     <pixiContainer

@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useLevelEditorStore } from "../../store/useLevelEditorStore";
 import { getTrackColor } from "../../utils/trackColors";
+import { INSTRUMENT_REGISTRY } from "../../config/instruments";
+
 import {
   Plus,
   Copy,
@@ -18,22 +20,8 @@ import {
 } from "./EditorContextMenu";
 import { inputManager } from "../../inputs/InputManager";
 
-const getInstrumentIcon = (instrument: string) => {
-  switch (instrument) {
-    case "piano":
-      return "🎹";
-    case "bass":
-      return "🎸";
-    case "synth":
-      return "📻";
-    case "percussion":
-      return "🥁";
-    case "group_rect":
-      return "🟩";
-    default:
-      return "🎹";
-  }
-};
+const getInstrumentIcon = (instrument: string) =>
+  INSTRUMENT_REGISTRY.find(i => i.id === instrument)?.icon ?? "🎹";
 
 export const TrackPanel: React.FC = () => {
   const store = useLevelEditorStore();
@@ -327,41 +315,16 @@ export const TrackPanel: React.FC = () => {
               >
                 Instrument
               </div>
-              <EditorContextMenuItem
-                onClick={() => handleInstrumentChange("piano")}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  {getInstrumentIcon("piano")} Piano
-                </div>
-              </EditorContextMenuItem>
-              <EditorContextMenuItem
-                onClick={() => handleInstrumentChange("bass")}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  {getInstrumentIcon("bass")} Bass
-                </div>
-              </EditorContextMenuItem>
-              <EditorContextMenuItem
-                onClick={() => handleInstrumentChange("synth")}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  {getInstrumentIcon("synth")} Synth
-                </div>
-              </EditorContextMenuItem>
-              <EditorContextMenuItem
-                onClick={() => handleInstrumentChange("percussion")}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  {getInstrumentIcon("percussion")} Drums
-                </div>
-              </EditorContextMenuItem>
-              <EditorContextMenuItem
-                onClick={() => handleInstrumentChange("group_rect")}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  {getInstrumentIcon("group_rect")} Group Rect
-                </div>
-              </EditorContextMenuItem>
+              {INSTRUMENT_REGISTRY.map(instr => (
+                <EditorContextMenuItem
+                  key={instr.id}
+                  onClick={() => handleInstrumentChange(instr.id)}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {instr.icon} {instr.label}
+                  </div>
+                </EditorContextMenuItem>
+              ))}
               <EditorContextMenuDivider />
               <EditorContextMenuItem
                 danger

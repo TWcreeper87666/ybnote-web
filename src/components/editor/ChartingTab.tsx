@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useCallback, useMemo } from 'react';
 import { Play, Pause, ChevronLeft, ChevronRight, RotateCcw, Circle, Square } from 'lucide-react';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import { useStore } from '../../store/useStore';
-import { getAllChartNotes, getCandidateBlocks } from '../../utils/chartUtils';
+import { getAllChartNotes, getCandidateBlocks, blockDistance } from '../../utils/chartUtils';
 import { playNote } from '../../utils/audio';
 
 const formatTime = (seconds: number) => {
@@ -33,6 +33,29 @@ export const ChartingTab: React.FC = () => {
     store.setChartingPaused(true);
     const candidates = getCandidateBlocks(entry.note, entry.track);
     store.setChartingHighlightIds(candidates.map((c) => c.id));
+
+    // Find the last assigned block before this note to compute proximity weights
+    let lastPos: { x: number; y: number } | null = null;
+    for (let i = index - 1; i >= 0; i--) {
+      const prev = chartNotes[i];
+      if (prev?.note.targetId) {
+        const editorBlocks = useLevelEditorStore.getState().blocks;
+        const blk = editorBlocks.find((b) => b.id === prev.note.targetId)
+          ?? useStore.getState().blocks.find((b) => b.id === prev.note.targetId);
+        if (blk) { lastPos = blk; break; }
+      }
+    }
+
+    const weights: Record<string, number> = {};
+    if (lastPos && candidates.length > 0) {
+      const distances = candidates.map((c) => blockDistance(c, lastPos!));
+      const maxDist = Math.max(...distances, 1);
+      candidates.forEach((c, i) => { weights[c.id] = 1 - distances[i] / maxDist; });
+    } else {
+      candidates.forEach((c) => { weights[c.id] = 1; });
+    }
+    store.setChartingHighlightWeights(weights);
+
     if (!entry.note.targetId) {
       store.setChartingAwaitingPick(true);
     }

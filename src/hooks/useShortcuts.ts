@@ -7,7 +7,8 @@ import { inputManager } from "../inputs/InputManager";
 
 export const useShortcuts = (context: CanvasContextType = "playground") => {
   useEffect(() => {
-    const handleKeyDown = (key: string, e: KeyboardEvent) => {
+    const handleKeyDown = (_code: string, e: KeyboardEvent) => {
+      const key = e.key;
       let state = useStore.getState();
 
       // Disable shortcuts during active gameplay

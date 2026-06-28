@@ -155,6 +155,26 @@ export const LevelEditorPage: React.FC = () => {
             parseParsedMidiDataToPocketBlocks(midiData);
           },
         );
+
+        // Auto-assign unmatched notes to nearest canvas blocks
+        if (activeTab === "blocks") {
+          const hasUnmatched = midiData.tracks.some(
+            (t) => !t.isBackground && t.notes.some((n) => !n.targetId),
+          );
+          if (hasUnmatched) {
+            import("../utils/chartUtils").then(
+              ({ autoChart, syncGameEventsFromMidi }) => {
+                const updated = autoChart(midiData, {
+                  strategy: "nearest",
+                  onlyUnassigned: true,
+                  cdRadius: 0,
+                });
+                useLevelEditorStore.getState().setMidiData(updated);
+                syncGameEventsFromMidi(updated);
+              },
+            );
+          }
+        }
       }
     }
   }, [activeTab, setMode]);
