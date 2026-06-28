@@ -9,6 +9,7 @@ export interface Block {
   groupId?: string; // ID of the group this block belongs to
   playedAt?: number; // Timestamp of last play for animation
   playedVolumeMultiplier?: number; // Multiplier to use when playing this block
+  playedPitchOffset?: number; // Semitone offset applied at play time (from group rect)
   xOffset?: number; // for pocket canvas layout
   yOffset?: number; // for pocket canvas layout
   originalTime?: number; // for pocket canvas layout sorting
@@ -32,6 +33,7 @@ export interface GroupRect {
   keyBinding?: string;
   enabled?: boolean;
   groupId?: string;
+  pitchOffset: number;
 }
 
 export interface CameraState {

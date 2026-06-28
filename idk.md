@@ -1,10 +1,9 @@
 # bug
 audio delay when no interaction
-level-editor goto offset
-adding new point on tracks make notes behind trigger, and a particle stucks there
+holding key makes camera movement lag
 
 # muti tab
-warnning
+warning
 
 # midi
 整理樂器script, 方便新增

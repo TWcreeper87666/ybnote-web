@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect } from "react";
+import { inputManager } from "../../inputs/InputManager";
 
 export interface EditorContextMenuProps {
   x: number;
@@ -7,27 +8,35 @@ export interface EditorContextMenuProps {
   children: React.ReactNode;
 }
 
-export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({ x, y, onClose, children }) => {
+export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
+  x,
+  y,
+  onClose,
+  children,
+}) => {
   useEffect(() => {
     const handleClickOutside = () => onClose();
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    const handleKeyDown = (key: string) => {
+      if (key === "Escape") onClose();
     };
-    window.addEventListener('click', handleClickOutside);
-    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    window.addEventListener("click", handleClickOutside);
+    inputManager.on("keydown", handleKeyDown);
     return () => {
-      window.removeEventListener('click', handleClickOutside);
-      window.removeEventListener('keydown', handleKeyDown, { capture: true });
+      window.addEventListener("click", handleClickOutside);
+      inputManager.off("keydown", handleKeyDown);
     };
   }, [onClose]);
 
   return (
-    <div 
+    <div
       className="le-context-menu"
       style={{ top: y, left: x }}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
     >
       {children}
     </div>
@@ -39,10 +48,7 @@ export const EditorContextMenuItem: React.FC<{
   children: React.ReactNode;
   danger?: boolean;
 }> = ({ onClick, children, danger }) => (
-  <button 
-    className={`le-cm-item ${danger ? 'danger' : ''}`} 
-    onClick={onClick}
-  >
+  <button className={`le-cm-item ${danger ? "danger" : ""}`} onClick={onClick}>
     {children}
   </button>
 );

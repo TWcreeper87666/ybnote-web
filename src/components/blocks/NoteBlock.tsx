@@ -5,6 +5,7 @@ import { BaseBlock } from './BaseBlock';
 import { DrumBlock } from './DrumBlock';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import { getPitchColorNumber } from '../../utils/colors';
+import { shiftPitch } from '../../utils/pitchUtils';
 import { useCanvasContext } from '../canvas/CanvasContext';
 import type { CanvasContextType } from '../canvas/CanvasContext';
 import { useBlockDrag } from '../../hooks/useBlockDrag';
@@ -20,6 +21,7 @@ interface NoteBlockProps {
   instrument?: string;
   playedAt?: number;
   playedVolumeMultiplier?: number;
+  playedPitchOffset?: number;
   canvasContext?: CanvasContextType;
 }
 
@@ -29,6 +31,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({
   instrument = 'piano',
   playedAt,
   playedVolumeMultiplier = 1,
+  playedPitchOffset = 0,
   canvasContext: canvasContextProp,
 }) => {
   const selectedBlockIds = useActiveCanvasSelectedBlockIds();
@@ -69,14 +72,15 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({
 
       if (!isEditorPlaying) {
           import('../../utils/audio').then(({ playNote }) => {
-              playNote(pitch, volume * playedVolumeMultiplier, instrument);
+              const effectivePitch = playedPitchOffset !== 0 ? shiftPitch(pitch, playedPitchOffset) : pitch;
+              playNote(effectivePitch, volume * playedVolumeMultiplier, instrument);
               if (useStore.getState().mode === 'play') {
                  useStore.getState().setLatestPerformHit({ time: Date.now(), color: blockColor });
               }
           });
       }
     }
-  }, [playedAt, pitch, volume, instrument, playedVolumeMultiplier, blockColor, isEditor, isRecordingChart, id]);
+  }, [playedAt, pitch, volume, instrument, playedVolumeMultiplier, playedPitchOffset, blockColor, isEditor, isRecordingChart, id]);
 
 
 

@@ -1,17 +1,37 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useLevelEditorStore } from '../../store/useLevelEditorStore';
-import { getTrackColor } from '../../utils/trackColors';
-import { Plus, Copy, Trash2, Eye, EyeOff, Volume2, VolumeX, Blocks } from 'lucide-react';
-import { EditorContextMenu, EditorContextMenuItem, EditorContextMenuDivider } from './EditorContextMenu';
+import React, { useState, useRef, useEffect } from "react";
+import { useLevelEditorStore } from "../../store/useLevelEditorStore";
+import { getTrackColor } from "../../utils/trackColors";
+import {
+  Plus,
+  Copy,
+  Trash2,
+  Eye,
+  EyeOff,
+  Volume2,
+  VolumeX,
+  Blocks,
+} from "lucide-react";
+import {
+  EditorContextMenu,
+  EditorContextMenuItem,
+  EditorContextMenuDivider,
+} from "./EditorContextMenu";
+import { inputManager } from "../../inputs/InputManager";
 
 const getInstrumentIcon = (instrument: string) => {
   switch (instrument) {
-    case 'piano': return '🎹';
-    case 'bass': return '🎸';
-    case 'synth': return '📻';
-    case 'percussion': return '🥁';
-    case 'group_rect': return '🟩';
-    default: return '🎹';
+    case "piano":
+      return "🎹";
+    case "bass":
+      return "🎸";
+    case "synth":
+      return "📻";
+    case "percussion":
+      return "🥁";
+    case "group_rect":
+      return "🟩";
+    default:
+      return "🎹";
   }
 };
 
@@ -20,11 +40,15 @@ export const TrackPanel: React.FC = () => {
   const tracks = store.midiData?.tracks || [];
 
   const [renamingTrackId, setRenamingTrackId] = useState<number | null>(null);
-  const [renameInput, setRenameInput] = useState('');
+  const [renameInput, setRenameInput] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   // Context Menu State
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; trackId: number | null } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    trackId: number | null;
+  } | null>(null);
 
   // Rename focus
   useEffect(() => {
@@ -69,29 +93,35 @@ export const TrackPanel: React.FC = () => {
 
   // Global events
   useEffect(() => {
-    const handleGlobalKeydown = (e: KeyboardEvent) => {
+    const handleGlobalKeydown = (key: string, e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
 
-      if (e.key === 'F2' && store.selectedMidiTrackId !== null) {
+      if (key === "F2" && store.selectedMidiTrackId !== null) {
         e.preventDefault();
-        const track = tracks.find(t => t.id === store.selectedMidiTrackId);
+        const track = tracks.find((t) => t.id === store.selectedMidiTrackId);
         if (track) startRename(track.id, track.name);
       }
 
-      if ((e.key === 'Delete' || e.key === 'Backspace') && store.selectedMidiTrackId !== null) {
+      if (
+        (key === "Delete" || key === "Backspace") &&
+        store.selectedMidiTrackId !== null
+      ) {
         // If focus is inside TrackPanel or no notes are selected in PianoRoll
-        if (target.closest('.le-track-panel') || store.selectedNoteIds.size === 0) {
+        if (
+          target.closest(".le-track-panel") ||
+          store.selectedNoteIds.size === 0
+        ) {
           e.preventDefault();
           handleRemoveTrack(store.selectedMidiTrackId);
         }
       }
     };
 
-    window.addEventListener('keydown', handleGlobalKeydown);
+    inputManager.on("keydown", handleGlobalKeydown);
 
     return () => {
-      window.removeEventListener('keydown', handleGlobalKeydown);
+      inputManager.off("keydown", handleGlobalKeydown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.selectedMidiTrackId, tracks, store.selectedNoteIds.size]);
@@ -102,18 +132,20 @@ export const TrackPanel: React.FC = () => {
     setContextMenu({ x: e.clientX, y: e.clientY, trackId });
   };
 
-  const handleContextAction = (action: 'rename' | 'duplicate' | 'remove' | 'add') => {
+  const handleContextAction = (
+    action: "rename" | "duplicate" | "remove" | "add",
+  ) => {
     setContextMenu(null);
-    if (action === 'add') {
+    if (action === "add") {
       handleAddTrack();
     } else if (contextMenu && contextMenu.trackId !== null) {
       const targetId = contextMenu.trackId;
-      if (action === 'rename') {
-        const track = tracks.find(t => t.id === targetId);
+      if (action === "rename") {
+        const track = tracks.find((t) => t.id === targetId);
         if (track) startRename(track.id, track.name);
-      } else if (action === 'duplicate') {
+      } else if (action === "duplicate") {
         store.duplicateMidiTrack(targetId);
-      } else if (action === 'remove') {
+      } else if (action === "remove") {
         handleRemoveTrack(targetId);
       }
     }
@@ -133,8 +165,11 @@ export const TrackPanel: React.FC = () => {
         <span className="le-tp-count">{tracks.length}</span>
       </div>
 
-      <div className="le-tp-list" onContextMenu={(e) => openContextMenu(e, null)}>
-        {tracks.map(track => {
+      <div
+        className="le-tp-list"
+        onContextMenu={(e) => openContextMenu(e, null)}
+      >
+        {tracks.map((track) => {
           const isActive = store.selectedMidiTrackId === track.id;
           const isMuted = !!store.trackMute[track.id];
           const isGhostVisible = !!store.ghostNoteVisibility[track.id];
@@ -143,7 +178,7 @@ export const TrackPanel: React.FC = () => {
             <div
               key={track.id}
               tabIndex={-1}
-              className={`le-tp-item ${isActive ? 'active' : ''}`}
+              className={`le-tp-item ${isActive ? "active" : ""}`}
               onClick={(e) => {
                 store.selectMidiTrack(track.id);
                 e.currentTarget.focus();
@@ -151,29 +186,36 @@ export const TrackPanel: React.FC = () => {
               onDoubleClick={() => startRename(track.id, track.name)}
               onContextMenu={(e) => openContextMenu(e, track.id)}
             >
-              <div className="le-tp-color" style={{ backgroundColor: getTrackColor(track.id) }} />
-              
+              <div
+                className="le-tp-color"
+                style={{ backgroundColor: getTrackColor(track.id) }}
+              />
+
               <div className="le-tp-info">
                 {renamingTrackId === track.id ? (
                   <input
                     ref={renameInputRef}
                     value={renameInput}
-                    onChange={e => setRenameInput(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') finishRename();
-                      if (e.key === 'Escape') cancelRename();
+                    onChange={(e) => setRenameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") finishRename();
+                      if (e.key === "Escape") cancelRename();
                     }}
                     onBlur={finishRename}
-                    onClick={e => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
                     className="le-tp-rename"
                   />
                 ) : (
                   <>
                     <span className="le-tp-name">
-                      <span style={{ marginRight: 6 }} title={track.instrument}>{getInstrumentIcon(track.instrument)}</span>
+                      <span style={{ marginRight: 6 }} title={track.instrument}>
+                        {getInstrumentIcon(track.instrument)}
+                      </span>
                       {track.name}
                     </span>
-                    <span className="le-tp-notes">{track.notes.length} notes</span>
+                    <span className="le-tp-notes">
+                      {track.notes.length} notes
+                    </span>
                   </>
                 )}
               </div>
@@ -181,9 +223,14 @@ export const TrackPanel: React.FC = () => {
               <div className="le-tp-actions">
                 {!isActive && (
                   <button
-                    className={`le-tp-icon-btn ${isGhostVisible ? 'ghost-active' : ''}`}
-                    title={isGhostVisible ? 'Hide Ghost Notes' : 'Show Ghost Notes'}
-                    onClick={(e) => { e.stopPropagation(); store.toggleGhostNotes(track.id); }}
+                    className={`le-tp-icon-btn ${isGhostVisible ? "ghost-active" : ""}`}
+                    title={
+                      isGhostVisible ? "Hide Ghost Notes" : "Show Ghost Notes"
+                    }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      store.toggleGhostNotes(track.id);
+                    }}
                   >
                     {isGhostVisible ? <Eye size={14} /> : <EyeOff size={14} />}
                   </button>
@@ -191,18 +238,30 @@ export const TrackPanel: React.FC = () => {
                 <button
                   className="le-tp-icon-btn"
                   style={{
-                    color: track.isBackground ? 'rgba(255,255,255,0.4)' : '#a5b4fc',
-                    borderRadius: 4
+                    color: track.isBackground
+                      ? "rgba(255,255,255,0.4)"
+                      : "#a5b4fc",
+                    borderRadius: 4,
                   }}
-                  title={track.isBackground ? 'Play as Background (Hidden in Blocks)' : 'Include in Game Blocks'}
-                  onClick={(e) => { e.stopPropagation(); store.toggleMidiTrackBackground(track.id); }}
+                  title={
+                    track.isBackground
+                      ? "Play as Background (Hidden in Blocks)"
+                      : "Include in Game Blocks"
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    store.toggleMidiTrackBackground(track.id);
+                  }}
                 >
                   <Blocks size={14} />
                 </button>
                 <button
-                  className={`le-tp-icon-btn ${isMuted ? 'muted' : ''}`}
-                  title={isMuted ? 'Unmute Track' : 'Mute Track'}
-                  onClick={(e) => { e.stopPropagation(); store.toggleTrackMute(track.id); }}
+                  className={`le-tp-icon-btn ${isMuted ? "muted" : ""}`}
+                  title={isMuted ? "Unmute Track" : "Mute Track"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    store.toggleTrackMute(track.id);
+                  }}
                 >
                   {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
                 </button>
@@ -213,45 +272,108 @@ export const TrackPanel: React.FC = () => {
       </div>
 
       <div className="le-tp-footer">
-        <button className="le-tp-action-btn" onClick={handleAddTrack} title="Add Track">
+        <button
+          className="le-tp-action-btn"
+          onClick={handleAddTrack}
+          title="Add Track"
+        >
           <Plus size={16} />
         </button>
-        <button className="le-tp-action-btn" onClick={handleDuplicateTrack} disabled={store.selectedMidiTrackId === null} title="Duplicate Track">
+        <button
+          className="le-tp-action-btn"
+          onClick={handleDuplicateTrack}
+          disabled={store.selectedMidiTrackId === null}
+          title="Duplicate Track"
+        >
           <Copy size={14} />
         </button>
-        <button className="le-tp-action-btn remove" onClick={() => handleRemoveTrack(null)} disabled={store.selectedMidiTrackId === null || tracks.length === 0} title="Remove Track">
+        <button
+          className="le-tp-action-btn remove"
+          onClick={() => handleRemoveTrack(null)}
+          disabled={store.selectedMidiTrackId === null || tracks.length === 0}
+          title="Remove Track"
+        >
           <Trash2 size={14} />
         </button>
       </div>
 
       {contextMenu && (
-        <EditorContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
+        <EditorContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+        >
           {contextMenu.trackId !== null ? (
             <>
-              <EditorContextMenuItem onClick={() => handleContextAction('rename')}>Rename (F2)</EditorContextMenuItem>
-              <EditorContextMenuItem onClick={() => handleContextAction('duplicate')}>Duplicate</EditorContextMenuItem>
-              <EditorContextMenuDivider />
-              <div style={{ padding: '4px 12px', fontSize: 11, opacity: 0.6, textTransform: 'uppercase', fontWeight: 'bold' }}>Instrument</div>
-              <EditorContextMenuItem onClick={() => handleInstrumentChange('piano')}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('piano')} Piano</div>
+              <EditorContextMenuItem
+                onClick={() => handleContextAction("rename")}
+              >
+                Rename (F2)
               </EditorContextMenuItem>
-              <EditorContextMenuItem onClick={() => handleInstrumentChange('bass')}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('bass')} Bass</div>
-              </EditorContextMenuItem>
-              <EditorContextMenuItem onClick={() => handleInstrumentChange('synth')}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('synth')} Synth</div>
-              </EditorContextMenuItem>
-              <EditorContextMenuItem onClick={() => handleInstrumentChange('percussion')}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('percussion')} Drums</div>
-              </EditorContextMenuItem>
-              <EditorContextMenuItem onClick={() => handleInstrumentChange('group_rect')}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getInstrumentIcon('group_rect')} Group Rect</div>
+              <EditorContextMenuItem
+                onClick={() => handleContextAction("duplicate")}
+              >
+                Duplicate
               </EditorContextMenuItem>
               <EditorContextMenuDivider />
-              <EditorContextMenuItem danger onClick={() => handleContextAction('remove')}>Remove</EditorContextMenuItem>
+              <div
+                style={{
+                  padding: "4px 12px",
+                  fontSize: 11,
+                  opacity: 0.6,
+                  textTransform: "uppercase",
+                  fontWeight: "bold",
+                }}
+              >
+                Instrument
+              </div>
+              <EditorContextMenuItem
+                onClick={() => handleInstrumentChange("piano")}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {getInstrumentIcon("piano")} Piano
+                </div>
+              </EditorContextMenuItem>
+              <EditorContextMenuItem
+                onClick={() => handleInstrumentChange("bass")}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {getInstrumentIcon("bass")} Bass
+                </div>
+              </EditorContextMenuItem>
+              <EditorContextMenuItem
+                onClick={() => handleInstrumentChange("synth")}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {getInstrumentIcon("synth")} Synth
+                </div>
+              </EditorContextMenuItem>
+              <EditorContextMenuItem
+                onClick={() => handleInstrumentChange("percussion")}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {getInstrumentIcon("percussion")} Drums
+                </div>
+              </EditorContextMenuItem>
+              <EditorContextMenuItem
+                onClick={() => handleInstrumentChange("group_rect")}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {getInstrumentIcon("group_rect")} Group Rect
+                </div>
+              </EditorContextMenuItem>
+              <EditorContextMenuDivider />
+              <EditorContextMenuItem
+                danger
+                onClick={() => handleContextAction("remove")}
+              >
+                Remove
+              </EditorContextMenuItem>
             </>
           ) : (
-            <EditorContextMenuItem onClick={() => handleContextAction('add')}>Add Track</EditorContextMenuItem>
+            <EditorContextMenuItem onClick={() => handleContextAction("add")}>
+              Add Track
+            </EditorContextMenuItem>
           )}
         </EditorContextMenu>
       )}

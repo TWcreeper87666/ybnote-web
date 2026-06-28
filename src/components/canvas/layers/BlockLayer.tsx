@@ -25,6 +25,7 @@ export const BlockLayer: React.FC<BlockLayerProps> = ({ context }) => {
           instrument={block.instrument}
           playedAt={block.playedAt}
           playedVolumeMultiplier={block.playedVolumeMultiplier}
+          playedPitchOffset={block.playedPitchOffset}
           canvasContext={context}
         />
       ))}

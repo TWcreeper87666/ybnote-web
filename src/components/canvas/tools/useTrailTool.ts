@@ -26,7 +26,15 @@ export function useTrailTool(
       if (lineIntersectsRect(x1, y1, x2, y2, b.x, b.y, 60, 60)) {
         currentFrameIntersected.add(b.id);
         if (!intersectedBlocksRef.current.has(b.id)) {
-          canvas.updateBlock(b.id, { playedAt: Date.now(), playedVolumeMultiplier: 1 });
+          const containingRect = canvas.groupRects.find(g =>
+            g.enabled !== false &&
+            b.x < g.x + g.w && b.x + 60 > g.x && b.y < g.y + g.h && b.y + 60 > g.y
+          );
+          canvas.updateBlock(b.id, {
+            playedAt: Date.now(),
+            playedVolumeMultiplier: containingRect?.volume ?? 1,
+            playedPitchOffset: containingRect?.pitchOffset ?? 0,
+          });
         }
       }
     });
@@ -44,7 +52,7 @@ export function useTrailTool(
             if (blocksInside.length > 0) {
               canvas.updateBlocks(blocksInside.map(b => ({
                 id: b.id,
-                updates: { playedAt: Date.now(), playedVolumeMultiplier: g.volume ?? 1 },
+                updates: { playedAt: Date.now(), playedVolumeMultiplier: g.volume ?? 1, playedPitchOffset: g.pitchOffset ?? 0 },
               })));
             }
           }
