@@ -55,12 +55,12 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({ context }) => {
 
   // ── Scroll-wheel pitch / volume / zoom ─────────────────────────────────────
   useCanvasCamera({
-    isPlayMode: mode === 'play',
+    isPerformMode: mode === 'perform',
     isActive: true,
     isEditorCanvas: context === 'editor',
     onWheelIntercept: React.useCallback((e: WheelEvent) => {
       const canvas = getCanvasState(context);
-      if (useStore.getState().mode === 'play') return false;
+      if (useStore.getState().mode === 'perform') return false;
       if (context === 'editor' && useLevelEditorStore.getState().activeTab === 'charting') return false;
 
       let targetBlockId = canvas.hoveredBlockId;
@@ -118,7 +118,7 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({ context }) => {
   // ── Pixi pointer handlers ───────────────────────────────────────────────────
   const handlePointerDown = (e: PIXI.FederatedPointerEvent) => {
     useStore.getState().setInteractionContext('main');
-    if (useStore.getState().mode === 'play') return;
+    if (useStore.getState().mode === 'perform') return;
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 
     if (cameraTool.onPointerDown(e)) return;
@@ -135,7 +135,7 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({ context }) => {
   };
 
   const handlePointerMove = (e: PIXI.FederatedPointerEvent) => {
-    if (useStore.getState().mode === 'play') return;
+    if (useStore.getState().mode === 'perform') return;
     cameraTool.onPointerMove(e)
       || drawGroup.onPointerMove(e)
       || select.onPointerMove(e)

@@ -37,7 +37,7 @@ export const SelectionPropertiesHud: React.FC<{ bottomOffset?: number }> = ({ bo
 
   const totalSelected = selectedBlockIds.length + selectedTrackIds.length + selectedGroupRectIds.length;
 
-  if (!showSelectionHud || totalSelected === 0 || mode === 'play') {
+  if (!showSelectionHud || totalSelected === 0 || mode === 'perform') {
     return null;
   }
 

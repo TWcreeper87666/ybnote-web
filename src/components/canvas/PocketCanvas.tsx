@@ -210,7 +210,6 @@ export const PocketCanvas: React.FC<PocketCanvasProps> = ({
   };
 
   const handlePointerDown = (e: PIXI.FederatedPointerEvent) => {
-    useStore.getState().setInteractionContext("pocket");
     const button =
       (e as unknown as { data?: { button?: number } }).data?.button ??
       (e.nativeEvent as PointerEvent)?.button ??

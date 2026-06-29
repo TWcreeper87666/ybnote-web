@@ -40,6 +40,7 @@ export const useApproachCircles = (
   // 監聽遊戲重置，重新初始化陣列
   useEffect(() => {
     gameTimeRef.current = -APPROACH_TIME;
+    window.__currentGameTime = -APPROACH_TIME; // 清除上局的舊值，防止 audio effect 誤判
     pendingCirclesRef.current = gameEvents.filter((e) => e.blockId !== "background").sort((a, b) => a.time - b.time);
     pendingBgAudioRef.current = gameEvents.filter((e) => e.blockId === "background").sort((a, b) => a.time - b.time);
     activeCirclesRef.current = [];

@@ -179,8 +179,8 @@ export const Toolbar: React.FC = () => {
           />
 
           <ToolbarButton
-            active={mode === "play"}
-            onClick={() => setMode(mode === "play" ? "select" : "play")}
+            active={mode === "perform"}
+            onClick={() => setMode(mode === "perform" ? "select" : "perform")}
             title="Perform Mode (5)"
             icon={<Wand2 size={24} />}
           />

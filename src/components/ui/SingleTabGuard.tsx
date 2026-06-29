@@ -1,5 +1,5 @@
-import { useTabLock } from '../../hooks/useTabLock';
-import { useSettingsStore } from '../../store/useSettingsStore';
+import { useTabLock } from "../../hooks/useTabLock";
+import { useSettingsStore } from "../../store/useSettingsStore";
 
 interface Props {
   lockName: string;
@@ -10,36 +10,35 @@ export function SingleTabGuard({ lockName, children }: Props) {
   const status = useTabLock(lockName);
   const theme = useSettingsStore((s) => s.theme);
 
-  if (status === 'loading') return null;
+  // 避免在檢查鎖定的那幾毫秒畫面閃爍
+  if (status === "checking") {
+    return null; 
+  }
 
-  if (status === 'blocked') {
+  if (status === "blocked") {
     return (
       <div
         className={`app-container ${theme}`}
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100vh',
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100vh",
         }}
       >
-        <div style={{ textAlign: 'center', padding: 32, maxWidth: 480 }}>
+        <div style={{ textAlign: "center", padding: 32, maxWidth: 480 }}>
           <h2
             style={{
-              color: 'var(--text-primary)',
+              color: "var(--text-primary)",
               fontSize: 22,
               marginBottom: 12,
             }}
           >
-            Already open in another tab
+            This page is already open in another tab
           </h2>
-          <p
-            style={{
-              color: 'var(--text-secondary)',
-              lineHeight: 1.6,
-            }}
-          >
-            This page is already open in another tab. Close the other tab to use it here.
+
+          <p style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>
+            Please close the other tab before continuing.
           </p>
         </div>
       </div>

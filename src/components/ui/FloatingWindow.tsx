@@ -13,6 +13,7 @@ interface FloatingWindowProps {
   style?: React.CSSProperties;
   headerStyle?: React.CSSProperties;
   anchorSelector?: string;
+  onPositionChange?: (pos: { x: number; y: number }) => void;
 }
 
 export const FloatingWindow: React.FC<FloatingWindowProps> = ({
@@ -26,7 +27,8 @@ export const FloatingWindow: React.FC<FloatingWindowProps> = ({
   className = '',
   style = {},
   headerStyle = {},
-  anchorSelector
+  anchorSelector,
+  onPositionChange,
 }) => {
   const [position, setPosition] = useState(() => {
     if (initialPosition) return initialPosition;
@@ -102,6 +104,7 @@ export const FloatingWindow: React.FC<FloatingWindowProps> = ({
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     setIsDragging(false);
     e.currentTarget.releasePointerCapture(e.pointerId);
+    onPositionChange?.(position);
   };
 
   return (

@@ -50,8 +50,8 @@ export interface CanvasSliceActions {
   selectBlock: (id: string, multi?: boolean) => void;
   selectTrack: (id: string, multi?: boolean) => void;
   selectGroupRect: (id: string, multi?: boolean) => void;
-  selectAll: () => void;
-  selectAllBlocks: () => void;
+  selectAll: (groupRectIds?: string[]) => void;
+  selectAllBlocks: (groupRectIds?: string[]) => void;
   clearSelection: () => void;
   mutateBlocks: (
     targetIds: string[],
@@ -63,8 +63,8 @@ export interface CanvasSliceActions {
   removeGroupRect: (id: string) => void;
   groupSelected: () => void;
   ungroupSelected: () => void;
-  copySelected: () => void;
-  pasteClipboard: () => void;
+  copySelected: (isPocket?: boolean) => void;
+  pasteClipboard: (at?: { x: number; y: number }) => void;
   duplicateSelected: () => void;
   updateCamera: (camera: Partial<CameraState>) => void;
   updatePocketCamera: (camera: Partial<CameraState>) => void;
@@ -306,16 +306,16 @@ export const buildCanvasActions = <S extends CanvasSliceState>(
     };
   }),
 
-  selectAll: () => set((state) => {
-    if (state.selectedGroupRectIds.length > 0) {
-      const selectedRects = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
+  selectAll: (groupRectIds?: string[]) => set((state) => {
+    if (groupRectIds && groupRectIds.length > 0) {
+      const targetRects = state.groupRects.filter(g => groupRectIds.includes(g.id));
       const isInside = (x: number, y: number, w = 60, h = 60) =>
-        selectedRects.some(g => x < g.x + g.w && x + w > g.x && y < g.y + g.h && y + h > g.y);
+        targetRects.some(g => x < g.x + g.w && x + w > g.x && y < g.y + g.h && y + h > g.y);
       return {
         ...state,
         selectedBlockIds: state.blocks.filter(b => isInside(b.x, b.y)).map(b => b.id),
         selectedTrackIds: state.tracks.filter(t => t.nodes.some(n => isInside(n.x, n.y, 10, 10))).map(t => t.id),
-        selectedGroupRectIds: state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id) || isInside(g.x, g.y, g.w, g.h)).map(g => g.id),
+        selectedGroupRectIds: state.groupRects.filter(g => groupRectIds.includes(g.id) || isInside(g.x, g.y, g.w, g.h)).map(g => g.id),
       };
     }
     return {
@@ -326,16 +326,16 @@ export const buildCanvasActions = <S extends CanvasSliceState>(
     };
   }),
 
-  selectAllBlocks: () => set((state) => {
-    if (state.selectedGroupRectIds.length > 0) {
-      const selectedRects = state.groupRects.filter(g => state.selectedGroupRectIds.includes(g.id));
+  selectAllBlocks: (groupRectIds?: string[]) => set((state) => {
+    if (groupRectIds && groupRectIds.length > 0) {
+      const targetRects = state.groupRects.filter(g => groupRectIds.includes(g.id));
       const isInside = (x: number, y: number, w = 60, h = 60) =>
-        selectedRects.some(g => x < g.x + g.w && x + w > g.x && y < g.y + g.h && y + h > g.y);
+        targetRects.some(g => x < g.x + g.w && x + w > g.x && y < g.y + g.h && y + h > g.y);
       return {
         ...state,
         selectedBlockIds: state.blocks.filter(b => isInside(b.x, b.y)).map(b => b.id),
         selectedTrackIds: [],
-        selectedGroupRectIds: state.selectedGroupRectIds,
+        selectedGroupRectIds: groupRectIds,
       };
     }
     return { ...state, selectedBlockIds: state.blocks.map(b => b.id), selectedTrackIds: [], selectedGroupRectIds: [] };
@@ -415,9 +415,9 @@ export const buildCanvasActions = <S extends CanvasSliceState>(
     };
   }),
 
-  copySelected: () => {
+  copySelected: (isPocket?: boolean) => {
     const state = get();
-    if (state.interactionContext === 'pocket') {
+    if (isPocket ?? state.interactionContext === 'pocket') {
       const blocksToCopy = state.arrangedPocketBlocks
         .filter(b => state.selectedPocketBlockIds.includes(b.id))
         .map(b => ({ ...b, x: (b as unknown as { xOffset: number }).xOffset || 0, y: (b as unknown as { yOffset: number }).yOffset || 0 }));
@@ -430,14 +430,23 @@ export const buildCanvasActions = <S extends CanvasSliceState>(
     set((s) => ({ ...s, clipboardBlocks: blocksToCopy, clipboardTracks: tracksToCopy, clipboardGroupRects: groupRectsToCopy }));
   },
 
-  pasteClipboard: () => set((state) => {
+  pasteClipboard: (at?: { x: number; y: number }) => set((state) => {
     if (state.clipboardBlocks.length === 0 && state.clipboardTracks.length === 0 && state.clipboardGroupRects.length === 0) return state;
-    const newBlocks = state.clipboardBlocks.map(b => ({ ...b, id: generateId(), x: b.x + 20, y: b.y + 20, groupId: undefined }));
+    let dx = 20, dy = 20;
+    if (at !== undefined && state.clipboardBlocks.length > 0) {
+      const xs = state.clipboardBlocks.map(b => b.x);
+      const ys = state.clipboardBlocks.map(b => b.y);
+      const centerX = (Math.min(...xs) + Math.max(...xs) + 60) / 2;
+      const centerY = (Math.min(...ys) + Math.max(...ys) + 60) / 2;
+      dx = at.x - centerX;
+      dy = at.y - centerY;
+    }
+    const newBlocks = state.clipboardBlocks.map(b => ({ ...b, id: generateId(), x: b.x + dx, y: b.y + dy, groupId: undefined }));
     const newTracks = state.clipboardTracks.map(t => ({
       ...t, id: generateId(),
-      nodes: t.nodes.map(n => ({ ...n, id: generateId(), x: n.x + 20, y: n.y + 20 }))
+      nodes: t.nodes.map(n => ({ ...n, id: generateId(), x: n.x + dx, y: n.y + dy }))
     }));
-    const newGroupRects = state.clipboardGroupRects.map(g => ({ ...g, id: generateId(), x: g.x + 20, y: g.y + 20 }));
+    const newGroupRects = state.clipboardGroupRects.map(g => ({ ...g, id: generateId(), x: g.x + dx, y: g.y + dy }));
     return {
       ...state,
       blocks: [...state.blocks, ...newBlocks],
@@ -465,7 +474,7 @@ export const buildCanvasActions = <S extends CanvasSliceState>(
   })),
 
   setMode: (mode) => set((state) => {
-    const clearOnModeChange = mode === 'draw_track' || mode === 'draw_group' || mode === 'play';
+    const clearOnModeChange = mode === 'draw_track' || mode === 'draw_group' || mode === 'perform';
     return {
       ...state,
       mode,

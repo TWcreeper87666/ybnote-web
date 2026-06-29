@@ -2,18 +2,17 @@ import { useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { useGameStore } from '../store/useGameStore';
 import { useLevelEditorStore } from '../store/useLevelEditorStore';
-import { useSettingsStore } from '../store/useSettingsStore';
 import { getCanvasCenter, clampZoom } from '../utils/canvasUtils';
 
 interface UseCanvasCameraOptions {
-  isPlayMode: boolean;
+  isPerformMode: boolean;
   isActive: boolean;
   isGameCanvas?: boolean;
   isEditorCanvas?: boolean;
   onWheelIntercept?: (e: WheelEvent) => boolean;
 }
 
-export const useCanvasCamera = ({ isPlayMode, isActive, isGameCanvas, isEditorCanvas, onWheelIntercept }: UseCanvasCameraOptions) => {
+export const useCanvasCamera = ({ isPerformMode, isActive, isGameCanvas, isEditorCanvas, onWheelIntercept }: UseCanvasCameraOptions) => {
   // Desktop Wheel
   useEffect(() => {
     if (!isActive) return;
@@ -38,12 +37,10 @@ export const useCanvasCamera = ({ isPlayMode, isActive, isGameCanvas, isEditorCa
       const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('canvas');
       const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
 
-      const mode = useSettingsStore.getState().mobileControlMode;
-      const isCrosshair = isPlayMode && mode === 'crosshair';
       const context = isGameCanvas ? 'game' : isEditorCanvas ? 'editor' : 'playground';
-      const center = isCrosshair ? getCanvasCenter(context) : null;
-      const globalX = isCrosshair ? center!.x - rect.left : e.clientX - rect.left;
-      const globalY = isCrosshair ? center!.y - rect.top : e.clientY - rect.top;
+      const center = isPerformMode ? getCanvasCenter(context) : null;
+      const globalX = isPerformMode ? center!.x - rect.left : e.clientX - rect.left;
+      const globalY = isPerformMode ? center!.y - rect.top : e.clientY - rect.top;
 
       const localX = (globalX - activeCamera.x) / oldZoom;
       const localY = (globalY - activeCamera.y) / oldZoom;
@@ -62,7 +59,7 @@ export const useCanvasCamera = ({ isPlayMode, isActive, isGameCanvas, isEditorCa
 
     document.addEventListener('wheel', handler, { passive: false });
     return () => document.removeEventListener('wheel', handler);
-  }, [isActive, isPlayMode, onWheelIntercept, isGameCanvas]);
+  }, [isActive, isPerformMode, onWheelIntercept, isGameCanvas]);
 
 
 };

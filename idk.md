@@ -2,15 +2,12 @@
 audio delay when no interaction
 holding key makes camera movement lag
 
-# canvas
-- pocket canavs drum
-
-# muti tab
-warning
-
 # game page import .mid
-midi note extract algorithm, only main melody(or unlimited noteblock and group rect?)
-track select
+- after monophonize, midi info didn't update (preview panel, too)
+- track condition, monophonize as a record(history)
+- smart arrange params input field
+- add group rect, allow multiple same note (and smart arrange v2 for auto chord group rect, and better placement for multiple same note?)
+
 
 # pocket canavs
 - instrument filter, tracks filter?
@@ -48,6 +45,7 @@ mobile editor/level-editor page
 
 # optimize
 
+開啟時會閃一下(動畫避免?)
 charting render should not in noteblock
 css seperate
 template check

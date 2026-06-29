@@ -55,6 +55,8 @@ class InputManager {
     this.listeners.keyup.forEach((callback) => callback(e.code, e));
   };
 
+  public mouseClient: { x: number; y: number } = { x: 0, y: 0 };
+
   // ===== 游標 / 觸控處理 =====
   private onPointerDown = (e: PointerEvent) => {
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -62,6 +64,7 @@ class InputManager {
   };
 
   private onPointerMove = (e: PointerEvent) => {
+    this.mouseClient = { x: e.clientX, y: e.clientY };
     if (this.pointers.has(e.pointerId)) {
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }

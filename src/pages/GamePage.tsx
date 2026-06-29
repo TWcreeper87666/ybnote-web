@@ -1,8 +1,12 @@
 import { useEffect, useState, useRef } from "react";
 import { GameCanvas } from "../components/canvas/GameCanvas";
 import { CanvasProvider } from "../store/CanvasProvider";
-import { parseMidiForGame } from "../utils/midiUtils";
+import {
+  parseMidiForGame, getMidiTrackInfos, monophonizeTrack,
+  type MidiTrackInfo, type MonophonicMethod, type MidiTrackNote,
+} from "../utils/midiUtils";
 import { importLevel } from "../utils/levelUtils";
+import { TrackSelectionModal, ModifyPanel } from "../components/game";
 import {
   Upload,
   SkipForward,
@@ -17,19 +21,23 @@ import {
   HelpCircle,
   Home,
   LayoutList,
+  Info,
+  SlidersHorizontal,
 } from "lucide-react";
 import { SettingsPanel } from "../components/ui/SettingsPanel";
 import { ModalPanel } from "../components/ui/ModalPanel";
 import { OutlinerPanel } from "../components/ui/OutlinerPanel";
 import { SelectionPropertiesHud } from "../components/ui/SelectionPropertiesHud";
+import { FloatingWindow } from "../components/ui/FloatingWindow";
 import { playNote } from "../utils/audio";
 import { useStore } from "../store/useStore";
 import { useGameStore } from "../store/useGameStore";
 import { useSettingsStore } from "../store/useSettingsStore";
-import { useLevelEditorStore } from "../store/useLevelEditorStore";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useShortcuts } from "../hooks/useShortcuts";
 import { useUIStore } from "../store/useUIStore";
+
+let savedMetaPanelPos: { x: number; y: number } | undefined = undefined;
 
 const ProgressBar: React.FC = () => {
   const barRef = useRef<HTMLDivElement>(null);
@@ -127,9 +135,17 @@ export const GamePage: React.FC = () => {
   const previewTimeOffsetRef = useRef(0);
   const lastPlayedEventIndexRef = useRef(0);
 
+  const [isMetaPanelOpen, setIsMetaPanelOpen] = useState(false);
   const [isResuming, setIsResuming] = useState(false);
   const [resumeCount, setResumeCount] = useState(3);
   const isResumingRef = useRef(false);
+
+  const [pendingMidiFile, setPendingMidiFile] = useState<File | null>(null);
+  const [currentMidiFile, setCurrentMidiFile] = useState<File | null>(null);
+  const [midiTrackInfos, setMidiTrackInfos] = useState<MidiTrackInfo[]>([]);
+  const [trackMode, setTrackMode] = useState<Map<number, "interactive" | "background" | "off">>(new Map());
+  const [isModifyOpen, setIsModifyOpen] = useState(false);
+  const [gridCols, setGridCols] = useState(8);
 
   useEffect(() => {
     isResumingRef.current = isResuming;
@@ -220,22 +236,44 @@ export const GamePage: React.FC = () => {
     };
   }, [gamePhase, isMobile]);
 
+  // Force-buffer audio as soon as the URL is available so first play has no delay
+  useEffect(() => {
+    if (audioRef.current && gameAudioUrl) {
+      audioRef.current.load();
+    }
+  }, [gameAudioUrl]);
+
   // Audio playback for Play mode
   useEffect(() => {
     if (gamePhase !== "play") return;
+    // Reset audio to start; game MIDI always starts from time 0
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
     let rafId: number;
     let started = false;
+    let syncCheckCounter = 0;
     const tick = () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const currentSyncTime = (window as any).__currentGameTime;
-      const offset = useLevelEditorStore.getState().offset;
+      const currentSyncTime = (window as any).__currentGameTime ?? -800;
 
-      if (audioRef.current && currentSyncTime + offset >= 0) {
+      if (audioRef.current && currentSyncTime >= 0) {
         if (!started) {
-          audioRef.current.currentTime = (currentSyncTime + offset) / 1000;
+          audioRef.current.currentTime = currentSyncTime / 1000;
           audioRef.current.playbackRate = useGameStore.getState().gameSpeed;
           audioRef.current.play().catch((e) => console.warn(e));
           started = true;
+          syncCheckCounter = 0;
+        } else {
+          // Periodic drift correction: every ~60 frames check audio vs MIDI clock
+          syncCheckCounter++;
+          if (syncCheckCounter % 60 === 0) {
+            const audioPosMs = audioRef.current.currentTime * 1000;
+            if (Math.abs(audioPosMs - currentSyncTime) > 200) {
+              audioRef.current.currentTime = currentSyncTime / 1000;
+            }
+          }
         }
       }
       rafId = requestAnimationFrame(tick);
@@ -252,8 +290,7 @@ export const GamePage: React.FC = () => {
   useEffect(() => {
     if (audioRef.current) {
       if (gamePhase === "arrange" && previewPlaying) {
-        const offset = useLevelEditorStore.getState().offset;
-        const syncTime = previewTime + offset;
+        const syncTime = previewTime;
         if (syncTime >= 0) {
           audioRef.current.currentTime = syncTime / 1000;
           audioRef.current.playbackRate = useGameStore.getState().gameSpeed;
@@ -326,7 +363,9 @@ export const GamePage: React.FC = () => {
     setPreviewTime(time);
     previewTimeOffsetRef.current = time;
     previewStartTimeRef.current = Date.now();
-
+    if (audioRef.current) {
+      audioRef.current.currentTime = time / 1000;
+    }
     const idx = gameEvents.findIndex((ev) => ev.time > time);
     lastPlayedEventIndexRef.current = idx !== -1 ? idx : gameEvents.length;
   };
@@ -377,8 +416,10 @@ export const GamePage: React.FC = () => {
           author: levelData.author,
           description: levelData.description,
           midiCredit: levelData.midiCredit,
+          musicCredit: levelData.musicCredit,
         });
         setGamePhase("arrange");
+        setIsMetaPanelOpen(true);
         let avgX = 0,
           avgY = 0;
         if (levelData.blocks.length > 0) {
@@ -397,30 +438,14 @@ export const GamePage: React.FC = () => {
         useStore.getState().updateCamera(cam);
         useGameStore.getState().updateCamera(cam);
       } else {
-        const { gameBlocks, gameEvents } = await parseMidiForGame(
-          file,
-          arrangeBy,
+        const trackInfos = await getMidiTrackInfos(file);
+        const initialMode = new Map<number, "interactive" | "background" | "off">();
+        trackInfos.forEach((info) =>
+          initialMode.set(info.index, info.suggestInteractive ? "interactive" : "background"),
         );
-        setGameFileName(file.name);
-        setGameBlocks(gameBlocks);
-        setGameEvents(gameEvents);
-        setLevelMetadata(null);
-        setGamePhase("arrange");
-        let avgX = 0,
-          avgY = 0;
-        if (gameBlocks.length > 0) {
-          avgX =
-            gameBlocks.reduce((sum, b) => sum + b.x, 0) / gameBlocks.length;
-          avgY =
-            gameBlocks.reduce((sum, b) => sum + b.y, 0) / gameBlocks.length;
-        }
-        const cam = {
-          x: window.innerWidth / 2 - avgX,
-          y: window.innerHeight / 2 - avgY,
-          zoom: 1,
-        };
-        useStore.getState().updateCamera(cam);
-        useGameStore.getState().updateCamera(cam);
+        setMidiTrackInfos(trackInfos);
+        setTrackMode(initialMode);
+        setPendingMidiFile(file);
       }
     } catch (err) {
       console.error(err);
@@ -437,17 +462,111 @@ export const GamePage: React.FC = () => {
       const blob = await response.blob();
       const file = new File([blob], "default.mid", { type: "audio/midi" });
 
-      const { gameBlocks, gameEvents } = await parseMidiForGame(
-        file,
-        arrangeBy,
+      const trackInfos = await getMidiTrackInfos(file);
+      const initialMode = new Map<number, "interactive" | "background" | "off">();
+      trackInfos.forEach((info) =>
+        initialMode.set(info.index, info.suggestInteractive ? "interactive" : "background"),
       );
-      setGameFileName("default.mid");
+      setMidiTrackInfos(trackInfos);
+      setTrackMode(initialMode);
+      setPendingMidiFile(file);
+    } catch (err) {
+      console.error(err);
+      alert(
+        "Failed to load default MIDI. Make sure default.mid is in the public/ folder.",
+      );
+    }
+  };
+
+  const applyReimport = async (
+    activeTrackMode: Map<number, "interactive" | "background" | "off">,
+    activeInfos: MidiTrackInfo[],
+    toastMsg = "Re-imported",
+  ) => {
+    if (!currentMidiFile) return;
+    const interactive = new Set<number>();
+    const background = new Set<number>();
+    activeTrackMode.forEach((mode, idx) => {
+      if (mode === "interactive") interactive.add(idx);
+      else if (mode === "background") background.add(idx);
+    });
+    const noteOverrides = new Map<number, MidiTrackNote[]>();
+    activeInfos.forEach((info) => noteOverrides.set(info.index, info.notes));
+    const { gameBlocks, gameEvents } = await parseMidiForGame(
+      currentMidiFile, arrangeBy, interactive, background, noteOverrides,
+    );
+    setGameBlocks(gameBlocks);
+    setGameEvents(gameEvents);
+    useGameStore.getState().commitHistory();
+    let avgX = 0, avgY = 0;
+    if (gameBlocks.length > 0) {
+      avgX = gameBlocks.reduce((sum, b) => sum + b.x, 0) / gameBlocks.length;
+      avgY = gameBlocks.reduce((sum, b) => sum + b.y, 0) / gameBlocks.length;
+    }
+    const cam = { x: window.innerWidth / 2 - avgX, y: window.innerHeight / 2 - avgY, zoom: 1 };
+    useStore.getState().updateCamera(cam);
+    useGameStore.getState().updateCamera(cam);
+    useStore.getState().showToast(toastMsg);
+  };
+
+  const handleReimport = async () => {
+    try {
+      await applyReimport(trackMode, midiTrackInfos);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to re-import");
+    }
+  };
+
+  const handleTrackModeChange = (
+    trackIndex: number,
+    mode: "interactive" | "background" | "off",
+  ) => {
+    setTrackMode((prev) => {
+      const next = new Map(prev);
+      next.set(trackIndex, mode);
+      return next;
+    });
+  };
+
+  const handleMonophonize = async (trackIndex: number, method: MonophonicMethod) => {
+    const newInfos = midiTrackInfos.map((info) =>
+      info.index === trackIndex
+        ? { ...info, notes: monophonizeTrack(info.notes, method) }
+        : info,
+    );
+    setMidiTrackInfos(newInfos);
+    try {
+      await applyReimport(trackMode, newInfos, `Monophonized: ${method}`);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleTrackModalConfirm = async () => {
+    if (!pendingMidiFile) return;
+    const interactive = new Set<number>();
+    const background = new Set<number>();
+    trackMode.forEach((mode, idx) => {
+      if (mode === "interactive") interactive.add(idx);
+      else if (mode === "background") background.add(idx);
+    });
+    try {
+      const { gameBlocks, gameEvents } = await parseMidiForGame(
+        pendingMidiFile,
+        arrangeBy,
+        interactive,
+        background,
+      );
+      setGameFileName(pendingMidiFile.name);
       setGameBlocks(gameBlocks);
       setGameEvents(gameEvents);
       setLevelMetadata(null);
+      setCurrentMidiFile(pendingMidiFile);
+      setPendingMidiFile(null);
       setGamePhase("arrange");
-      let avgX = 0,
-        avgY = 0;
+      setIsMetaPanelOpen(true);
+      let avgX = 0, avgY = 0;
       if (gameBlocks.length > 0) {
         avgX = gameBlocks.reduce((sum, b) => sum + b.x, 0) / gameBlocks.length;
         avgY = gameBlocks.reduce((sum, b) => sum + b.y, 0) / gameBlocks.length;
@@ -461,9 +580,7 @@ export const GamePage: React.FC = () => {
       useGameStore.getState().updateCamera(cam);
     } catch (err) {
       console.error(err);
-      alert(
-        "Failed to load default MIDI. Make sure default.mid is in the public/ folder.",
-      );
+      alert("Failed to import file");
     }
   };
 
@@ -476,6 +593,7 @@ export const GamePage: React.FC = () => {
       <audio
         ref={audioRef}
         src={gameAudioUrl || undefined}
+        preload="auto"
         style={{ display: "none" }}
       />
       <div className="main-wrapper">
@@ -599,6 +717,16 @@ export const GamePage: React.FC = () => {
               </div>
             </div>
           </div>
+        )}
+
+        {pendingMidiFile !== null && (
+          <TrackSelectionModal
+            trackInfos={midiTrackInfos}
+            trackMode={trackMode}
+            setTrackMode={setTrackMode}
+            onConfirm={handleTrackModalConfirm}
+            onClose={() => setPendingMidiFile(null)}
+          />
         )}
 
         {/* Arrangement Overlay */}
@@ -755,11 +883,26 @@ export const GamePage: React.FC = () => {
                 <Redo2 size={24} />
               </button>
               <button
+                className={`toolbar-btn glass-panel ${isModifyOpen ? "active-panel-btn" : ""}`}
+                onClick={() => setIsModifyOpen((v) => !v)}
+                title="Modify"
+              >
+                <SlidersHorizontal size={24} />
+              </button>
+
+              <button
                 className={`toolbar-btn glass-panel ${isOutlinerOpen ? "active-panel-btn" : ""}`.trim()}
                 onClick={() => toggleOutliner()}
                 title="Outliner"
               >
                 <LayoutList size={24} />
+              </button>
+              <button
+                className={`toolbar-btn glass-panel ${isMetaPanelOpen ? "active-panel-btn" : ""}`.trim()}
+                onClick={() => setIsMetaPanelOpen((v) => !v)}
+                title="Level Info"
+              >
+                <Info size={24} />
               </button>
               <button
                 className="toolbar-btn glass-panel"
@@ -782,6 +925,63 @@ export const GamePage: React.FC = () => {
               <OutlinerPanel />
               <SelectionPropertiesHud bottomOffset={100} />
             </CanvasProvider>
+
+            {/* Level Info Panel */}
+            <FloatingWindow
+              title="Level Info"
+              isOpen={isMetaPanelOpen}
+              onClose={() => setIsMetaPanelOpen(false)}
+              initialPosition={
+                savedMetaPanelPos ?? {
+                  x: Math.round(window.innerWidth / 2 - 160),
+                  y: Math.round(window.innerHeight / 2 - 140),
+                }
+              }
+              initialSize={{ width: 320, height: 280 }}
+              onPositionChange={(pos) => { savedMetaPanelPos = pos; }}
+            >
+              <div
+                className="outliner-content"
+                style={{
+                  gap: 10,
+                  flex: 1,
+                  fontSize: 13,
+                  color: "var(--text-primary)",
+                }}
+              >
+                {[
+                  { label: "Title", value: levelMetadata?.title || gameFileName || "—" },
+                  { label: "Chart Author", value: levelMetadata?.author },
+                  { label: "Description", value: levelMetadata?.description },
+                  { label: "Music Credit", value: levelMetadata?.musicCredit },
+                  { label: "MIDI Credit", value: levelMetadata?.midiCredit },
+                ]
+                  .filter((row) => row.value)
+                  .map((row) => (
+                    <div key={row.label}>
+                      <div style={{ fontSize: 11, opacity: 0.5, marginBottom: 2 }}>
+                        {row.label}
+                      </div>
+                      <div style={{ wordBreak: "break-word", whiteSpace: "pre-wrap" }}>
+                        {row.value}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </FloatingWindow>
+
+            <ModifyPanel
+              isOpen={isModifyOpen}
+              onClose={() => setIsModifyOpen(false)}
+              midiTrackInfos={midiTrackInfos}
+              trackMode={trackMode}
+              onTrackModeChange={handleTrackModeChange}
+              onMonophonize={handleMonophonize}
+              currentMidiFile={currentMidiFile}
+              onReimport={handleReimport}
+              gridCols={gridCols}
+              setGridCols={setGridCols}
+            />
 
             {/* Bottom Mini Player */}
             <div
@@ -1188,6 +1388,49 @@ export const GamePage: React.FC = () => {
               animation: "fadeIn 0.5s forwards",
             }}
           >
+            {/* Left info panel */}
+            {!isMobile && (
+              <div
+                style={{
+                  position: "absolute",
+                  left: 32,
+                  top: 32,
+                  maxWidth: 240,
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 12,
+                  padding: "20px 22px",
+                  backdropFilter: "blur(8px)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 14,
+                  animation: "slideInUp 0.5s forwards",
+                  animationDelay: "0.15s",
+                  opacity: 0,
+                  animationFillMode: "forwards",
+                }}
+              >
+                {[
+                  { label: "Title", value: levelMetadata?.title || gameFileName || "—" },
+                  { label: "Chart Author", value: levelMetadata?.author },
+                  { label: "Description", value: levelMetadata?.description },
+                  { label: "Music Credit", value: levelMetadata?.musicCredit },
+                  { label: "MIDI Credit", value: levelMetadata?.midiCredit },
+                ]
+                  .filter((row) => row.value)
+                  .map((row) => (
+                    <div key={row.label}>
+                      <div style={{ fontSize: 10, opacity: 0.45, marginBottom: 3, letterSpacing: "0.05em", textTransform: "uppercase", color: "white" }}>
+                        {row.label}
+                      </div>
+                      <div style={{ fontSize: 14, color: "white", wordBreak: "break-word", whiteSpace: "pre-wrap", lineHeight: 1.4 }}>
+                        {row.value}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+
             <h2
               style={{
                 color: "white",
@@ -1222,11 +1465,6 @@ export const GamePage: React.FC = () => {
               >
                 {levelMetadata?.title || gameFileName || "Unknown Level"}
               </div>
-              {levelMetadata?.author && (
-                <div style={{ marginBottom: 4 }}>
-                  Author: {levelMetadata.author}
-                </div>
-              )}
               <div>Speed: {gameSpeed}x</div>
               <div>
                 Mode:{" "}

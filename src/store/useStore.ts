@@ -37,8 +37,8 @@ interface AppState {
   clipboardGroupRects: GroupRect[];
   camera: CameraState;
 
-  // 用來在進入 Play 模式時記憶選取狀態，退出時還原
-  selectionBeforePlay?: {
+  // 用來在進入 Perform 模式時記憶選取狀態，退出時還原
+  selectionBeforePerform?: {
     selectedBlockIds: string[];
     selectedTrackIds: string[];
     selectedGroupRectIds: string[];
@@ -92,8 +92,8 @@ interface AppState {
   selectBlock: (id: string, multi?: boolean) => void;
   selectTrack: (id: string, multi?: boolean) => void;
   selectGroupRect: (id: string, multi?: boolean) => void;
-  selectAll: () => void;
-  selectAllBlocks: () => void;
+  selectAll: (groupRectIds?: string[]) => void;
+  selectAllBlocks: (groupRectIds?: string[]) => void;
   clearSelection: () => void;
   mutateBlocks: (
     targetIds: string[],
@@ -112,8 +112,8 @@ interface AppState {
   removeGroupRect: (id: string) => void;
 
   // Clipboard
-  copySelected: () => void;
-  pasteClipboard: () => void;
+  copySelected: (isPocket?: boolean) => void;
+  pasteClipboard: (at?: { x: number; y: number }) => void;
   duplicateSelected: () => void;
 
   // View & UI (核心相關)
@@ -578,51 +578,34 @@ export const useStore = create<AppState>()(
             };
           }),
 
-        selectAll: () =>
+        selectAll: (groupRectIds?: string[]) =>
           set((state) => {
-            if (state.selectedGroupRectIds.length > 0) {
-              const selectedRects = state.groupRects.filter((g) =>
-                state.selectedGroupRectIds.includes(g.id),
+            if (groupRectIds && groupRectIds.length > 0) {
+              const targetRects = state.groupRects.filter((g) =>
+                groupRectIds.includes(g.id),
               );
-
-              const isInside = (
-                x: number,
-                y: number,
-                w: number = 60,
-                h: number = 60,
-              ) => {
-                return selectedRects.some(
+              const isInside = (x: number, y: number, w = 60, h = 60) =>
+                targetRects.some(
                   (g) =>
                     x < g.x + g.w &&
                     x + w > g.x &&
                     y < g.y + g.h &&
                     y + h > g.y,
                 );
-              };
-
-              const blockIds = state.blocks
-                .filter((b) => isInside(b.x, b.y))
-                .map((b) => b.id);
-              const trackIds = state.tracks
-                .filter((t) => t.nodes.some((n) => isInside(n.x, n.y, 10, 10)))
-                .map((t) => t.id);
-              const groupRectIds = state.groupRects
-                .filter(
-                  (g) =>
-                    state.selectedGroupRectIds.includes(g.id) ||
-                    isInside(g.x, g.y, g.w, g.h),
-                )
-                .map((g) => g.id);
-
               return {
-                selectedBlockIds: blockIds,
-                selectedTrackIds: trackIds,
-                selectedGroupRectIds: groupRectIds,
+                selectedBlockIds: state.blocks
+                  .filter((b) => isInside(b.x, b.y))
+                  .map((b) => b.id),
+                selectedTrackIds: state.tracks
+                  .filter((t) => t.nodes.some((n) => isInside(n.x, n.y, 10, 10)))
+                  .map((t) => t.id),
+                selectedGroupRectIds: state.groupRects
+                  .filter((g) => groupRectIds.includes(g.id) || isInside(g.x, g.y, g.w, g.h))
+                  .map((g) => g.id),
                 activeTrackId: null,
                 editingTrackId: null,
               };
             }
-
             return {
               selectedBlockIds: state.blocks.map((b) => b.id),
               selectedTrackIds: state.tracks.map((t) => t.id),
@@ -632,39 +615,30 @@ export const useStore = create<AppState>()(
             };
           }),
 
-        selectAllBlocks: () =>
+        selectAllBlocks: (groupRectIds?: string[]) =>
           set((state) => {
-            if (state.selectedGroupRectIds.length > 0) {
-              const selectedRects = state.groupRects.filter((g) =>
-                state.selectedGroupRectIds.includes(g.id),
+            if (groupRectIds && groupRectIds.length > 0) {
+              const targetRects = state.groupRects.filter((g) =>
+                groupRectIds.includes(g.id),
               );
-
-              const isInside = (
-                x: number,
-                y: number,
-                w: number = 60,
-                h: number = 60,
-              ) => {
-                return selectedRects.some(
+              const isInside = (x: number, y: number, w = 60, h = 60) =>
+                targetRects.some(
                   (g) =>
                     x < g.x + g.w &&
                     x + w > g.x &&
                     y < g.y + g.h &&
                     y + h > g.y,
                 );
-              };
-
               return {
                 selectedBlockIds: state.blocks
                   .filter((b) => isInside(b.x, b.y))
                   .map((b) => b.id),
                 selectedTrackIds: [],
-                selectedGroupRectIds: state.selectedGroupRectIds,
+                selectedGroupRectIds: groupRectIds,
                 activeTrackId: null,
                 editingTrackId: null,
               };
             }
-
             return {
               selectedBlockIds: state.blocks.map((b) => b.id),
               selectedTrackIds: [],
@@ -751,7 +725,6 @@ export const useStore = create<AppState>()(
               id: groupId,
               name: `Group ${state.groups.length + 1}`,
             };
-            get().showToast("已建立群組 (Group Created)");
             return {
               groups: [...state.groups, newGroup],
               blocks: state.blocks.map((b) =>
@@ -789,7 +762,6 @@ export const useStore = create<AppState>()(
             ]);
             if (groupIdsToRemove.size === 0) return state;
 
-            get().showToast("已解散群組 (Group Dissolved)");
             return {
               blocks: state.blocks.map((b) =>
                 b.groupId && groupIdsToRemove.has(b.groupId)
@@ -854,9 +826,9 @@ export const useStore = create<AppState>()(
             groupRects: state.groupRects.filter((g) => g.id !== id),
           })),
 
-        copySelected: () => {
+        copySelected: (isPocket?: boolean) => {
           const state = get();
-          if (state.interactionContext === "pocket") {
+          if (isPocket ?? state.interactionContext === "pocket") {
             const blocksToCopy = state.arrangedPocketBlocks
               .filter((b) => state.selectedPocketBlockIds.includes(b.id))
               .map((b) => ({
@@ -887,7 +859,7 @@ export const useStore = create<AppState>()(
           });
         },
 
-        pasteClipboard: () =>
+        pasteClipboard: (at?: { x: number; y: number }) =>
           set((state) => {
             if (
               state.clipboardBlocks.length === 0 &&
@@ -895,12 +867,21 @@ export const useStore = create<AppState>()(
               state.clipboardGroupRects.length === 0
             )
               return state;
+            let dx = 20, dy = 20;
+            if (at !== undefined && state.clipboardBlocks.length > 0) {
+              const xs = state.clipboardBlocks.map((b) => b.x);
+              const ys = state.clipboardBlocks.map((b) => b.y);
+              const centerX = (Math.min(...xs) + Math.max(...xs) + 60) / 2;
+              const centerY = (Math.min(...ys) + Math.max(...ys) + 60) / 2;
+              dx = at.x - centerX;
+              dy = at.y - centerY;
+            }
             const newBlocks = state.clipboardBlocks.map((b) => ({
               ...b,
               id: generateId(),
-              x: b.x + 20, // offset slightly
-              y: b.y + 20,
-              groupId: undefined, // drop group when pasting
+              x: b.x + dx,
+              y: b.y + dy,
+              groupId: undefined,
             }));
             const newTracks = state.clipboardTracks.map((t) => ({
               ...t,
@@ -908,15 +889,15 @@ export const useStore = create<AppState>()(
               nodes: t.nodes.map((n) => ({
                 ...n,
                 id: generateId(),
-                x: n.x + 20,
-                y: n.y + 20,
+                x: n.x + dx,
+                y: n.y + dy,
               })),
             }));
             const newGroupRects = state.clipboardGroupRects.map((g) => ({
               ...g,
               id: generateId(),
-              x: g.x + 20,
-              y: g.y + 20,
+              x: g.x + dx,
+              y: g.y + dy,
             }));
 
             return {
@@ -1083,28 +1064,28 @@ export const useStore = create<AppState>()(
               selectedBlockIds:
                 mode === "draw_track" ||
                 mode === "draw_group" ||
-                mode === "play"
+                mode === "perform"
                   ? []
                   : state.selectedBlockIds,
               selectedTrackIds:
                 mode === "draw_track" ||
                 mode === "draw_group" ||
-                mode === "play"
+                mode === "perform"
                   ? []
                   : state.selectedTrackIds,
               selectedGroupRectIds:
                 mode === "draw_track" ||
                 mode === "draw_group" ||
-                mode === "play"
+                mode === "perform"
                   ? []
                   : state.selectedGroupRectIds,
             };
 
-            if (mode === "play") {
+            if (mode === "perform") {
               updates.contextMenu = null;
-              // 記錄進入 Play 模式前的選取狀態
-              if (!state.selectionBeforePlay) {
-                updates.selectionBeforePlay = {
+              // 記錄進入 Perform 模式前的選取狀態
+              if (!state.selectionBeforePerform) {
+                updates.selectionBeforePerform = {
                   selectedBlockIds: state.selectedBlockIds,
                   selectedTrackIds: state.selectedTrackIds,
                   selectedGroupRectIds: state.selectedGroupRectIds,
@@ -1112,14 +1093,14 @@ export const useStore = create<AppState>()(
                 };
               }
             } else {
-              // 退出 Play 模式時還原選取狀態
-              if (state.mode === "play" && state.selectionBeforePlay) {
-                updates.selectedBlockIds = state.selectionBeforePlay.selectedBlockIds;
-                updates.selectedTrackIds = state.selectionBeforePlay.selectedTrackIds;
-                updates.selectedGroupRectIds = state.selectionBeforePlay.selectedGroupRectIds;
-                updates.activeTrackId = state.selectionBeforePlay.activeTrackId;
-                
-                updates.selectionBeforePlay = undefined;
+              // 退出 Perform 模式時還原選取狀態
+              if (state.mode === "perform" && state.selectionBeforePerform) {
+                updates.selectedBlockIds = state.selectionBeforePerform.selectedBlockIds;
+                updates.selectedTrackIds = state.selectionBeforePerform.selectedTrackIds;
+                updates.selectedGroupRectIds = state.selectionBeforePerform.selectedGroupRectIds;
+                updates.activeTrackId = state.selectionBeforePerform.activeTrackId;
+
+                updates.selectionBeforePerform = undefined;
               }
             }
 

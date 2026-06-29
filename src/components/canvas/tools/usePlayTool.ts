@@ -26,7 +26,7 @@ export function usePlayTool(
   const mode = useStore((s) => s.mode);
 
   useEffect(() => {
-    if (mode === "play") {
+    if (mode === "perform") {
       document.body.requestPointerLock().catch(() => {});
     } else {
       if (document.pointerLockElement) document.exitPointerLock();
@@ -37,7 +37,7 @@ export function usePlayTool(
     const onLockChange = () => {
       if (
         document.pointerLockElement !== document.body &&
-        useStore.getState().mode === "play"
+        useStore.getState().mode === "perform"
       ) {
         useStore.getState().setMode("select");
       }
@@ -48,7 +48,7 @@ export function usePlayTool(
   }, []);
 
   useEffect(() => {
-    if (mode !== "play") return;
+    if (mode !== "perform") return;
     let rafId: number | null = null;
     let pendingX = 0;
     let pendingY = 0;

@@ -19,7 +19,6 @@ export const usePocketCanvasInteractions = () => {
   const startPan = useCallback((e: PocketPointerEvent) => {
     isPanningRef.current = true;
     lastPanPosRef.current = { x: e.clientX, y: e.clientY };
-    useStore.getState().setInteractionContext('pocket');
   }, []);
 
   const updatePan = useCallback((e: PocketPointerEvent) => {
@@ -44,7 +43,6 @@ export const usePocketCanvasInteractions = () => {
     const pos = e.currentTarget.parent.toLocal(e.global);
     isSelectingRef.current = true;
     setSelectionBox({ startX: pos.x, startY: pos.y, currentX: pos.x, currentY: pos.y });
-    useStore.getState().setInteractionContext('pocket');
   }, []);
 
   const updateSelection = useCallback((e: PocketPointerEvent) => {

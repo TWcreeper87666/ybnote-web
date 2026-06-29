@@ -81,7 +81,7 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({
           import('../../utils/audio').then(({ playNote }) => {
               const effectivePitch = playedPitchOffset !== 0 ? shiftPitch(pitch, playedPitchOffset) : pitch;
               playNote(effectivePitch, volume * playedVolumeMultiplier, instrument);
-              if (useStore.getState().mode === 'play') {
+              if (useStore.getState().mode === 'perform') {
                  useStore.getState().setLatestPerformHit({ time: Date.now(), color: blockColor });
               }
           });

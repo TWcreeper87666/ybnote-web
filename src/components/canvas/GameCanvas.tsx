@@ -131,7 +131,7 @@ export const GameCanvas: React.FC = () => {
 
   // 攝影機管理
   useCanvasCamera({
-    isPlayMode: gamePhase === "play",
+    isPerformMode: gamePhase === "play",
     isActive: gamePhase === "arrange" || gamePhase === "play",
     isGameCanvas: true,
     onWheelIntercept: (e) =>

@@ -12,7 +12,7 @@ export const usePocketCanvasCamera = () => {
     const handleWheel = (e: WheelEvent) => {
       const state = useStore.getState();
       if (!isPocketCanvasOpen) return;
-      if (state.interactionContext !== "pocket") return;
+      if (!pocketContainer.matches(":hover")) return;
 
       e.stopPropagation();
       e.preventDefault();

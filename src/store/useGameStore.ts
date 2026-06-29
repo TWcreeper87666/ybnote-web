@@ -28,7 +28,7 @@ interface GameSpecificState {
   gameSpeed: number;
   gameAudioUrl: string | null;
   gameAudioVolume: number;
-  levelMetadata: { title?: string; author?: string; description?: string; midiCredit?: string; } | null;
+  levelMetadata: { title?: string; author?: string; description?: string; midiCredit?: string; musicCredit?: string; } | null;
   latestHit: HitEvent | null;
 
   history: GameHistorySnapshot[];

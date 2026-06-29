@@ -10,19 +10,14 @@ export const useShortcuts = (context: CanvasContextType = "playground") => {
   useEffect(() => {
     const handleKeyDown = (_code: string, e: KeyboardEvent) => {
       const key = e.key;
-      let state = useStore.getState();
+      const state = useStore.getState();
       const uiState = useUIStore.getState();
 
       // Disable shortcuts during active gameplay
       if (useGameStore.getState().gamePhase === "play") return;
 
-      // Update interaction context if hovering over pocket canvas
       const isHoveringPocket =
         document.querySelector(".pocket-canvas-container:hover") !== null;
-      if (isHoveringPocket && state.interactionContext !== "pocket") {
-        useStore.getState().setInteractionContext("pocket");
-        state = useStore.getState();
-      }
 
       // Disable canvas shortcuts if we are in the level editor's pianoroll tab
       if (
@@ -138,12 +133,41 @@ export const useShortcuts = (context: CanvasContextType = "playground") => {
           case "c":
             if (useGameStore.getState().gamePhase === "arrange") return;
             e.preventDefault();
-            canvasState.copySelected();
+            if (isHoveringPocket) {
+              const pocketCount = state.selectedPocketBlockIds.length;
+              state.copySelected(true);
+              if (pocketCount > 0)
+                state.showToast(`Copied ${pocketCount} pocket block${pocketCount !== 1 ? "s" : ""}`);
+            } else {
+              const copyCount =
+                canvasState.selectedBlockIds.length +
+                canvasState.selectedTrackIds.length +
+                canvasState.selectedGroupRectIds.length;
+              canvasState.copySelected();
+              if (copyCount > 0)
+                state.showToast(`Copied ${copyCount} item${copyCount !== 1 ? "s" : ""}`);
+            }
             break;
           case "v":
             if (useGameStore.getState().gamePhase === "arrange") return;
             e.preventDefault();
-            canvasState.pasteClipboard();
+            {
+              const pasteCount =
+                canvasState.clipboardBlocks.length +
+                canvasState.clipboardTracks.length +
+                canvasState.clipboardGroupRects.length;
+              const { x: clientX, y: clientY } = inputManager.mouseClient;
+              const canvasEl =
+                document.querySelector(".le-blocks-container canvas") ??
+                document.querySelector("canvas");
+              const rect = canvasEl?.getBoundingClientRect() ?? { left: 0, top: 0 };
+              const cam = canvasState.camera;
+              const worldX = (clientX - rect.left - cam.x) / cam.zoom;
+              const worldY = (clientY - rect.top - cam.y) / cam.zoom;
+              canvasState.pasteClipboard({ x: worldX, y: worldY });
+              if (pasteCount > 0)
+                state.showToast(`Pasted ${pasteCount} item${pasteCount !== 1 ? "s" : ""}`);
+            }
             break;
           case "d":
             if (useGameStore.getState().gamePhase === "arrange") return;
@@ -152,13 +176,29 @@ export const useShortcuts = (context: CanvasContextType = "playground") => {
             break;
           case "a":
             e.preventDefault();
-            if (state.interactionContext === "pocket") {
+            if (isHoveringPocket) {
               state.selectAllPocketBlocks();
             } else {
+              const { x: aClientX, y: aClientY } = inputManager.mouseClient;
+              const aCanvasEl =
+                document.querySelector(".le-blocks-container canvas") ??
+                document.querySelector("canvas");
+              const aRect = aCanvasEl?.getBoundingClientRect() ?? { left: 0, top: 0 };
+              const aCam = canvasState.camera;
+              const aWorldX = (aClientX - aRect.left - aCam.x) / aCam.zoom;
+              const aWorldY = (aClientY - aRect.top - aCam.y) / aCam.zoom;
+              const hoveredGroupRect = canvasState.groupRects.find(
+                (g) =>
+                  aWorldX >= g.x &&
+                  aWorldX <= g.x + g.w &&
+                  aWorldY >= g.y &&
+                  aWorldY <= g.y + g.h,
+              );
+              const scopeIds = hoveredGroupRect ? [hoveredGroupRect.id] : undefined;
               if (e.shiftKey) {
-                canvasState.selectAllBlocks();
+                canvasState.selectAllBlocks(scopeIds);
               } else {
-                canvasState.selectAll();
+                canvasState.selectAll(scopeIds);
               }
             }
             break;
@@ -168,12 +208,12 @@ export const useShortcuts = (context: CanvasContextType = "playground") => {
               canvasState.ungroupSelected();
               if (context === "game") useGameStore.getState().commitHistory();
               if (context !== "playground")
-                state.showToast("已解散群組 (Group Dissolved)");
+                state.showToast("Group Dissolved");
             } else {
               canvasState.groupSelected();
               if (context === "game") useGameStore.getState().commitHistory();
               if (context !== "playground")
-                state.showToast("已建立群組 (Group Created)");
+                state.showToast("Group Created");
             }
             break;
           case "f":
@@ -242,13 +282,13 @@ export const useShortcuts = (context: CanvasContextType = "playground") => {
         if (["1", "2", "3", "4", "5"].includes(key)) {
           const keyToMode: Record<
             string,
-            "select" | "piano" | "drum" | "draw_group" | "draw_track" | "play"
+            "select" | "piano" | "drum" | "draw_group" | "draw_track" | "perform"
           > = {
             "1": "piano",
             "2": "drum",
             "3": "draw_group",
             "4": "draw_track",
-            "5": "play",
+            "5": "perform",
           };
           const targetMode = keyToMode[key];
           if (state.mode === targetMode) {
@@ -273,7 +313,7 @@ export const useShortcuts = (context: CanvasContextType = "playground") => {
             canvasState.deleteSelected();
           }
         } else if (key === "Escape") {
-          if (state.interactionContext === "pocket") {
+          if (isHoveringPocket) {
             state.clearPocketSelection();
           } else if (state.mode !== "select") {
             state.setMode("select");
