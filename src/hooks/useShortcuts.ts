@@ -4,12 +4,14 @@ import { useGameStore } from "../store/useGameStore";
 import { useLevelEditorStore } from "../store/useLevelEditorStore";
 import type { CanvasContextType } from "../components/canvas/CanvasContext";
 import { inputManager } from "../inputs/InputManager";
+import { useUIStore } from "../store/useUIStore";
 
 export const useShortcuts = (context: CanvasContextType = "playground") => {
   useEffect(() => {
     const handleKeyDown = (_code: string, e: KeyboardEvent) => {
       const key = e.key;
       let state = useStore.getState();
+      const uiState = useUIStore.getState();
 
       // Disable shortcuts during active gameplay
       if (useGameStore.getState().gamePhase === "play") return;
@@ -30,12 +32,24 @@ export const useShortcuts = (context: CanvasContextType = "playground") => {
         return;
       }
 
+      // In charting tab, only allow undo/redo shortcuts (Ctrl+Z / Ctrl+Y)
+      if (
+        context === "editor" &&
+        useLevelEditorStore.getState().activeTab === "charting"
+      ) {
+        if (
+          !(e.ctrlKey || e.metaKey) ||
+          !["z", "y"].includes(key.toLowerCase())
+        )
+          return;
+      }
+
       // Check if user is typing in an input field
       if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement).tagName)) {
         if (e.ctrlKey && key.toLowerCase() === "f") {
           e.preventDefault();
-          state.toggleOutliner();
-          if (!state.isOutlinerOpen) {
+          uiState.toggleOutliner();
+          if (!uiState.isOutlinerOpen) {
             setTimeout(() => {
               const searchInput = document.getElementById(
                 "outliner-search-input",
@@ -63,9 +77,13 @@ export const useShortcuts = (context: CanvasContextType = "playground") => {
       if (blocksWithKey.length > 0 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         canvasState.updateBlocks(
           blocksWithKey.map((b) => {
-            const containingRect = canvasState.groupRects.find(g =>
-              g.enabled !== false &&
-              b.x < g.x + g.w && b.x + 60 > g.x && b.y < g.y + g.h && b.y + 60 > g.y
+            const containingRect = canvasState.groupRects.find(
+              (g) =>
+                g.enabled !== false &&
+                b.x < g.x + g.w &&
+                b.x + 60 > g.x &&
+                b.y < g.y + g.h &&
+                b.y + 60 > g.y,
             );
             return {
               id: b.id,
@@ -160,8 +178,8 @@ export const useShortcuts = (context: CanvasContextType = "playground") => {
             break;
           case "f":
             e.preventDefault();
-            state.toggleOutliner();
-            if (!state.isOutlinerOpen) {
+            uiState.toggleOutliner();
+            if (!uiState.isOutlinerOpen) {
               setTimeout(() => {
                 const searchInput = document.getElementById(
                   "outliner-search-input",

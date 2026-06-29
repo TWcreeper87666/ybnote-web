@@ -43,6 +43,7 @@ import {
 import { FloatingWindow } from "./FloatingWindow";
 import { getCanvasCenterLocal } from "../../utils/canvasUtils";
 import { inputManager } from "../../inputs/InputManager";
+import { useUIStore } from "../../store/useUIStore";
 
 const animateCameraTo = (
   targetX: number,
@@ -92,7 +93,9 @@ export const OutlinerPanel: React.FC = () => {
   const camera = useActiveCanvasCamera();
 
   // UI state stays in useStore for now (UIStore migration deferred)
-  const { isOutlinerOpen, searchQuery, setSearchQuery } = useStore();
+  const { isOutlinerOpen, toggleOutliner } = useUIStore();
+
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [filters, setFilters] = useState<FilterState>({
     notes: true,
@@ -112,7 +115,7 @@ export const OutlinerPanel: React.FC = () => {
     const handleFind = (e: CustomEvent<string>) => {
       const id = e.detail;
 
-      useStore.setState({ isOutlinerOpen: true });
+      toggleOutliner();
 
       const ctxGroupRects = getGroupRectsForContext(canvasContext);
       const ctxTracks = getTracksForContext(canvasContext);
@@ -157,7 +160,7 @@ export const OutlinerPanel: React.FC = () => {
         }
       }
 
-      useStore.setState({ searchQuery: "" });
+      setSearchQuery("");
       setFilters((prev) => {
         const next = { ...prev };
         if (isDisabled) next.enable = false;
@@ -372,7 +375,7 @@ export const OutlinerPanel: React.FC = () => {
         </>
       }
       isOpen={isOutlinerOpen}
-      onClose={() => useStore.setState({ isOutlinerOpen: false })}
+      onClose={() => toggleOutliner()}
       anchorSelector='button[title="Toggle Outliner"], button[title="Outliner"]'
       initialSize={{ width: "310px", height: "400px" }}
       minSize={{ width: "250px", height: "400px" }}

@@ -1,15 +1,18 @@
-import { useEffect } from 'react';
-import { useStore } from '../store/useStore';
+import { useEffect } from "react";
+import { useStore } from "../store/useStore";
+import { useUIStore } from "../store/useUIStore";
 
 export const usePocketCanvasCamera = () => {
+  const isPocketCanvasOpen = useUIStore((s) => s.isPocketCanvasOpen);
+  
   useEffect(() => {
-    const pocketContainer = document.querySelector('.pocket-canvas-container');
+    const pocketContainer = document.querySelector(".pocket-canvas-container");
     if (!pocketContainer) return;
 
     const handleWheel = (e: WheelEvent) => {
       const state = useStore.getState();
-      if (!state.isPocketCanvasOpen) return;
-      if (state.interactionContext !== 'pocket') return;
+      if (!isPocketCanvasOpen) return;
+      if (state.interactionContext !== "pocket") return;
 
       e.stopPropagation();
       e.preventDefault();
@@ -30,10 +33,18 @@ export const usePocketCanvasCamera = () => {
       const newX = pointerX - worldX * newZoom;
       const newY = pointerY - worldY * newZoom;
 
-      useStore.getState().updatePocketCamera({ zoom: newZoom, x: newX, y: newY });
+      useStore
+        .getState()
+        .updatePocketCamera({ zoom: newZoom, x: newX, y: newY });
     };
 
-    pocketContainer.addEventListener('wheel', handleWheel as EventListener, { passive: false });
-    return () => pocketContainer.removeEventListener('wheel', handleWheel as EventListener);
+    pocketContainer.addEventListener("wheel", handleWheel as EventListener, {
+      passive: false,
+    });
+    return () =>
+      pocketContainer.removeEventListener(
+        "wheel",
+        handleWheel as EventListener,
+      );
   }, []);
 };

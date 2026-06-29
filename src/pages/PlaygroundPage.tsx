@@ -14,6 +14,7 @@ import { useShortcuts } from "../hooks/useShortcuts";
 import { useGameLoop } from "../hooks/useGameLoop";
 import { CanvasProvider } from "../store/CanvasProvider";
 import { SharedCanvas } from "../components/canvas/SharedCanvas";
+import { KeyboardDragOverlay } from "../components/ui/KeyboardDragOverlay";
 
 export function PlaygroundPage() {
   const { theme } = useSettingsStore();
@@ -52,6 +53,7 @@ export function PlaygroundPage() {
               <SelectionPropertiesHud />
               <ContextMenu />
               <PocketDragOverlay />
+              <KeyboardDragOverlay />
             </div>
           </div>
         </div>

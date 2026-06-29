@@ -95,10 +95,10 @@ export const TrackPanel: React.FC = () => {
         (key === "Delete" || key === "Backspace") &&
         store.selectedMidiTrackId !== null
       ) {
-        // If focus is inside TrackPanel or no notes are selected in PianoRoll
+        const activeTab = store.activeTab;
         if (
           target.closest(".le-track-panel") ||
-          store.selectedNoteIds.size === 0
+          (store.selectedNoteIds.size === 0 && activeTab === 'pianoroll')
         ) {
           e.preventDefault();
           handleRemoveTrack(store.selectedMidiTrackId);
@@ -244,7 +244,8 @@ export const TrackPanel: React.FC = () => {
                   <Blocks size={14} />
                 </button>
                 <button
-                  className={`le-tp-icon-btn ${isMuted ? "muted" : ""}`}
+                  className="le-tp-icon-btn"
+                  style={{ color: isMuted ? "rgba(255,255,255,0.4)" : "#a5b4fc", borderRadius: 4 }}
                   title={isMuted ? "Unmute Track" : "Mute Track"}
                   onClick={(e) => {
                     e.stopPropagation();

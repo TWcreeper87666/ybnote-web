@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
-import { useGameStore } from '../../store/useGameStore';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import { useCanvasContext } from '../canvas/CanvasContext';
 import { addBlocksToContext } from '../../hooks/useActiveCanvas';
@@ -17,6 +16,7 @@ export const PocketDragOverlay: React.FC = () => {
   const editorCameraZoom = useLevelEditorStore(state => state.camera.zoom);
   const mainCameraZoom = canvasContext === 'editor' ? editorCameraZoom : playgroundCameraZoom;
   const pocketCameraZoom = useStore(state => state.pocketCamera.zoom);
+  
   const [mousePos, setMousePos] = useState<{x: number, y: number} | null>(null);
   const [isInsidePocket, setIsInsidePocket] = useState(true);
 
@@ -40,7 +40,6 @@ export const PocketDragOverlay: React.FC = () => {
       const dragState = state.activePocketDrag;
       
       if (dragState) {
-        // Check if inside pocket canvas
         const pocketContainer = document.querySelector('.pocket-canvas-container');
         if (pocketContainer) {
           const pocketRect = pocketContainer.getBoundingClientRect();
@@ -51,25 +50,15 @@ export const PocketDragOverlay: React.FC = () => {
           }
         }
 
-        // Calculate Main Canvas drop position using the correct context camera
         const camera = getCanvasAdapter(canvasContext).getCamera();
-
-        // Find canvas rect
         const canvas = document.querySelector('.le-blocks-container canvas') || document.querySelector('.main-wrapper canvas');
         const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0 };
         
         const localX = (e.clientX - rect.left - camera.x) / camera.zoom;
         const localY = (e.clientY - rect.top - camera.y) / camera.zoom;
-        
-        // The mouse is at localX, localY in world space.
-        // We need to offset the block's drop position based on the drag offset.
-        // The primary dragged block was clicked at `dragState.offsetX, offsetY` inside its rect.
-        const primaryBlockX = localX - dragState.offsetX;
-        const primaryBlockY = localY - dragState.offsetY;
-        
-        // For snap to grid
-        let finalX = primaryBlockX;
-        let finalY = primaryBlockY;
+
+        let finalX = localX - 30;
+        let finalY = localY - 30;
         if (useSettingsStore.getState().snapToGrid) {
             finalX = snapValue(finalX);
             finalY = snapValue(finalY);
@@ -105,49 +94,57 @@ export const PocketDragOverlay: React.FC = () => {
       window.removeEventListener('pointerup', handleUp);
       setMousePos(null);
     };
-  }, [activePocketDrag]);
+  }, [activePocketDrag, canvasContext]);
 
   if (!activePocketDrag) return null;
 
-  const zoom = isInsidePocket ? pocketCameraZoom : mainCameraZoom;
-  const size = 60 * zoom;
+  // Match KeyboardDragOverlay: scale with CSS transform, fixed 60×60 block
+  const currentZoom = isInsidePocket ? pocketCameraZoom : mainCameraZoom;
 
   const displayX = mousePos ? mousePos.x : (activePocketDrag.initialX || 0);
   const displayY = mousePos ? mousePos.y : (activePocketDrag.initialY || 0);
 
+  const primary = activePocketDrag.blocks.find(b => b.id === activePocketDrag.clickedBlockId) || activePocketDrag.blocks[0];
+
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', zIndex: 9999 }}>
       {activePocketDrag.blocks.map(block => {
-        const primary = activePocketDrag.blocks.find(b => b.id === activePocketDrag.clickedBlockId) || activePocketDrag.blocks[0];
-        const relX = ((block as unknown as {xOffset: number}).xOffset - (primary as unknown as {xOffset: number}).xOffset) * zoom;
-        const relY = ((block as unknown as {yOffset: number}).yOffset - (primary as unknown as {yOffset: number}).yOffset) * zoom;
-        
-        const left = displayX - (activePocketDrag.offsetX * zoom) + relX;
-        const top = displayY - (activePocketDrag.offsetY * zoom) + relY;
+        // Relative offset in pocket canvas units → scale to screen pixels using currentZoom
+        // so the spacing always matches the visual scale (transform: scale also uses currentZoom)
+        const relX = ((block as unknown as {xOffset: number}).xOffset - (primary as unknown as {xOffset: number}).xOffset) * currentZoom;
+        const relY = ((block as unknown as {yOffset: number}).yOffset - (primary as unknown as {yOffset: number}).yOffset) * currentZoom;
+
+        // Primary block centered on cursor; others offset by their pocket-space distance
+        const left = displayX - 30 + relX;
+        const top = displayY - 30 + relY;
 
         const colorNum = getPitchColorNumber(block.pitch, pianoKeysCount);
         const hexColor = '#' + colorNum.toString(16).padStart(6, '0');
+        const isDrum = block.instrument === 'percussion';
 
         return (
           <div key={block.id} style={{
             position: 'absolute',
             left, top,
-            width: size, height: size,
+            width: 60,
+            height: 60,
             backgroundColor: hexColor,
             opacity: 0.7,
-            borderRadius: 12 * zoom,
-            border: `${3 * Math.max(1, zoom)}px solid #4f46e5`,
-            boxShadow: `0 0 0 ${4 * zoom}px rgba(99, 102, 241, 0.5)`,
+            borderRadius: isDrum ? '50%' : 12,
+            border: `3px solid #4f46e5`,
+            boxShadow: `0 0 0 4px rgba(99, 102, 241, 0.5)`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: 'white',
             fontWeight: 'bold',
-            fontSize: `${14 * zoom}px`,
-            textShadow: `0px ${1 * zoom}px ${2 * zoom}px rgba(0,0,0,0.5)`,
-            transition: 'width 0.2s ease, height 0.2s ease, border-radius 0.2s ease, border-width 0.2s ease, box-shadow 0.2s ease, font-size 0.2s ease, text-shadow 0.2s ease'
+            fontSize: 14,
+            textShadow: `0px 1px 2px rgba(0,0,0,0.5)`,
+            transform: `scale(${currentZoom})`,
+            transformOrigin: 'center center',
+            transition: 'transform 0.2s ease',
           }}>
-             {zoom > 0.5 && block.pitch}
+            {currentZoom > 0.5 && block.pitch}
           </div>
         );
       })}

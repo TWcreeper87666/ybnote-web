@@ -23,6 +23,7 @@ import { DrumKeyboard } from "../components/instruments/DrumKeyboard";
 import { CanvasPlayerBar } from "../components/ui/CanvasPlayerBar";
 import { useShortcuts } from "../hooks/useShortcuts";
 import { SharedCanvas } from "../components/canvas/SharedCanvas";
+import { KeyboardDragOverlay } from "../components/ui/KeyboardDragOverlay";
 
 const ShortcutsEnabler = () => {
   useShortcuts("editor");
@@ -395,6 +396,7 @@ export const LevelEditorPage: React.FC = () => {
                         <OutlinerPanel />
                         <PocketCanvasPanel />
                         <PocketDragOverlay />
+                        <KeyboardDragOverlay />
                         <PianoKeyboard />
                         <DrumKeyboard />
                         <SettingsPanel />

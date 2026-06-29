@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback, useMemo } from 'react';
-import { Play, Pause, ChevronLeft, ChevronRight, RotateCcw, Circle, Square } from 'lucide-react';
+import { Play, Pause, ChevronLeft, ChevronRight, SkipForward } from 'lucide-react';
 import { useLevelEditorStore } from '../../store/useLevelEditorStore';
 import { useStore } from '../../store/useStore';
 import { getAllChartNotes, getCandidateBlocks, blockDistance } from '../../utils/chartUtils';
@@ -12,81 +12,129 @@ const formatTime = (seconds: number) => {
   return `${m}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
 };
 
+const iconBtn: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  color: '#fff',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 4,
+  borderRadius: 4,
+};
+
 export const ChartingTab: React.FC = () => {
   const store = useLevelEditorStore();
-  const lastTriggeredRef = useRef<string | null>(null);
   const playbackRafRef = useRef(0);
   const lastRafTimeRef = useRef(0);
 
-  const chartNotes = useMemo(
-    () => (store.midiData ? getAllChartNotes(store.midiData) : []),
+  const editorBlocks = useLevelEditorStore(s => s.blocks);
+
+  // Non-background tracks available for per-track charting
+  const availableTracks = useMemo(
+    () => store.midiData?.tracks.filter(t => !t.isBackground) ?? [],
     [store.midiData],
   );
 
+  // Auto-select first track when nothing is selected (e.g. on first load)
+  useEffect(() => {
+    const es = useLevelEditorStore.getState();
+    if (es.selectedMidiTrackId === null && availableTracks.length > 0) {
+      es.selectMidiTrack(availableTracks[0].id);
+    }
+  }, [availableTracks]);
+
+  // Clear stale highlight state when midiData changes (covers undo/redo + track deletion)
+  // Skip if actively assigning — assignNoteTarget changes midiData and must not disrupt the flow
+  useEffect(() => {
+    if (useLevelEditorStore.getState().chartingAwaitingPick) return;
+    useLevelEditorStore.setState({
+      chartingHighlightIds: [],
+      chartingAssignedHighlightId: null,
+      chartingAwaitingPick: false,
+    });
+  }, [store.midiData]);
+
+  const chartNotes = useMemo(() => {
+    if (!store.midiData || store.selectedMidiTrackId === null) return [];
+    return getAllChartNotes(store.midiData).filter(
+      e => e.track.id === store.selectedMidiTrackId
+    );
+  }, [store.midiData, store.selectedMidiTrackId]);
+
   const currentEntry = chartNotes[store.chartingNoteIndex] ?? null;
+
+  // Per-note state for the progress bar: 'assigned' | 'unassigned' | 'missing'
+  const noteStates = useMemo(() => {
+    const blockSet = new Set(editorBlocks.map(b => `${b.pitch}-${b.instrument || 'piano'}`));
+    const blockIds = new Set(editorBlocks.map(b => b.id));
+    return chartNotes.map(e => {
+      const { note } = e;
+      if (note.targetId) {
+        return blockIds.has(note.targetId) ? 'assigned' : 'missing';
+      }
+      return blockSet.has(`${note.name}-${e.track.instrument}`) ? 'unassigned' : 'missing';
+    });
+  }, [chartNotes, editorBlocks]);
+
+  const assignedCount = useMemo(
+    () => noteStates.filter(s => s === 'assigned').length,
+    [noteStates],
+  );
+  const pct = chartNotes.length > 0 ? Math.round((assignedCount / chartNotes.length) * 100) : 0;
+  const unassignedCount = chartNotes.length - assignedCount;
+
+  const currentCandidates = useMemo(() => {
+    if (!currentEntry) return [];
+    return getCandidateBlocks(currentEntry.note, currentEntry.track);
+  }, [currentEntry]);
 
   const pauseForNote = useCallback((index: number) => {
     const entry = chartNotes[index];
     if (!entry) return;
-    store.stopPlayback();
-    store.setChartingNoteIndex(index);
-    store.setChartingPaused(true);
-    const candidates = getCandidateBlocks(entry.note, entry.track);
-    store.setChartingHighlightIds(candidates.map((c) => c.id));
+    const es = useLevelEditorStore.getState();
+    // Anchor to the note's time so stopPlayback (and any subsequent resume) starts from here
+    es.setPlaybackAnchor(entry.note.timeStart);
+    es.stopPlayback();
+    es.setChartingNoteIndex(index);
+    es.setChartingPaused(true);
 
-    // Find the last assigned block before this note to compute proximity weights
+    const candidates = getCandidateBlocks(entry.note, entry.track);
+    const candidateIds = candidates.map(c => c.id);
+    es.setChartingHighlightIds(candidateIds);
+    // Only show assigned highlight if the block is a valid candidate (matching pitch+instrument).
+    // An assigned block with wrong pitch (stale data from old bug) must NOT show green —
+    // it would confuse the user into thinking the wrong block is correct.
+    es.setChartingAssignedHighlightId(
+      entry.note.targetId && candidateIds.includes(entry.note.targetId)
+        ? entry.note.targetId
+        : null
+    );
+
     let lastPos: { x: number; y: number } | null = null;
     for (let i = index - 1; i >= 0; i--) {
       const prev = chartNotes[i];
       if (prev?.note.targetId) {
-        const editorBlocks = useLevelEditorStore.getState().blocks;
-        const blk = editorBlocks.find((b) => b.id === prev.note.targetId)
-          ?? useStore.getState().blocks.find((b) => b.id === prev.note.targetId);
+        const blk = useLevelEditorStore.getState().blocks.find(b => b.id === prev.note.targetId)
+          ?? useStore.getState().blocks.find(b => b.id === prev.note.targetId);
         if (blk) { lastPos = blk; break; }
       }
     }
-
     const weights: Record<string, number> = {};
     if (lastPos && candidates.length > 0) {
-      const distances = candidates.map((c) => blockDistance(c, lastPos!));
+      const distances = candidates.map(c => blockDistance(c, lastPos!));
       const maxDist = Math.max(...distances, 1);
       candidates.forEach((c, i) => { weights[c.id] = 1 - distances[i] / maxDist; });
     } else {
-      candidates.forEach((c) => { weights[c.id] = 1; });
+      candidates.forEach(c => { weights[c.id] = 1; });
     }
-    store.setChartingHighlightWeights(weights);
+    es.setChartingHighlightWeights(weights);
 
-    if (!entry.note.targetId) {
-      store.setChartingAwaitingPick(true);
-    }
-  }, [chartNotes, store]);
+    es.setChartingAwaitingPick(true);
+  }, [chartNotes]);
 
-  const advanceCharting = useCallback(() => {
-    const nextIndex = store.chartingNoteIndex + 1;
-    if (nextIndex >= chartNotes.length) {
-      store.setChartingAwaitingPick(false);
-      store.setChartingHighlightIds([]);
-      return;
-    }
-    store.setChartingNoteIndex(nextIndex);
-    const entry = chartNotes[nextIndex];
-    if (!entry) return;
-
-    if (entry.note.targetId && store.chartingAutoSkipAssigned) {
-      const main = useStore.getState();
-      if (entry.note.targetType === 'groupRect') {
-        main.updateGroupRect(entry.note.targetId, { playedAt: Date.now() });
-      } else {
-        main.updateBlock(entry.note.targetId, { playedAt: Date.now() });
-        useLevelEditorStore.getState().updateBlock(entry.note.targetId, { playedAt: Date.now() });
-      }
-      store.setPlaybackAnchor(entry.note.timeStart);
-      store.togglePlayback();
-    } else if (!entry.note.targetId) {
-      pauseForNote(nextIndex);
-    }
-  }, [chartNotes, pauseForNote, store]);
-
+  // ── Playback loop ────────────────────────────────────────────────────────────
   const chartingPlaybackLoop = useCallback(function loop(time: DOMHighResTimeStamp) {
     const s = useLevelEditorStore.getState();
     if (!s.isPlaying || s.isRecordingChart) return;
@@ -96,19 +144,18 @@ export const ChartingTab: React.FC = () => {
     lastRafTimeRef.current = time;
 
     const newPos = s.playbackPosition + dt * s.audioPlaybackRate;
-    if (newPos >= s.chartEndPosition) {
-      s.stopPlayback();
-      return;
-    }
+    if (newPos >= s.chartEndPosition) { s.stopPlayback(); return; }
 
     if (s.midiData) {
       for (const { note, track } of chartNotes) {
         const newMs = newPos * 1000;
         const oldMs = s.playbackPosition * 1000;
-        if (note.timeStart * 1000 >= oldMs && note.timeStart * 1000 < newMs) {
+        // Use strict > so resuming from a note's exact time won't re-trigger it
+        if (note.timeStart * 1000 > oldMs && note.timeStart * 1000 <= newMs) {
           playNote(note.name, note.velocity * (s.midiVolume / 100), track.instrument);
 
-          if (note.targetId && s.chartingAutoSkipAssigned) {
+          // Always flash the assigned block for visual feedback
+          if (note.targetId) {
             const main = useStore.getState();
             if (note.targetType === 'groupRect') {
               main.updateGroupRect(note.targetId, { playedAt: Date.now() });
@@ -116,9 +163,20 @@ export const ChartingTab: React.FC = () => {
               main.updateBlock(note.targetId, { playedAt: Date.now() });
               useLevelEditorStore.getState().updateBlock(note.targetId, { playedAt: Date.now() });
             }
-          } else if (!note.targetId && !s.chartingAwaitingPick) {
-            const idx = chartNotes.findIndex((e) => e.note.id === note.id);
-            if (idx >= 0) pauseForNote(idx);
+          }
+
+          // Mode-based pause logic
+          const mode = s.chartingPlaybackMode;
+          const shouldPause =
+            mode === 'note-by-note' ||
+            (mode === 'skip-assigned' && !note.targetId);
+
+          if (shouldPause) {
+            const idx = chartNotes.findIndex(e => e.note.id === note.id);
+            if (idx >= 0) {
+              pauseForNote(idx);
+              return; // stop the loop — don't update position or schedule next frame
+            }
           }
         }
       }
@@ -137,185 +195,264 @@ export const ChartingTab: React.FC = () => {
     return () => cancelAnimationFrame(playbackRafRef.current);
   }, [store.isPlaying, store.isRecordingChart, store.activeTab, chartingPlaybackLoop]);
 
-  useEffect(() => {
-    if (store.activeTab !== 'charting' || !store.isRecordingChart) return;
-    const interval = setInterval(() => {
-      const main = useStore.getState();
-      for (const block of main.blocks) {
-        if (block.playedAt) {
-          const key = `${block.id}-${block.playedAt}`;
-          if (lastTriggeredRef.current !== key) {
-            lastTriggeredRef.current = key;
-            store.recordChartHit(block.id, 'block');
-          }
-        }
-      }
-      for (const gr of main.groupRects) {
-        if (gr.playedAt) {
-          const key = `gr-${gr.id}-${gr.playedAt}`;
-          if (lastTriggeredRef.current !== key) {
-            lastTriggeredRef.current = key;
-            store.recordChartHit(gr.id, 'groupRect');
-          }
-        }
-      }
-    }, 16);
-    return () => clearInterval(interval);
-  }, [store.activeTab, store.isRecordingChart, store]);
 
-  const handlePrev = () => {
+  // ── Navigation ───────────────────────────────────────────────────────────────
+  const handlePrev = useCallback(() => {
     const idx = Math.max(0, store.chartingNoteIndex - 1);
     store.setPlaybackAnchor(chartNotes[idx]?.note.timeStart ?? 0);
     pauseForNote(idx);
-  };
+  }, [store, chartNotes, pauseForNote]);
 
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     const idx = Math.min(chartNotes.length - 1, store.chartingNoteIndex + 1);
     store.setPlaybackAnchor(chartNotes[idx]?.note.timeStart ?? 0);
     pauseForNote(idx);
-  };
+  }, [store, chartNotes, pauseForNote]);
 
-  const handleReset = () => {
-    store.setChartingNoteIndex(0);
-    store.setChartingAwaitingPick(false);
-    store.setChartingHighlightIds([]);
-    store.setPlaybackAnchor(0);
-    store.stopPlayback();
-  };
+  const handleJumpToNextUnassigned = useCallback(() => {
+    let idx = chartNotes.findIndex((e, i) => i > store.chartingNoteIndex && !e.note.targetId);
+    if (idx < 0) idx = chartNotes.findIndex(e => !e.note.targetId);
+    if (idx >= 0) {
+      store.setPlaybackAnchor(chartNotes[idx].note.timeStart);
+      pauseForNote(idx);
+    }
+  }, [chartNotes, store, pauseForNote]);
 
-  const preview = store.recordMatchPreview;
+  // Skip current note: just advance to the next one
+  const handleSkip = useCallback(() => {
+    handleNext();
+  }, [handleNext]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    if (store.activeTab !== 'charting') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (useLevelEditorStore.getState().activeTab !== 'charting') return;
+
+      if (e.key === ' ') {
+        e.preventDefault();
+        useLevelEditorStore.getState().togglePlayback();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handlePrev();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleNext();
+      } else if (e.key === 'n' || e.key === 'u') {
+        e.preventDefault();
+        handleJumpToNextUnassigned();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        useLevelEditorStore.getState().stopPlayback();
+        useLevelEditorStore.getState().setChartingAwaitingPick(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [store.activeTab, handlePrev, handleNext, handleJumpToNextUnassigned]);
+
+  // Progress bar click
+  const handleProgressBarClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (chartNotes.length === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const idx = Math.min(chartNotes.length - 1, Math.floor(ratio * chartNotes.length));
+    store.setPlaybackAnchor(chartNotes[idx].note.timeStart);
+    pauseForNote(idx);
+  }, [chartNotes, store, pauseForNote]);
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        padding: '16px 24px',
-        background: 'linear-gradient(to top, rgba(0,0,0,0.95), rgba(0,0,0,0.6), transparent)',
-        zIndex: 20,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-        pointerEvents: 'auto',
-      }}
-    >
-      {store.isRecordingChart && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: '#f87171', fontSize: 14, fontWeight: 600 }}>
-          <Circle size={14} fill="currentColor" /> Recording... Speed: {store.audioPlaybackRate}x
-          <span style={{ color: '#fff', opacity: 0.7, fontWeight: 400 }}>
-            Hits: {store.recordedChartHits.length} · {formatTime(store.playbackPosition)}
-          </span>
-          <button
-            onClick={() => { store.stopChartRecording(); store.stopPlayback(); }}
-            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, background: '#dc2626', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: 6, cursor: 'pointer' }}
-          >
-            <Square size={14} fill="currentColor" /> Stop &amp; Match
-          </button>
-          <button
-            onClick={() => { store.discardChartRecording(); store.stopPlayback(); }}
-            style={{ background: 'transparent', border: '1px solid #666', color: '#ccc', padding: '6px 12px', borderRadius: 6, cursor: 'pointer' }}
-          >
-            Discard
-          </button>
-        </div>
-      )}
+    <div style={{
+      position: 'absolute',
+      bottom: 0, left: 0, right: 0,
+      background: 'linear-gradient(to top, rgba(0,0,0,0.97), rgba(0,0,0,0.7), transparent)',
+      zIndex: 20,
+      display: 'flex',
+      flexDirection: 'column',
+      pointerEvents: 'auto',
+    }}>
 
-      {preview && !store.isRecordingChart && (
-        <div style={{ background: 'rgba(30,30,40,0.9)', padding: 12, borderRadius: 8, fontSize: 13 }}>
-          <div>成功配對: {preview.matched.length} 個</div>
-          <div>未配對音符: {preview.unmatchedNotes.length} 個</div>
-          <div>多餘點擊: {preview.extraHits.length} 個</div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button
-              onClick={() => store.applyRecordMatch()}
-              style={{ background: '#6366f1', border: 'none', color: '#fff', padding: '6px 14px', borderRadius: 6, cursor: 'pointer' }}
-            >
-              Apply
-            </button>
-            <button
-              onClick={() => store.discardChartRecording()}
-              style={{ background: 'transparent', border: '1px solid #666', color: '#ccc', padding: '6px 14px', borderRadius: 6, cursor: 'pointer' }}
-            >
-              Discard
-            </button>
-          </div>
-        </div>
-      )}
-
-      {!store.isRecordingChart && !preview && (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button onClick={handlePrev} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}>
-              <ChevronLeft size={22} />
-            </button>
-            <button
-              onClick={() => store.togglePlayback()}
-              style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}
-            >
-              {store.isPlaying ? <Pause size={26} /> : <Play size={26} />}
-            </button>
-            <button onClick={handleNext} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}>
-              <ChevronRight size={22} />
-            </button>
-
-            {currentEntry ? (
-              <span style={{ color: '#fff', fontSize: 14 }}>
-                {currentEntry.note.name} ({currentEntry.track.instrument}) @ {formatTime(currentEntry.note.timeStart)}
-                {currentEntry.note.targetId ? ' ✓' : ' — 點擊方塊分配'}
-              </span>
-            ) : (
-              <span style={{ color: '#9ca3af', fontSize: 14 }}>無音符</span>
-            )}
-
-            <span style={{ marginLeft: 'auto', color: '#9ca3af', fontSize: 13 }}>
-              {chartNotes.length > 0 ? `${store.chartingNoteIndex + 1}/${chartNotes.length}` : '0/0'}
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#ccc', fontSize: 13, cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={store.chartingAutoSkipAssigned}
-                onChange={(e) => store.setChartingAutoSkipAssigned(e.target.checked)}
+      {/* ── Progress bar ──────────────────────────────────────────────────────── */}
+      {chartNotes.length > 0 && (
+        <div
+          onClick={handleProgressBarClick}
+          title="Click to jump to a note"
+          style={{
+            position: 'relative',
+            height: 20,
+            background: '#111',
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'row',
+            flexShrink: 0,
+            gap: 1,
+            padding: '3px 0',
+            boxSizing: 'border-box',
+          }}
+        >
+          {chartNotes.map((entry, i) => {
+            const isCurrent = i === store.chartingNoteIndex;
+            const state = noteStates[i];
+            const stateColor = state === 'assigned' ? '#4ade80'
+              : state === 'unassigned' ? '#f97316'
+              : '#ef4444';
+            return (
+              <div
+                key={entry.note.id}
+                style={{
+                  flex: 1,
+                  minWidth: 1,
+                  background: stateColor,
+                  opacity: isCurrent ? 1 : 0.55,
+                  borderRadius: 1,
+                }}
               />
-              Auto-skip assigned
-            </label>
+            );
+          })}
+        </div>
+      )}
 
-            <button
-              onClick={() => {
-                store.startChartRecording();
-                store.setPlaybackAnchor(store.playbackAnchor);
-                store.togglePlayback();
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(220,38,38,0.2)', border: '1px solid #dc2626', color: '#fca5a5', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}
-            >
-              <Circle size={12} fill="currentColor" /> Record
-            </button>
+      <div style={{ padding: '10px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
 
-            <button
-              onClick={handleReset}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: '1px solid #555', color: '#ccc', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}
-            >
-              <RotateCcw size={14} /> Reset
-            </button>
-
-            {store.chartingAwaitingPick && currentEntry && (
+        {/* Awaiting-pick callout */}
+        {store.chartingAwaitingPick && currentEntry && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            background: currentCandidates.length === 0
+              ? 'rgba(239,68,68,0.15)' : 'rgba(99,102,241,0.18)',
+            border: `1px solid ${currentCandidates.length === 0 ? '#ef4444' : '#6366f1'}`,
+            borderRadius: 8,
+            padding: '7px 14px',
+            fontSize: 13,
+          }}>
+            <span style={{ fontWeight: 700, fontSize: 10, letterSpacing: 1, textTransform: 'uppercase',
+              color: currentCandidates.length === 0 ? '#f87171' : '#a5b4fc' }}>
+              {currentCandidates.length === 0 ? 'No Block' : 'Assign'}
+            </span>
+            <span style={{ color: '#fff', fontWeight: 600 }}>{currentEntry.note.name}</span>
+            <span style={{ color: '#64748b' }}>·</span>
+            <span style={{ color: '#c4b5fd' }}>{currentEntry.track.instrument}</span>
+            {currentCandidates.length > 0
+              ? <span style={{ color: '#94a3b8', fontSize: 12 }}>{currentCandidates.length} candidate{currentCandidates.length !== 1 ? 's' : ''} highlighted — click one</span>
+              : <span style={{ color: '#f97316', fontSize: 12 }}>No matching block on canvas</span>}
+            {currentCandidates.length === 0 && (
               <button
                 onClick={() => {
-                  if (currentEntry.note.targetId) advanceCharting();
-                  else store.togglePlayback();
+                  const es = useLevelEditorStore.getState();
+                  const cam = es.camera ?? { x: 0, y: 0, zoom: 1 };
+                  const cx = -cam.x / cam.zoom + 400;
+                  const cy = -cam.y / cam.zoom + 300;
+                  es.addBlock({ pitch: currentEntry.note.name, instrument: currentEntry.track.instrument, volume: 1, x: cx - 30, y: cy - 30 });
+                  pauseForNote(store.chartingNoteIndex);
                 }}
-                style={{ marginLeft: 'auto', background: '#6366f1', border: 'none', color: '#fff', padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}
+                style={{ background: '#6366f1', border: 'none', color: '#fff', padding: '3px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12 }}
               >
-                {currentEntry.note.targetId ? 'Continue' : 'Skip'}
+                + Place on canvas
               </button>
             )}
+            <button onClick={handleSkip}
+              style={{ marginLeft: currentCandidates.length === 0 ? '0' : 'auto', background: 'transparent', border: '1px solid #555', color: '#9ca3af', padding: '3px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12 }}>
+              Skip
+            </button>
           </div>
-        </>
-      )}
+        )}
+
+        {/* Assigned note info (when not awaiting pick but on an assigned note) */}
+        {!store.chartingAwaitingPick && currentEntry?.note.targetId && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            background: 'rgba(34,197,94,0.1)',
+            border: '1px solid rgba(34,197,94,0.35)',
+            borderRadius: 8,
+            padding: '6px 14px',
+            fontSize: 12,
+          }}>
+            <span style={{ color: '#4ade80', fontWeight: 700, fontSize: 10, letterSpacing: 1, textTransform: 'uppercase' }}>Assigned</span>
+            <span style={{ color: '#fff', fontWeight: 600 }}>{currentEntry.note.name}</span>
+            <span style={{ color: '#64748b' }}>·</span>
+            <span style={{ color: '#c4b5fd' }}>{currentEntry.track.instrument}</span>
+            {currentCandidates.length > 1
+              ? <span style={{ color: '#94a3b8', fontSize: 11 }}>→ click another highlighted block to reassign</span>
+              : <span style={{ color: '#4ade80', fontSize: 11 }}>→ assigned block highlighted in green</span>}
+          </div>
+        )}
+
+        {/* Transport row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button onClick={handlePrev} style={iconBtn} title="Previous note (←)"><ChevronLeft size={20} /></button>
+          <button onClick={() => store.togglePlayback()} style={iconBtn} title="Play / Pause (Space)">
+            {store.isPlaying ? <Pause size={24} /> : <Play size={24} />}
+          </button>
+          <button onClick={handleNext} style={iconBtn} title="Next note (→)"><ChevronRight size={20} /></button>
+
+          <div style={{ width: 1, height: 18, background: '#333', margin: '0 4px', flexShrink: 0 }} />
+
+          <button
+            onClick={handleJumpToNextUnassigned}
+            disabled={unassignedCount === 0}
+            style={{
+              ...iconBtn,
+              display: 'flex', alignItems: 'center', gap: 5,
+              fontSize: 12,
+              color: unassignedCount > 0 ? '#f97316' : '#3f4454',
+              padding: '3px 8px',
+              border: `1px solid ${unassignedCount > 0 ? 'rgba(249,115,22,0.35)' : 'transparent'}`,
+              borderRadius: 5,
+              cursor: unassignedCount > 0 ? 'pointer' : 'default',
+            }}
+            title="Jump to next unassigned note (N)"
+          >
+            <SkipForward size={13} />
+            {unassignedCount > 0 ? `${unassignedCount} unassigned` : 'All assigned!'}
+          </button>
+
+          {currentEntry && !store.chartingAwaitingPick && !currentEntry.note.targetId && (
+            <span style={{ color: '#f97316', fontSize: 12, marginLeft: 2 }}>
+              {currentEntry.note.name} · {currentEntry.track.instrument} · {formatTime(currentEntry.note.timeStart)}
+            </span>
+          )}
+
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: pct === 100 ? '#4ade80' : pct > 0 ? '#f97316' : '#6b7280' }}>
+              {assignedCount}/{chartNotes.length}
+              {chartNotes.length > 0 && <span style={{ fontWeight: 400, opacity: 0.8 }}> ({pct}%)</span>}
+            </span>
+            <span style={{ color: '#374151', fontSize: 11 }}>·</span>
+            <span style={{ color: '#6b7280', fontSize: 12 }}>{formatTime(store.playbackPosition)}</span>
+          </div>
+        </div>
+
+        {/* Options row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Step-by-step toggle */}
+          <button
+            onClick={() => store.setChartingPlaybackMode(
+              store.chartingPlaybackMode === 'note-by-note' ? 'normal' : 'note-by-note'
+            )}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: store.chartingPlaybackMode === 'note-by-note' ? 'rgba(99,102,241,0.25)' : 'transparent',
+              border: `1px solid ${store.chartingPlaybackMode === 'note-by-note' ? '#6366f1' : '#374151'}`,
+              color: store.chartingPlaybackMode === 'note-by-note' ? '#a5b4fc' : '#4b5563',
+              padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 11,
+            }}
+            title="Step-by-step: pause at every note"
+          >
+            Step-by-step
+          </button>
+
+
+          <span style={{ marginLeft: 'auto', color: '#374151', fontSize: 10, userSelect: 'none' }}>
+            Space·play  ←→·nav  N·next unassigned  Esc·stop
+          </span>
+        </div>
+      </div>
     </div>
   );
 };

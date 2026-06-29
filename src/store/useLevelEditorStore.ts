@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { sliceAudioBuffer, encodeToMp3 } from '../utils/levelUtils';
 import { syncGameEventsFromMidi, applyMatchResult, matchRecordedHits, syncCanvasToGameBlocks, type RecordedHit } from '../utils/chartUtils';
 import { useUIStore } from './useUIStore';
+import { useStore } from './useStore';
 import { INITIAL_CANVAS_STATE, buildCanvasActions } from './createCanvasSlice';
 import type { CanvasSliceState, CanvasSliceActions } from './createCanvasSlice';
 import type { EditorNote, EditorTrack, ParsedMidiData, Block } from '../types';
@@ -69,11 +70,13 @@ interface LevelEditorSpecificState {
   activeTab: 'pianoroll' | 'blocks' | 'charting';
 
   chartingNoteIndex: number;
+  chartingTrackId: number | null;
   chartingPaused: boolean;
-  chartingAutoSkipAssigned: boolean;
+  chartingPlaybackMode: 'note-by-note' | 'skip-assigned' | 'normal';
   chartingAwaitingPick: boolean;
   chartingHighlightIds: string[];
   chartingHighlightWeights: Record<string, number>;
+  chartingAssignedHighlightId: string | null;
 
   isRecordingChart: boolean;
   recordedChartHits: RecordedHit[];
@@ -142,8 +145,10 @@ interface LevelEditorSpecificActions {
   setActiveTab: (tab: 'pianoroll' | 'blocks' | 'charting') => void;
 
   setChartingNoteIndex: (index: number) => void;
+  setChartingTrackId: (id: number | null) => void;
   setChartingPaused: (paused: boolean) => void;
-  setChartingAutoSkipAssigned: (v: boolean) => void;
+  setChartingPlaybackMode: (mode: 'note-by-note' | 'skip-assigned' | 'normal') => void;
+  setChartingAssignedHighlightId: (id: string | null) => void;
   setChartingAwaitingPick: (v: boolean) => void;
   setChartingHighlightIds: (ids: string[]) => void;
   setChartingHighlightWeights: (weights: Record<string, number>) => void;
@@ -172,6 +177,45 @@ export const useLevelEditorStore = create<LevelEditorState>()(
       // Canvas factory slice: blocks, groupRects, tracks (canvas splines), camera, pocket, selections, etc.
       ...INITIAL_CANVAS_STATE,
       ...buildCanvasActions(set as Parameters<typeof buildCanvasActions>[0], get),
+
+      // Override updateBlock to record events when recording is active
+      updateBlock: (id, updates) => {
+        if (updates.playedAt !== undefined && useStore.getState().isRecording) {
+          useStore.getState().recordEvent('block', id);
+        }
+        set((state) => ({
+          ...state,
+          blocks: state.blocks.map(b => b.id === id ? { ...b, ...updates } : b),
+        }));
+      },
+
+      // Override deleteSelected to also clear orphaned MIDI note targetIds
+      deleteSelected: () => {
+        const s = get();
+        const deletedBlockIds = new Set(s.selectedBlockIds);
+        set((state) => ({
+          blocks: state.blocks.filter(b => !state.selectedBlockIds.includes(b.id)),
+          selectedBlockIds: [],
+          tracks: state.tracks.filter(t => !state.selectedTrackIds.includes(t.id)),
+          runners: state.runners.filter(r => !state.selectedTrackIds.includes(r.trackId)),
+          selectedTrackIds: [],
+          groupRects: state.groupRects.filter(g => !state.selectedGroupRectIds.includes(g.id)),
+          selectedGroupRectIds: [],
+        }));
+        if (s.midiData && deletedBlockIds.size > 0) {
+          const updatedTracks = s.midiData.tracks.map(track => ({
+            ...track,
+            notes: track.notes.map(note =>
+              note.targetId && deletedBlockIds.has(note.targetId)
+                ? { ...note, targetId: undefined, targetType: undefined }
+                : note
+            ),
+          }));
+          const updatedMidiData = { ...s.midiData, tracks: updatedTracks };
+          set({ midiData: updatedMidiData });
+          syncGameEventsFromMidi(updatedMidiData);
+        }
+      },
 
       audioFile: null,
       audioBuffer: null,
@@ -245,11 +289,13 @@ export const useLevelEditorStore = create<LevelEditorState>()(
       gameEvents: [] as { time: number; pitch: string; instrument: string; blockId: string; }[],
 
       chartingNoteIndex: 0,
+      chartingTrackId: null as number | null,
       chartingPaused: false,
-      chartingAutoSkipAssigned: true,
+      chartingPlaybackMode: 'skip-assigned' as const,
       chartingAwaitingPick: false,
       chartingHighlightIds: [],
       chartingHighlightWeights: {},
+      chartingAssignedHighlightId: null,
 
       isRecordingChart: false,
       recordedChartHits: [],
@@ -424,7 +470,10 @@ export const useLevelEditorStore = create<LevelEditorState>()(
 
       // --- MIDI Track Management ---
       selectMidiTrack: (id) => {
-        set({ selectedMidiTrackId: id, selectedNoteIds: new Set() });
+        // In charting tab, stop playback so the RAF closure (which captures chartNotes
+        // from the old track) can't fire pauseForNote after selectedMidiTrackId changes.
+        if (get().activeTab === 'charting') get().stopPlayback();
+        set({ selectedMidiTrackId: id, selectedNoteIds: new Set(), chartingNoteIndex: 0, chartingAwaitingPick: false, chartingHighlightIds: [], chartingHighlightWeights: {}, chartingAssignedHighlightId: null });
       },
       addMidiTrack: () => {
         const s = get();
@@ -436,10 +485,13 @@ export const useLevelEditorStore = create<LevelEditorState>()(
             duration: s.audioDuration || 60,
             tracks: []
           };
-          nextTrackIdObj = 0;
         }
 
-        const newTrackId = nextTrackIdObj++;
+        // Always derive from existing tracks so rehydrated state can't cause ID collisions
+        const newTrackId = currentMidiData.tracks.length > 0
+          ? Math.max(...currentMidiData.tracks.map(t => t.id)) + 1
+          : 0;
+        nextTrackIdObj = newTrackId + 1;
         const newTrack: EditorTrack = {
           id: newTrackId,
           name: `Track ${newTrackId + 1}`,
@@ -457,7 +509,9 @@ export const useLevelEditorStore = create<LevelEditorState>()(
         const trackToDup = s.midiData.tracks.find(t => t.id === id);
         if (!trackToDup) return;
 
-        const newTrackId = nextTrackIdObj++;
+        // Derive from existing tracks for the same reason as addMidiTrack
+        const newTrackId = Math.max(...s.midiData.tracks.map(t => t.id)) + 1;
+        nextTrackIdObj = newTrackId + 1;
         const dupNotes = JSON.parse(JSON.stringify(trackToDup.notes)).map((n: EditorNote) => ({
           ...n,
           id: generateId()
@@ -479,13 +533,16 @@ export const useLevelEditorStore = create<LevelEditorState>()(
       removeMidiTrack: (id) => {
         const s = get();
         if (!s.midiData) return;
-        s.midiData.tracks = s.midiData.tracks.filter(t => t.id !== id);
-
-        let newSelectedId = s.selectedMidiTrackId;
-        if (newSelectedId === id) {
-          newSelectedId = s.midiData.tracks.length > 0 ? s.midiData.tracks[0].id : null;
-        }
-        set({ midiData: { ...s.midiData }, selectedMidiTrackId: newSelectedId });
+        const newTracks = s.midiData.tracks.filter(t => t.id !== id);
+        const newSelectedId = s.selectedMidiTrackId === id
+          ? (newTracks[0]?.id ?? null)
+          : s.selectedMidiTrackId;
+        const newChartingTrackId = s.chartingTrackId === id
+          ? (newTracks.find(t => !t.isBackground)?.id ?? null)
+          : s.chartingTrackId;
+        const updatedMidiData = { ...s.midiData, tracks: newTracks };
+        set({ midiData: updatedMidiData, selectedMidiTrackId: newSelectedId, chartingTrackId: newChartingTrackId });
+        syncGameEventsFromMidi(updatedMidiData);
         get().commitHistory();
       },
       renameMidiTrack: (id, name) => {
@@ -546,7 +603,7 @@ export const useLevelEditorStore = create<LevelEditorState>()(
         if (s.isPlaying) {
           return { isPlaying: false, playbackPosition: s.playbackAnchor };
         }
-        return { isPlaying: true, playbackPosition: s.playbackAnchor };
+        return { isPlaying: true, playbackPosition: s.playbackAnchor, chartingAwaitingPick: false };
       }),
       stopPlayback: () => set((s) => ({ isPlaying: false, playbackPosition: s.playbackAnchor })),
       setChartEndPosition: (pos: number) => set({ chartEndPosition: Math.max(0, pos) }),
@@ -783,15 +840,17 @@ export const useLevelEditorStore = create<LevelEditorState>()(
       },
 
       // --- Tab ---
-      setActiveTab: (tab) => set({ activeTab: tab }),
+      setActiveTab: (tab) => set({ activeTab: tab, chartingAwaitingPick: false, chartingHighlightIds: [], chartingHighlightWeights: {}, chartingAssignedHighlightId: null }),
 
       // --- Charting ---
       setChartingNoteIndex: (index) => set({ chartingNoteIndex: index }),
+      setChartingTrackId: (id) => set({ chartingTrackId: id }),
       setChartingPaused: (paused) => set({ chartingPaused: paused }),
-      setChartingAutoSkipAssigned: (v) => set({ chartingAutoSkipAssigned: v }),
       setChartingAwaitingPick: (v) => set({ chartingAwaitingPick: v }),
       setChartingHighlightIds: (ids) => set({ chartingHighlightIds: ids }),
       setChartingHighlightWeights: (weights) => set({ chartingHighlightWeights: weights }),
+      setChartingPlaybackMode: (mode) => set({ chartingPlaybackMode: mode }),
+      setChartingAssignedHighlightId: (id) => set({ chartingAssignedHighlightId: id }),
 
       assignNoteTarget: (noteId, trackId, targetId, targetType) => {
         const s = get();
@@ -803,7 +862,7 @@ export const useLevelEditorStore = create<LevelEditorState>()(
         note.targetId = targetId;
         note.targetType = targetType;
         const midiData = { ...s.midiData, tracks };
-        set({ midiData, chartingAwaitingPick: false, chartingHighlightIds: [], chartingHighlightWeights: {} });
+        set({ midiData });
         syncGameEventsFromMidi(midiData);
         get().commitHistory();
       },
@@ -908,11 +967,13 @@ export const useLevelEditorStore = create<LevelEditorState>()(
           }], historyIndex: 0, clipboard: [], clipboardSourceTrackId: null,
           activeTab: 'pianoroll' as const,
           chartingNoteIndex: 0,
+          chartingTrackId: null as number | null,
           chartingPaused: false,
-          chartingAutoSkipAssigned: true,
+          chartingPlaybackMode: 'skip-assigned' as const,
           chartingAwaitingPick: false,
           chartingHighlightIds: [],
           chartingHighlightWeights: {},
+          chartingAssignedHighlightId: null,
           isRecordingChart: false,
           recordedChartHits: [],
           recordMatchPreview: null,

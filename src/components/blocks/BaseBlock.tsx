@@ -24,10 +24,12 @@ export interface BaseBlockProps {
   isInvalid?: boolean;
   isHighlighted?: boolean;
   highlightIntensity?: number;
+  isAssignedHighlight?: boolean;
+  isDimmed?: boolean;
 }
 
 export const BaseBlock: React.FC<BaseBlockProps> = ({
-  x, y, pitch, instrument, volume = 1, isInteractive = true, blockColor, onPointerDown, onPointerUp, onPointerEnter, onPointerLeave, opacity = 1, showPitch, showInstrument, showVolume, playedAt, isSelected = false, isInvalid = false, isHighlighted = false, highlightIntensity = 1
+  x, y, pitch, instrument, volume = 1, isInteractive = true, blockColor, onPointerDown, onPointerUp, onPointerEnter, onPointerLeave, opacity = 1, showPitch, showInstrument, showVolume, playedAt, isSelected = false, isInvalid = false, isHighlighted = false, highlightIntensity = 1, isAssignedHighlight = false, isDimmed = false
 }) => {
   const graphicsRef = useRef<PIXI.Graphics>(null);
   const ripplesRef = useRef<{id: number, progress: number}[]>([]);
@@ -60,11 +62,16 @@ export const BaseBlock: React.FC<BaseBlockProps> = ({
       g.fill({ color: 0x6366f1, alpha: 0.5 }); // Indigo glow
     }
 
-    if (isHighlighted) {
+    if (isAssignedHighlight) {
       g.roundRect(-6, -6, 72, 72, 10);
-      g.stroke({ width: 3, color: 0x00d4ff, alpha: 0.4 + highlightIntensity * 0.6 });
+      g.stroke({ width: 3, color: 0x22c55e, alpha: 0.95 });
       g.roundRect(0, 0, 60, 60, 8);
-      g.fill({ color: 0x00d4ff, alpha: 0.08 + highlightIntensity * 0.12 });
+      g.fill({ color: 0x22c55e, alpha: 0.18 });
+    } else if (isHighlighted) {
+      g.roundRect(-6, -6, 72, 72, 10);
+      g.stroke({ width: 3, color: 0x9ca3af, alpha: 0.4 + highlightIntensity * 0.6 });
+      g.roundRect(0, 0, 60, 60, 8);
+      g.fill({ color: 0x9ca3af, alpha: 0.08 + highlightIntensity * 0.12 });
     }
 
     g.roundRect(0, 0, 60, 60, 8); // Square block
@@ -83,7 +90,13 @@ export const BaseBlock: React.FC<BaseBlockProps> = ({
       g.roundRect(4, 50, 52 * volume, 6, 3);
       g.fill({ color: 0xffffff, alpha: 0.8 });
     }
-  }, [blockColor, opacity, showVolume, volume, isSelected, isInvalid, isHighlighted, highlightIntensity]);
+
+    // Dim overlay for non-related blocks in charting mode
+    if (isDimmed) {
+      g.roundRect(0, 0, 60, 60, 8);
+      g.fill({ color: 0x000000, alpha: 0.55 });
+    }
+  }, [blockColor, opacity, showVolume, volume, isSelected, isInvalid, isHighlighted, highlightIntensity, isAssignedHighlight, isDimmed]);
 
   useEffect(() => {
     let animationFrameId: number;
@@ -114,7 +127,7 @@ export const BaseBlock: React.FC<BaseBlockProps> = ({
       label="note-block"
       x={x}
       y={y}
-      zIndex={isSelected ? 101 : 10}
+      zIndex={isSelected || isHighlighted || isAssignedHighlight ? 101 : isDimmed ? 5 : 10}
       eventMode={isInteractive ? "static" : "none"}
       cursor={isInteractive ? "pointer" : "default"}
       hitArea={new PIXI.Rectangle(0, 0, 60, 60)}

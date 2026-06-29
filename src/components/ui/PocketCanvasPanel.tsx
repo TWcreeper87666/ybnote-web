@@ -1,17 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useStore } from '../../store/useStore';
-import { Download, SortAsc, LayoutGrid, Filter } from 'lucide-react';
-import { parseMidiToPocketBlocks } from '../../utils/midiUtils';
-import { PocketCanvas } from '../canvas/PocketCanvas';
-import { FloatingWindow } from './FloatingWindow';
-import { useCanvasContext } from '../canvas/CanvasContext';
+import React, { useState, useRef, useEffect } from "react";
+import { useStore } from "../../store/useStore";
+import { Download, SortAsc, LayoutGrid, Filter } from "lucide-react";
+import { parseMidiToPocketBlocks } from "../../utils/midiUtils";
+import { PocketCanvas } from "../canvas/PocketCanvas";
+import { FloatingWindow } from "./FloatingWindow";
+import { useCanvasContext } from "../canvas/CanvasContext";
+import { useUIStore } from "../../store/useUIStore";
 
 export const PocketCanvasPanel: React.FC = () => {
   const canvasContext = useCanvasContext();
-  const isPocketCanvasOpen = useStore(state => state.isPocketCanvasOpen);
-  const togglePocketCanvas = useStore(state => state.togglePocketCanvas);
-  const pocketSortMode = useStore(state => state.pocketSortMode);
-  const setPocketSortMode = useStore(state => state.setPocketSortMode);
+  const { isPocketCanvasOpen, togglePocketCanvas } = useUIStore((s) => s);
+  const pocketSortMode = useStore((state) => state.pocketSortMode);
+  const setPocketSortMode = useStore((state) => state.setPocketSortMode);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(280);
@@ -20,14 +20,14 @@ export const PocketCanvasPanel: React.FC = () => {
 
   useEffect(() => {
     if (containerRef.current) {
-        const resizeObserver = new ResizeObserver((entries) => {
-            for (const entry of entries) {
-                setContainerWidth(entry.contentRect.width);
-                setContainerHeight(entry.contentRect.height);
-            }
-        });
-        resizeObserver.observe(containerRef.current);
-        return () => resizeObserver.disconnect();
+      const resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          setContainerWidth(entry.contentRect.width);
+          setContainerHeight(entry.contentRect.height);
+        }
+      });
+      resizeObserver.observe(containerRef.current);
+      return () => resizeObserver.disconnect();
     }
   }, [isPocketCanvasOpen]);
 
@@ -40,46 +40,120 @@ export const PocketCanvasPanel: React.FC = () => {
 
   return (
     <FloatingWindow
-      title={<><LayoutGrid size={18} /> Pocket Canvas</>}
+      title={
+        <>
+          <LayoutGrid size={18} /> Pocket Canvas
+        </>
+      }
       isOpen={isPocketCanvasOpen}
       onClose={togglePocketCanvas}
       anchorSelector='button[title="Toggle Pocket Canvas"], button[title="Pocket Canvas"]'
-      initialSize={{ width: '310px', height: '400px' }}
-      minSize={{ width: '300px', height: '300px' }}
+      initialSize={{ width: "310px", height: "400px" }}
+      minSize={{ width: "300px", height: "300px" }}
     >
       {isPocketCanvasOpen && (
         <>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '0 4px 4px 4px', borderBottom: '1px solid var(--panel-border)', flexShrink: 0 }}>
-        {canvasContext !== 'editor' && (
-        <label className="toolbar-btn" style={{ width: '100%', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '0 4px', background: 'var(--panel-bg)', borderRadius: '4px', fontSize: '12px', boxSizing: 'border-box' }}>
-            <Download size={14} style={{ marginRight: '4px' }} /> Load .mid
-            <input type="file" accept=".mid,.midi" style={{ display: 'none' }} onChange={handleImport} />
-        </label>
-        )}
-        
-        <div style={{ display: 'flex', gap: '2px', width: '100%' }}>
-            <button 
-                className="toolbar-btn" 
-                style={{ flex: 1, height: '24px', padding: '0 4px', background: 'var(--panel-bg)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}
-                onClick={() => setPocketSortMode(pocketSortMode === 'pitch' ? 'time' : 'pitch')}
-            >
-                <SortAsc size={14} style={{ marginRight: '4px' }} /> Sort: {pocketSortMode === 'pitch' ? 'Pitch' : 'Time'}
-            </button>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "2px",
+              padding: "0 4px 4px 4px",
+              borderBottom: "1px solid var(--panel-border)",
+              flexShrink: 0,
+            }}
+          >
+            {canvasContext !== "editor" && (
+              <label
+                className="toolbar-btn"
+                style={{
+                  width: "100%",
+                  height: "24px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  padding: "0 4px",
+                  background: "var(--panel-bg)",
+                  borderRadius: "4px",
+                  fontSize: "12px",
+                  boxSizing: "border-box",
+                }}
+              >
+                <Download size={14} style={{ marginRight: "4px" }} /> Load .mid
+                <input
+                  type="file"
+                  accept=".mid,.midi"
+                  style={{ display: "none" }}
+                  onChange={handleImport}
+                />
+              </label>
+            )}
 
-            <button 
-                className="toolbar-btn" 
-                style={{ flex: 1, height: '24px', padding: '0 4px', background: showOnlyMissing ? 'var(--panel-border)' : 'var(--panel-bg)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}
+            <div style={{ display: "flex", gap: "2px", width: "100%" }}>
+              <button
+                className="toolbar-btn"
+                style={{
+                  flex: 1,
+                  height: "24px",
+                  padding: "0 4px",
+                  background: "var(--panel-bg)",
+                  borderRadius: "4px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "12px",
+                }}
+                onClick={() =>
+                  setPocketSortMode(
+                    pocketSortMode === "pitch" ? "time" : "pitch",
+                  )
+                }
+              >
+                <SortAsc size={14} style={{ marginRight: "4px" }} /> Sort:{" "}
+                {pocketSortMode === "pitch" ? "Pitch" : "Time"}
+              </button>
+
+              <button
+                className="toolbar-btn"
+                style={{
+                  flex: 1,
+                  height: "24px",
+                  padding: "0 4px",
+                  background: showOnlyMissing
+                    ? "var(--panel-border)"
+                    : "var(--panel-bg)",
+                  borderRadius: "4px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "12px",
+                }}
                 onClick={() => setShowOnlyMissing(!showOnlyMissing)}
-            >
-                <Filter size={14} style={{ marginRight: '4px' }} /> Missing
-            </button>
-        </div>
-      </div>
+              >
+                <Filter size={14} style={{ marginRight: "4px" }} /> Missing
+              </button>
+            </div>
+          </div>
 
-      <div ref={containerRef} className="pocket-canvas-container" style={{ flex: 1, overflow: 'hidden', position: 'relative', borderRadius: '4px', margin: '0 8px 8px 8px' }}>
-          <PocketCanvas containerWidth={containerWidth} containerHeight={containerHeight} showOnlyMissing={showOnlyMissing} />
-      </div>
-      </>
+          <div
+            ref={containerRef}
+            className="pocket-canvas-container"
+            style={{
+              flex: 1,
+              overflow: "hidden",
+              position: "relative",
+              borderRadius: "4px",
+              margin: "0 8px 8px 8px",
+            }}
+          >
+            <PocketCanvas
+              containerWidth={containerWidth}
+              containerHeight={containerHeight}
+              showOnlyMissing={showOnlyMissing}
+            />
+          </div>
+        </>
       )}
     </FloatingWindow>
   );

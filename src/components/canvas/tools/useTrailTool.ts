@@ -1,11 +1,11 @@
 import { useCallback } from 'react';
-import type { MutableRefObject } from 'react';
+import type { RefObject } from 'react';
 import type { FederatedPointerEvent, Container } from 'pixi.js';
 import { lineIntersectsRect } from '../../../utils/geometry';
 import { getCanvasState } from '../../../store/canvasAdapter';
 
 interface TrailDeps {
-  intersectedBlocksRef: MutableRefObject<Set<string>>;
+  intersectedBlocksRef: RefObject<Set<string>>;
   startTrail: (x: number, y: number) => void;
   updateTrail: (x: number, y: number, cb: (p1: { x: number; y: number }, p2: { x: number; y: number }) => void) => boolean;
   endTrail: () => void;
@@ -93,12 +93,11 @@ export function useTrailTool(
 
   const onPointerMove = (e: FederatedPointerEvent): boolean => {
     if (e.buttons !== 2 || getCanvasState(context).activeNodeDrag) return false;
+    const pos = (e.currentTarget as Container).toLocal(e.global);
     if (isOverTrack(e)) {
-      endTrail();
-      intersectedBlocksRef.current.clear();
+      updateTrail(pos.x, pos.y, () => {});
       return true;
     }
-    const pos = (e.currentTarget as Container).toLocal(e.global);
     updateTrail(pos.x, pos.y, (p1, p2) => checkIntersection(p1.x, p1.y, p2.x, p2.y));
     return true;
   };

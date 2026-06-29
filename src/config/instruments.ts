@@ -231,3 +231,30 @@ export const getInstrumentById = (id: string): InstrumentDef | undefined =>
 
 /** All instruments with a synthType — suitable for melodic keyboard selection */
 export const MELODIC_INSTRUMENTS = INSTRUMENT_REGISTRY.filter(i => i.synthType);
+
+/** 透過 MIDI Program Number 取得對應的樂器 ID */
+export const getInstrumentByMidiProgram = (programNumber: number): string => {
+  const found = INSTRUMENT_REGISTRY.find(i => {
+    if (i.midiNumberRange) {
+      return programNumber >= i.midiNumberRange[0] && programNumber <= i.midiNumberRange[1];
+    }
+    return false;
+  });
+  return found ? found.id : 'piano'; // 預設 Fallback 為鋼琴
+};
+
+/** 透過 MIDI Note Number 取得對應的打擊樂器 Pitch 名稱 (GM 標準鼓譜對應) */
+export const getDrumPitchByMidiNote = (midiNote: number): string => {
+  switch (midiNote) {
+    case 35: case 36: return 'kick';        // 大鼓
+    case 38: case 40: return 'snare';       // 小鼓
+    case 39: return 'clap';                 // 拍手
+    case 42: case 44: return 'hihat';       // 閉合 Hi-Hat / 踏板 Hi-Hat
+    case 46: return 'openhat';              // 開放 Hi-Hat
+    case 41: case 43: return 'floortom';    // 低音 Tom
+    case 45: case 47: case 48: case 50: return 'tom'; // 中/高音 Tom
+    case 49: case 55: case 57: return 'cymbal'; // 碎音鈸 (Crash)
+    case 51: case 53: case 59: return 'ride';   // 節奏鈸 (Ride)
+    default: return 'kick'; // 如果遇到不認識的打擊樂器，Fallback 為 kick
+  }
+};

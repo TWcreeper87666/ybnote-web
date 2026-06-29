@@ -290,19 +290,43 @@ export const PianoRoll: React.FC = () => {
       }
     }
 
-    // 3. Notes
+    // 3. Notes — ghost/background tracks first, selected track on top
     if (!store.midiData) return;
     const selectedNoteIds = store.selectedNoteIds;
+    const mainBlocks = useLevelEditorStore.getState().blocks;
 
+    // First pass: ghost tracks (rendered below selected track)
     for (const track of store.midiData.tracks) {
-      const isSelectedTrack = track.id === store.selectedMidiTrackId;
-      const isGhostVisible = store.ghostNoteVisibility[track.id];
+      if (track.id === store.selectedMidiTrackId) continue;
+      if (!store.ghostNoteVisibility[track.id]) continue;
+
       const isBackground = track.isBackground;
-
-      if (!isSelectedTrack && !isGhostVisible) continue;
-
       const trackColor = getTrackColor(track.id);
-      const mainBlocks = useLevelEditorStore.getState().blocks;
+
+      for (const note of track.notes) {
+        const noteX = note.timeStart * zoom - scrollLeft;
+        const noteW = Math.max(note.duration * zoom, 2);
+        const noteY = (MAX_PITCH - note.pitch) * ROW_HEIGHT - scrollTop;
+
+        if (noteX + noteW < 0 || noteX > width) continue;
+        if (noteY + ROW_HEIGHT < 0 || noteY > height) continue;
+
+        ctx.strokeStyle = isBackground ? "rgba(120,120,120,0.5)" : trackColor;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(noteX, noteY, noteW, ROW_HEIGHT - 1);
+        ctx.fillStyle = isBackground
+          ? "rgba(80,80,80,0.35)"
+          : shadeColor(trackColor, -150);
+        ctx.fillRect(noteX + 1, noteY + 1, noteW - 2, ROW_HEIGHT - 3);
+      }
+    }
+
+    // Second pass: selected track (always on top of ghost notes)
+    for (const track of store.midiData.tracks) {
+      if (track.id !== store.selectedMidiTrackId) continue;
+
+      const isBackground = track.isBackground;
+      const trackColor = getTrackColor(track.id);
 
       for (const note of track.notes) {
         const noteX = note.timeStart * zoom - scrollLeft;
@@ -317,54 +341,44 @@ export const PianoRoll: React.FC = () => {
         const isUnassignedSilent =
           !note.targetId && !hasMatchingBlock && !isBackground;
 
-        if (isSelectedTrack) {
-          const isSelected = selectedNoteIds.has(note.id);
-          const baseColor = isBackground
-            ? "rgba(120,120,120,0.45)"
-            : isSelected
-              ? "#ffb347"
-              : trackColor;
-          ctx.fillStyle = baseColor;
-          ctx.fillRect(noteX, noteY, noteW, ROW_HEIGHT - 1);
+        const isSelected = selectedNoteIds.has(note.id);
+        const baseColor = isBackground
+          ? "rgba(120,120,120,0.45)"
+          : isSelected
+            ? "#ffb347"
+            : trackColor;
+        ctx.fillStyle = baseColor;
+        ctx.fillRect(noteX, noteY, noteW, ROW_HEIGHT - 1);
 
-          if (isUnassignedSilent) {
-            ctx.setLineDash([3, 3]);
-            ctx.strokeStyle = "#ef4444";
-          } else {
-            ctx.setLineDash([]);
-            ctx.strokeStyle = isSelected ? "#fff" : shadeColor(trackColor, -30);
-          }
-          ctx.strokeRect(noteX, noteY, noteW, ROW_HEIGHT - 1);
-          ctx.setLineDash([]);
-
-          if (note.targetId && !isBackground) {
-            const targetBlock = mainBlocks.find((b) => b.id === note.targetId);
-            const dotColor = targetBlock
-              ? getPitchColorHex(targetBlock.pitch, 36)
-              : "#a5b4fc";
-            ctx.fillStyle = dotColor;
-            ctx.beginPath();
-            ctx.arc(noteX + 4, noteY + ROW_HEIGHT / 2, 3, 0, Math.PI * 2);
-            ctx.fill();
-          }
-
-          if (!isBackground) {
-            ctx.fillStyle = "rgba(255,255,255,0.4)";
-            ctx.fillRect(
-              noteX,
-              noteY + (ROW_HEIGHT - 4) / 2,
-              noteW * note.velocity,
-              3,
-            );
-          }
+        if (isUnassignedSilent) {
+          ctx.setLineDash([3, 3]);
+          ctx.strokeStyle = "#ef4444";
         } else {
-          ctx.strokeStyle = isBackground ? "rgba(120,120,120,0.5)" : trackColor;
-          ctx.lineWidth = 1;
-          ctx.strokeRect(noteX, noteY, noteW, ROW_HEIGHT - 1);
-          ctx.fillStyle = isBackground
-            ? "rgba(80,80,80,0.35)"
-            : shadeColor(trackColor, -150);
-          ctx.fillRect(noteX + 1, noteY + 1, noteW - 2, ROW_HEIGHT - 3);
+          ctx.setLineDash([]);
+          ctx.strokeStyle = isSelected ? "#fff" : shadeColor(trackColor, -30);
+        }
+        ctx.strokeRect(noteX, noteY, noteW, ROW_HEIGHT - 1);
+        ctx.setLineDash([]);
+
+        if (note.targetId && !isBackground) {
+          const targetBlock = mainBlocks.find((b) => b.id === note.targetId);
+          const dotColor = targetBlock
+            ? getPitchColorHex(targetBlock.pitch, 36)
+            : "#a5b4fc";
+          ctx.fillStyle = dotColor;
+          ctx.beginPath();
+          ctx.arc(noteX + 4, noteY + ROW_HEIGHT / 2, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        if (!isBackground) {
+          ctx.fillStyle = "rgba(255,255,255,0.4)";
+          ctx.fillRect(
+            noteX,
+            noteY + (ROW_HEIGHT - 4) / 2,
+            noteW * note.velocity,
+            3,
+          );
         }
       }
     }
@@ -795,7 +809,7 @@ export const PianoRoll: React.FC = () => {
           store.removeNote(note.id);
         } else if (target.type === "empty") {
           store.clearNoteSelection();
-          dragAction.current = "none";
+          // Keep dragAction as "erase" so moving over notes will still delete them
         }
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1326,6 +1340,7 @@ export const PianoRoll: React.FC = () => {
           drawFgCanvas();
         }
       } else if (e.key === "Delete" || e.key === "Backspace") {
+        if (useLevelEditorStore.getState().activeTab !== 'pianoroll') return;
         e.preventDefault();
         const track = store.getCurrentTrack();
         if (track) {

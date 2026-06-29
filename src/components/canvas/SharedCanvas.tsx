@@ -124,6 +124,9 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({ context }) => {
     if (cameraTool.onPointerDown(e)) return;
     if (e.button === 2) { trail.onPointerDown(e); return; }
 
+    // In charting tab, block left-click canvas tools (spawn/select); right-click trail still works above
+    if (context === 'editor' && useLevelEditorStore.getState().activeTab === 'charting') return;
+
     const sharedMode = useStore.getState().mode;
     if (sharedMode === 'draw_track') { drawTrack.onPointerDown(e); return; }
     if (sharedMode === 'draw_group') { drawGroup.onPointerDown(e); return; }

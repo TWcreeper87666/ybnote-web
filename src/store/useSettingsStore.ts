@@ -66,3 +66,18 @@ export const useSettingsStore = create<SettingsState>()(
     { name: 'ybnote-settings' }
   )
 );
+
+// Sync settings changes from other tabs via the storage event.
+// e.newValue !== e.oldValue prevents a ping-pong write loop between tabs.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'ybnote-settings' && e.newValue && e.newValue !== e.oldValue) {
+      try {
+        const { state } = JSON.parse(e.newValue) as { state: Partial<SettingsState> };
+        useSettingsStore.setState(state);
+      } catch {
+        // ignore malformed JSON
+      }
+    }
+  });
+}

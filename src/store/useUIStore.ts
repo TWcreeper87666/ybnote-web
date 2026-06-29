@@ -1,24 +1,27 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 
 interface UIState {
   isOutlinerOpen: boolean;
   isSettingsOpen: boolean;
   isHelpOpen: boolean;
-  isPianoOpen: boolean;
   isPocketCanvasOpen: boolean;
   isTutorialOpen: boolean;
-  isSearchOpen: boolean;
-  searchQuery: string;
   toastMessage: { text: string; id: number } | null;
 
+  // toggle
   toggleOutliner: () => void;
   toggleSettings: () => void;
   toggleHelp: () => void;
-  togglePiano: () => void;
   togglePocketCanvas: () => void;
   toggleTutorial: () => void;
-  setSearchOpen: (isOpen: boolean) => void;
-  setSearchQuery: (query: string) => void;
+
+  // setter
+  setOutlinerOpen: (v: boolean) => void;
+  setSettingsOpen: (v: boolean) => void;
+  setHelpOpen: (v: boolean) => void;
+  setPocketCanvasOpen: (v: boolean) => void;
+  setTutorialOpen: (v: boolean) => void;
+
   showToast: (msg: string) => void;
 }
 
@@ -26,20 +29,44 @@ export const useUIStore = create<UIState>()((set) => ({
   isOutlinerOpen: false,
   isSettingsOpen: false,
   isHelpOpen: false,
-  isPianoOpen: false,
   isPocketCanvasOpen: false,
   isTutorialOpen: false,
-  isSearchOpen: false,
-  searchQuery: '',
   toastMessage: null,
 
+  // -------------------
+  // toggle
+  // -------------------
   toggleOutliner: () => set((s) => ({ isOutlinerOpen: !s.isOutlinerOpen })),
-  toggleSettings: () => set((s) => ({ isSettingsOpen: !s.isSettingsOpen, isHelpOpen: false, isTutorialOpen: false })),
-  toggleHelp: () => set((s) => ({ isHelpOpen: !s.isHelpOpen, isSettingsOpen: false, isTutorialOpen: false })),
-  togglePiano: () => set((s) => ({ isPianoOpen: !s.isPianoOpen })),
-  togglePocketCanvas: () => set((s) => ({ isPocketCanvasOpen: !s.isPocketCanvasOpen })),
-  toggleTutorial: () => set((s) => ({ isTutorialOpen: !s.isTutorialOpen, isSettingsOpen: false, isHelpOpen: false })),
-  setSearchOpen: (isSearchOpen) => set({ isSearchOpen }),
-  setSearchQuery: (searchQuery) => set({ searchQuery }),
+
+  toggleSettings: () =>
+    set((s) => ({
+      isSettingsOpen: !s.isSettingsOpen,
+      isHelpOpen: false,
+      isTutorialOpen: false,
+    })),
+
+  toggleHelp: () =>
+    set((s) => ({
+      isHelpOpen: !s.isHelpOpen,
+      isSettingsOpen: false,
+      isTutorialOpen: false,
+    })),
+
+  togglePocketCanvas: () =>
+    set((s) => ({ isPocketCanvasOpen: !s.isPocketCanvasOpen })),
+
+  toggleTutorial: () =>
+    set((s) => ({
+      isTutorialOpen: !s.isTutorialOpen,
+      isSettingsOpen: false,
+      isHelpOpen: false,
+    })),
+
+  setOutlinerOpen: (v) => set({ isOutlinerOpen: v }),
+  setSettingsOpen: (v) => set({ isSettingsOpen: v }),
+  setHelpOpen: (v) => set({ isHelpOpen: v }),
+  setPocketCanvasOpen: (v) => set({ isPocketCanvasOpen: v }),
+  setTutorialOpen: (v) => set({ isTutorialOpen: v }),
+
   showToast: (msg) => set({ toastMessage: { text: msg, id: Date.now() } }),
 }));

@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import type { FederatedPointerEvent, Container } from 'pixi.js';
 import { useStore } from '../../../store/useStore';
 import { getCanvasState } from '../../../store/canvasAdapter';
+import { useLevelEditorStore } from '../../../store/useLevelEditorStore';
 
 export function useSpawnTool(context: 'playground' | 'editor') {
   const lastClickTimeRef = useRef<number>(0);
@@ -10,6 +11,7 @@ export function useSpawnTool(context: 'playground' | 'editor') {
   // Returns true if a spawn happened (double-click), false to pass through to select tool.
   // Always updates click tracking regardless.
   const onPointerDown = (e: FederatedPointerEvent): boolean => {
+    if (context === 'editor' && useLevelEditorStore.getState().activeTab === 'charting') return false;
     if ((e.target as Container | null)?.label !== 'background') return false;
 
     const now = Date.now();

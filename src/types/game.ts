@@ -33,7 +33,7 @@ export interface GroupRect {
   keyBinding?: string;
   enabled?: boolean;
   groupId?: string;
-  pitchOffset: number;
+  pitchOffset?: number;
 }
 
 export interface CameraState {

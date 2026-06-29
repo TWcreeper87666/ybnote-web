@@ -54,8 +54,13 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({
   const isRecordingChart = useLevelEditorStore((s) => isEditor ? s.isRecordingChart : false);
   const chartingHighlightIds = useLevelEditorStore((s) => s.chartingHighlightIds);
   const chartingHighlightWeights = useLevelEditorStore((s) => s.chartingHighlightWeights);
-  const isChartingHighlight = chartingHighlightIds.includes(id);
+  const chartingAssignedHighlightId = useLevelEditorStore((s) => s.chartingAssignedHighlightId);
+  const editorActiveTab = useLevelEditorStore((s) => isEditor ? s.activeTab : null);
+  const isAssignedHighlight = isEditor && id === chartingAssignedHighlightId;
+  const isChartingHighlight = !isAssignedHighlight && chartingHighlightIds.includes(id);
   const highlightIntensity = isChartingHighlight ? (chartingHighlightWeights[id] ?? 1) : 1;
+  const isChartingActive = editorActiveTab === 'charting' && (chartingHighlightIds.length > 0 || chartingAssignedHighlightId !== null);
+  const isDimmed = isChartingActive && !isChartingHighlight && !isAssignedHighlight && !isSelected;
   const midiData = useLevelEditorStore((s) => isEditor ? s.midiData : null);
 
 
@@ -124,6 +129,8 @@ export const NoteBlock: React.FC<NoteBlockProps> = ({
       isInvalid={isInvalid}
       isHighlighted={isChartingHighlight}
       highlightIntensity={highlightIntensity}
+      isAssignedHighlight={isAssignedHighlight}
+      isDimmed={isDimmed}
     />
   );
 };

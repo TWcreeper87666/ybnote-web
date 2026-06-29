@@ -4,7 +4,7 @@ import { useGameStore } from '../store/useGameStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { snapValue } from '../utils/canvasUtils';
 import { useDoubleClick } from './useDoubleClick';
-import { getAllChartNotes } from '../utils/chartUtils';
+import { getAllChartNotes, getCandidateBlocks } from '../utils/chartUtils';
 import { useIsMobile } from './useIsMobile';
 import { useCanvasContext } from '../components/canvas/CanvasContext';
 import type { CanvasContextType } from '../components/canvas/CanvasContext';
@@ -48,15 +48,46 @@ export const useBlockDrag = (
     if (canvasContext === 'game' && useGameStore.getState().gamePhase === 'play') return;
 
     const editorState = useLevelEditorStore.getState();
-    if (editorState.activeTab === 'charting' && editorState.chartingAwaitingPick) {
-      const chartNotes = editorState.midiData ? getAllChartNotes(editorState.midiData) : [];
+    if (editorState.activeTab === 'charting') {
+      const chartNotes = editorState.midiData
+        ? getAllChartNotes(editorState.midiData).filter(e => e.track.id === editorState.selectedMidiTrackId)
+        : [];
       const entry = chartNotes[editorState.chartingNoteIndex];
       if (entry) {
-        e.stopPropagation();
-        editorState.assignNoteTarget(entry.note.id, entry.track.id, id, 'block');
-        useLevelEditorStore.getState().togglePlayback();
-        return;
+        const isCandidate = editorState.chartingHighlightIds.includes(id);
+        const isAssignedBlock = id === editorState.chartingAssignedHighlightId;
+
+        if (editorState.chartingAwaitingPick) {
+          if (isCandidate) {
+            e.stopPropagation();
+            editorState.assignNoteTarget(entry.note.id, entry.track.id, id, 'block');
+            if (e.button === 2) {
+              // Right-click: assign and resume playback
+              useLevelEditorStore.getState().togglePlayback();
+            } else {
+              // Left-click: assign but stay in assigning view
+              useLevelEditorStore.getState().setChartingAssignedHighlightId(id);
+            }
+            return;
+          }
+          // Non-candidate clicked while awaiting pick: ignore, stay in assigning state
+          return;
+        } else if (isCandidate && !isAssignedBlock) {
+          // Alternative candidate clicked when not in awaiting-pick → reassign
+          e.stopPropagation();
+          editorState.assignNoteTarget(entry.note.id, entry.track.id, id, 'block');
+          const candidates = getCandidateBlocks(entry.note, entry.track);
+          const es = useLevelEditorStore.getState();
+          es.setChartingHighlightIds(candidates.map(c => c.id));
+          es.setChartingAssignedHighlightId(id);
+          const weights: Record<string, number> = {};
+          candidates.forEach(c => { weights[c.id] = 1; });
+          es.setChartingHighlightWeights(weights);
+          return;
+        }
       }
+      // In charting mode with no matching action: block normal drag/select
+      return;
     }
 
     if (e.button !== 0) return;
